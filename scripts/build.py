@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INPUT_SHA256 = "04d5f9763f5c4dcd19d40fcd52d152cebaa7c18ec68dedb0e90c972fb1c2153c"
 CORE_UUID = bytes.fromhex("4ed1fd29a46a36b38dfc36f67ea929d1")
 LOAD_PATH = b"@executable_path/CoreBootCache.dylib\0"
+DYLIB_VERSION = 0x10000
 
 
 def run(*args):
@@ -61,10 +62,32 @@ def inject(data):
     length = (24 + len(LOAD_PATH) + 7) & ~7
     if start + length > first_section or any(data[start:start + length]):
         raise ValueError("Insufficient zero-filled load-command padding")
-    command = struct.pack("<6I", 0xC, length, 24, 0, 0x10000, 0x10000)
+    command = struct.pack("<6I", 0xC, length, 24, 0, DYLIB_VERSION, DYLIB_VERSION)
     data[start:start + length] = (command + LOAD_PATH).ljust(length, b"\0")
     struct.pack_into("<II", data, 16, count + 1, table_size + length)
     return bytes(data)
+
+
+def validate_patch_dependency(main, library):
+    """Keep the injected requirement consistent with the actual linked library."""
+    def records(data, kind):
+        result = []
+        for pos, cmd, size in commands(data):
+            if cmd != kind:
+                continue
+            name_offset, _, current, compatibility = struct.unpack_from("<4I", data, pos + 8)
+            name = data[pos + name_offset:pos + size].split(b"\0")[0]
+            if name == LOAD_PATH[:-1]:
+                result.append((current, compatibility))
+        return result
+    required = records(main, 0xC)
+    provided = records(library, 0xD)
+    if len(required) != 1 or len(provided) != 1:
+        raise ValueError("Expected one matching patch dependency and install name")
+    if provided[0][0] < required[0][1] or provided[0][1] > provided[0][0]:
+        raise ValueError("Patch dylib version is lower than the injected requirement")
+    if provided[0] != (DYLIB_VERSION, DYLIB_VERSION):
+        raise ValueError("Patch dylib must explicitly declare version 1.0.0")
 
 
 def extract(ipa, destination):
@@ -111,6 +134,7 @@ def main():
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
             "-Wl,-install_name,@executable_path/CoreBootCache.dylib", "-framework", "Foundation",
+            "-Wl,-current_version,1.0.0,-compatibility_version,1.0.0",
             "-framework", "UIKit", "-framework", "IOKit", source, "-o", dylib)
     else:
         if not args.sdk or not args.ldid:
@@ -121,11 +145,13 @@ def main():
         run(args.linker, "-dylib", "-arch", "arm64e", "-platform_version", "ios", "17.0", "16.5",
             "-syslibroot", args.sdk, "-lSystem", "-lobjc", "-framework", "Foundation", "-framework",
             "UIKit", "-framework", "IOKit", "-install_name", "@executable_path/CoreBootCache.dylib",
+            "-current_version", "1.0.0", "-compatibility_version", "1.0.0",
             "-adhoc_codesign", obj, "-o", dylib)
+    validate_patch_dependency(binary.read_bytes(), dylib.read_bytes())
     info_path = app / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update(CFBundleVersion="3", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
-                CoreBootCachePatchVersion="2", CoreBootCacheSupportedBuild="21A327")
+    info.update(CFBundleVersion="4", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
+                CoreBootCachePatchVersion="3", CoreBootCacheSupportedBuild="21A327")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -144,14 +170,14 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / "Core-17.0-21A327-TrollStore-v2.ipa"
+    artifact = dist / "Core-17.0-21A327-TrollStore-v3.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(work))
     report = dict(input_sha256=original_hash, artifact=artifact.name,
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=2,
+                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=3,
                   build_host=sys.platform, device_runtime_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

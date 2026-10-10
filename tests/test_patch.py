@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from build import CORE_UUID, INPUT_SHA256, LOAD_PATH, commands, inject
+from build import CORE_UUID, INPUT_SHA256, LOAD_PATH, commands, inject, validate_patch_dependency
 
 
 class PackagingTests(unittest.TestCase):
@@ -50,6 +50,21 @@ class PackagingTests(unittest.TestCase):
         modified[32 + struct.unpack_from("<I", modified, 20)[0]] = 1
         with self.assertRaisesRegex(ValueError, "padding"):
             inject(modified)
+
+    @staticmethod
+    def library_with_version(current, compatibility):
+        length = (24 + len(LOAD_PATH) + 7) & ~7
+        header = struct.pack("<8I", 0xFEEDFACF, 0x100000C, 0x80000002, 6, 1, length, 0, 0)
+        command = struct.pack("<6I", 0xD, length, 24, 0, current, compatibility)
+        return header + (command + LOAD_PATH).ljust(length, b"\0")
+
+    def test_rejects_unversioned_patch_library_from_v1_v2_packaging(self):
+        # The injected main asked for 1.0.0, but the default linker output had 0.0.0.
+        with self.assertRaisesRegex(ValueError, "lower than"):
+            validate_patch_dependency(inject(self.original), self.library_with_version(0, 0))
+
+    def test_accepts_matching_linked_patch_library_version(self):
+        validate_patch_dependency(inject(self.original), self.library_with_version(0x10000, 0x10000))
 
 
 class DeviceIdentityPolicyTests(unittest.TestCase):

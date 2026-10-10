@@ -7,7 +7,7 @@ import plistlib
 import struct
 import sys
 import zipfile
-from build import commands, LOAD_PATH, CORE_UUID, ROOT
+from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency
 
 
 def sections(data):
@@ -73,9 +73,11 @@ def main(ipa):
                 uuid = main[pos + 8:pos + 24]
         assert paths.count(LOAD_PATH[:-1]) == 1
         assert uuid == CORE_UUID
+        validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
         entitlements = signature(main)
         assert entitlements.get("com.apple.private.security.no-sandbox") is True
         assert entitlements.get("com.apple.private.security.storage.AppDataContainers") is True
+        assert entitlements.get("com.apple.private.security.container-required") == "qingxiugai.qingxiugai.qinxiugai"
         assert not any(key in entitlements for key in ["dynamic-codesigning", "com.apple.private.cs.debugger",
                                                      "com.apple.private.skip-library-validation"])
         main_arch = struct.unpack_from("<II", main, 4)
@@ -91,6 +93,7 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
+        assert info["CFBundleVersion"] == "4" and info["CoreBootCachePatchVersion"] == "3"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
     print("PASS: original program sections preserved; current ABI, load command, signed entitlements and resources verified")

@@ -8,7 +8,7 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore` artifact，解压得到 IPA。原应用没有完整源码，此处编译的是适配 dylib，再注入并重签用户提供的 IPA。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v3` artifact，解压得到 IPA。原应用没有完整源码，此处编译的是适配 dylib，再注入并重签用户提供的 IPA。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
@@ -25,10 +25,15 @@ v2 修复原方法指针发布的并发窗口：先保存并发布原实现，�
 
 macOS 运行时回归测试会在方法替换函数返回前立即调用新钩子，然后并发调用 2000 次，验证原实现已可用。该测试不模拟 iOS 的完整应用启动或 ARM64e 指针认证。
 
+v3 为 1.6 / build 4 / patch 3：将动态库实际的 `LC_ID_DYLIB` current / compatibility version 显式设为 1.0.0，与主程序注入的 `LC_LOAD_DYLIB` 一致，并在构建及最终包验证中检查两者。v1/v2 的库采用链接器默认的 0.0.0，但这个元数据缺陷不能直接证明是用户 iOS 17 的启动失败原因：苹果现代 dyld 不对该目标执行旧式兼容版本检查。此版本同时显式保留 Core 自身的数据容器身份，早期日志优先使用 CFFIXED_USER_HOME，再回退 HOME。它尚未获得设备启动成功的验证。
+
+独立诊断工具已确认用户安装的是 v2，注册状态为 System，当前启动的 kernelcache 可读；FrontBoard 返回 FBProcessExit 64 / RBSRequestErrorDomain 5，表示启动期间退出。收集到的五份 `.ips` 全部属于旧 build 1，不能解释 v2。诊断 v2 会读取实际安装后的嵌入签名元数据，并在正常启动失败后创建短时独立子进程捕获 stderr；独立启动与桌面启动的差异会在报告中注明。
+
 ## 参考
 
 - [AppleDB 21A327 元数据](https://api.appledb.dev/ios/iOS%3B21A327.json)
 - [TrollStore 权限说明](https://github.com/opa334/TrollStore#unsandboxing)
 - [当前 boot-manifest-hash 读取方式](https://github.com/0x7ff/dimentio/blob/main/libdimentio.c)
+- [苹果 dyld 的兼容版本策略](https://github.com/apple-oss-distributions/dyld/blob/dyld-1122.1.2/common/MachOFile.cpp#L1279)
 
 `python3 -m unittest discover -s tests -v` 验证设备身份与启动目录隔离、未知构建拒绝及注入后代码保留；`scripts/verify.py` 检查最终 IPA 的全部原代码节、ABI、资源和签名页哈希。
