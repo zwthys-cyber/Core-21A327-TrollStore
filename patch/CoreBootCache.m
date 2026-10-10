@@ -44,7 +44,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=3 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=4 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -178,7 +178,7 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=3 product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=4 product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         NSString *hash = BootHash();
         if (!hash) {

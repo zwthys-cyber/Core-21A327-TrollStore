@@ -17,6 +17,69 @@ INPUT_SHA256 = "04d5f9763f5c4dcd19d40fcd52d152cebaa7c18ec68dedb0e90c972fb1c2153c
 CORE_UUID = bytes.fromhex("4ed1fd29a46a36b38dfc36f67ea929d1")
 LOAD_PATH = b"@executable_path/CoreBootCache.dylib\0"
 DYLIB_VERSION = 0x10000
+LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
+LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
+LICENSE_STARTUP_ENTRIES = {
+    "+[CCCoreLicenseGuard load]": 0x4360,
+    "_CCCoreLicenseConstructor": 0xD5C4,
+}
+ARM64_RET = bytes.fromhex("c0035fd6")
+
+
+def disable_license_startup(data):
+    """Disable the two automatic entry points of the analyzed local gate library.
+
+    Returning before PACIBSP leaves the incoming LR and SP unchanged. Keep the
+    library and its dependency ordinal; no remote authorization is fabricated.
+    """
+    if hashlib.sha256(data).hexdigest() != LICENSE_SHA256:
+        raise ValueError("Unsupported license library hash")
+    if struct.unpack_from("<II", data, 4) != (0x100000C, 0x80000002):
+        raise ValueError("Unsupported license library ABI")
+    uuid, text, initializers, symbol_table = None, None, None, None
+    for pos, command, size in commands(data):
+        if command == 0x1B:
+            uuid = data[pos + 8:pos + 24]
+        elif command == 0x2:
+            symbol_table = struct.unpack_from("<4I", data, pos + 8)
+        elif command == 0x19:
+            for index in range(struct.unpack_from("<I", data, pos + 64)[0]):
+                section = pos + 72 + index * 80
+                name = data[section:section + 16].split(b"\0")[0]
+                segment = data[section + 16:section + 32].split(b"\0")[0]
+                address, length = struct.unpack_from("<QQ", data, section + 32)
+                offset = struct.unpack_from("<I", data, section + 48)[0]
+                if segment == b"__TEXT" and name == b"__text":
+                    text = (address, length, offset)
+                if segment == b"__TEXT" and name == b"__init_offsets":
+                    initializers = data[offset:offset + length]
+    if uuid != LICENSE_UUID or text is None or symbol_table is None:
+        raise ValueError("Unsupported license library layout")
+    if initializers != struct.pack("<I", LICENSE_STARTUP_ENTRIES["_CCCoreLicenseConstructor"]):
+        raise ValueError("Unexpected license initializer table")
+    symoff, count, stroff, strsize = symbol_table
+    symbols = {}
+    for index in range(count):
+        string, kind, _, _, value = struct.unpack_from("<IBBHQ", data, symoff + index * 16)
+        end = data.find(b"\0", stroff + string, stroff + strsize)
+        name = data[stroff + string:end].decode("utf-8")
+        if name in LICENSE_STARTUP_ENTRIES and kind == 0xE:
+            if name in symbols:
+                raise ValueError("Duplicate license startup symbol")
+            symbols[name] = value
+    if symbols != LICENSE_STARTUP_ENTRIES:
+        raise ValueError("License startup symbols differ from analyzed addresses")
+    result = bytearray(data)
+    address, length, offset = text
+    expected_prologue = bytes.fromhex("7f2303d5ffc300d1fd7b02a9fd830091")
+    for entry in symbols.values():
+        if not address <= entry <= address + length - len(expected_prologue):
+            raise ValueError("License startup entry lies outside executable text")
+        start = offset + entry - address
+        if data[start:start + len(expected_prologue)] != expected_prologue:
+            raise ValueError("Unexpected license startup instructions")
+        result[start:start + 4] = ARM64_RET
+    return bytes(result)
 
 
 def run(*args):
@@ -126,6 +189,8 @@ def main():
     app = work / "Payload/Core.app"
     binary = app / "Core"
     binary.write_bytes(inject(binary.read_bytes()))
+    license_library = app / "CCCoreLicense.dylib"
+    license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
     dylib = app / "CoreBootCache.dylib"
     source = ROOT / "patch/CoreBootCache.m"
     common = ["-arch", "arm64e", "-miphoneos-version-min=17.0", "-O2", "-Wall", "-Wextra",
@@ -150,8 +215,9 @@ def main():
     validate_patch_dependency(binary.read_bytes(), dylib.read_bytes())
     info_path = app / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update(CFBundleVersion="4", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
-                CoreBootCachePatchVersion="3", CoreBootCacheSupportedBuild="21A327")
+    info.update(CFBundleVersion="5", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
+                CoreBootCachePatchVersion="4", CoreBootCacheSupportedBuild="21A327",
+                CoreLocalLicenseGate="disabled-startup")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -170,14 +236,16 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / "Core-17.0-21A327-TrollStore-v3.ipa"
+    artifact = dist / "Core-17.0-21A327-TrollStore-v4.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(work))
     report = dict(input_sha256=original_hash, artifact=artifact.name,
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=3,
+                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=4,
+                  local_license_gate="disabled-startup",
+                  license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

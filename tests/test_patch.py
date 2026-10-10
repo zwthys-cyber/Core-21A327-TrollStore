@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from build import CORE_UUID, INPUT_SHA256, LOAD_PATH, commands, inject, validate_patch_dependency
+from build import CORE_UUID, INPUT_SHA256, LOAD_PATH, commands, inject, validate_patch_dependency, disable_license_startup
 
 
 class PackagingTests(unittest.TestCase):
@@ -65,6 +65,35 @@ class PackagingTests(unittest.TestCase):
 
     def test_accepts_matching_linked_patch_library_version(self):
         validate_patch_dependency(inject(self.original), self.library_with_version(0x10000, 0x10000))
+
+
+class LicenseStartupTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with zipfile.ZipFile(ROOT / "input/Core.ipa") as archive:
+            cls.original = archive.read("Payload/Core.app/CCCoreLicense.dylib")
+
+    def test_ret_precedes_pointer_authentication_and_stack_changes(self):
+        result = disable_license_startup(self.original)
+        # Independently recorded from the original +load and sole initializer.
+        for start in (0x4360, 0xD5C4):
+            self.assertEqual(result[start:start + 4], bytes.fromhex("c0035fd6"))
+            self.assertEqual(result[start + 4:start + 16], self.original[start + 4:start + 16])
+        self.assertEqual(self.original[0x1E4C0:0x1E4C4], struct.pack("<I", 0xD5C4))
+
+    def test_other_program_bytes_and_dependency_ordinals_are_preserved(self):
+        result = disable_license_startup(self.original)
+        self.assertEqual(len(result), len(self.original))
+        changed = {index for index, (before, after) in enumerate(zip(self.original, result)) if before != after}
+        self.assertEqual(changed, set(range(0x4360, 0x4364)) | set(range(0xD5C4, 0xD5C8)))
+        self.assertEqual(list(commands(result)), list(commands(self.original)))
+
+    def test_refuses_unknown_or_already_patched_libraries(self):
+        modified = bytearray(self.original)
+        modified[0x4364] ^= 1
+        for data in (modified, disable_license_startup(self.original)):
+            with self.assertRaisesRegex(ValueError, "hash"):
+                disable_license_startup(data)
 
 
 class DeviceIdentityPolicyTests(unittest.TestCase):
