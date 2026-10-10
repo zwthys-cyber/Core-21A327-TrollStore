@@ -1,0 +1,40 @@
+name: Build Core diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [diagnostics]
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build independent TrollStore diagnostic app
+        run: python3 scripts/build_diagnostics.py
+      - name: Validate signed diagnostic executable
+        run: |
+          python3 - <<'PY'
+          import sys,struct,plistlib
+          sys.path.insert(0,'scripts')
+          from verify import signature
+          from build import commands
+          from pathlib import Path
+          binary=Path('build/diagnostics/Payload/CoreDiagnostics.app/CoreDiagnostics').read_bytes()
+          assert struct.unpack_from('<II',binary,4)==(0x100000c,0)
+          ent=signature(binary)
+          assert ent['com.apple.private.security.no-sandbox'] is True
+          assert not any(k in ent for k in ['dynamic-codesigning','com.apple.private.cs.debugger','com.apple.private.skip-library-validation'])
+          for pos,cmd,size in commands(binary):
+              if cmd==12:
+                  offset=struct.unpack_from('<I',binary,pos+8)[0]
+                  name=binary[pos+offset:pos+size].split(b'\0')[0]
+                  assert b'CoreBootCache' not in name and b'CoreOffline' not in name and b'CCCoreLicense' not in name
+          print('PASS: standalone arm64 executable, valid signature and entitlements; no Core libraries loaded')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-Diagnostics-TrollStore
+          path: dist/diagnostics/*
+          retention-days: 14
