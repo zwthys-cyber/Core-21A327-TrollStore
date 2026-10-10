@@ -4,11 +4,11 @@
 
 AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装版本的 kernelcache，导致环境适配失败并禁用内核按钮。补丁在原缓存验证失败后，读取 IORegistry 当前 `boot-manifest-hash` 对应目录中的 kernelcache，交给原缓存发布器生成元数据及 SHA-256，再由原验证器检查。原准备流程通过后才会变为就绪。
 
-补丁仅针对当前系统及请求身份完全匹配的 21A327，不读取其他启动哈希目录，不替换成 21A329，不跳过原校验。失败时显示提示，日志保存在 Documents/Core-21A327-adaptation.log。主程序增加 no-sandbox 和 AppDataContainers 权限，使用 TrollStore 安装。
+补丁仅针对当前系统及请求身份完全匹配的 21A327，不读取其他启动哈希目录，不替换成 21A329，不跳过原校验。失败时显示提示，日志保存在 Documents/Core-21A327-adaptation.log。主程序使用 platform-application、no-sandbox 和 AppDataContainers 权限，保留 Core 数据容器，并限定图形 IOKit 用户客户端例外，使用 TrollStore 安装。
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v5` artifact，解压得到 IPA。原应用没有完整源码，此处编译适配 dylib 和独立读取程序，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v6` artifact，解压得到 IPA。原应用没有完整源码，此处编译适配 dylib 和独立读取程序，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
@@ -19,7 +19,7 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 3. 环境就绪后，才测试原内核按钮。
 4. 若仍失败，在“文件 → 我的 iPhone → Core”导出上述日志。
 
-用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v4 的设备日志明确显示适配补丁成功加载，但 IORegistry 当前启动哈希读取失败；内核利用尚未开始。v5 保留 v4 主程序的权限和数据容器设置，实际环境就绪仍需设备验证。构建、签名和静态检查不能代替设备验证；资源获取补丁不保证原内核利用成功。
+用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v5 的设备日志明确显示适配补丁运行，但 IORegistry 当前启动哈希属性不可读，独立读取程序在 posix_spawn 时被拒绝，返回 EPERM；内核利用尚未开始。v6 修正主程序平台权限，实际环境就绪仍需设备验证。构建、签名和静态检查不能代替设备验证；资源获取补丁不保证原内核利用成功。
 
 v2 修复原方法指针发布的并发窗口：先保存并发布原实现，再安装钩子。v1 将保存动作放在方法替换返回之后，原离线库已启动的预取线程可能在该窗口调用尚未保存的空指针。这是确认的代码缺陷，是否对应用户本次秒退仍需新 `.ips` 证明。构造函数改用 C / Objective-C runtime API，不在启动入口创建 Foundation 对象，并在每个启动步骤写入同一个诊断日志。版本号为 1.6 / build 3，产物名包含 `v2`。
 
@@ -37,12 +37,20 @@ v5 为 1.6 / build 6 / patch 5。v4 日志的具体失败是 `current boot-manif
 
 macOS 进程回归测试验证实际描述符传递、复制内容、错误构建/路径/长度拒绝、响应超限、失败退出和超时清理，并检查描述符没有泄漏。该测试不模拟设备的 IORegistry 权限；安装 v5 后仍需查看设备日志中的 `probe current-boot acquisition passed` 和原缓存验证 `SUCCESS`。
 
+v6 为 1.6 / build 7 / patch 6。v5 的设备日志显示 `Probe launch failed (1): Operation not permitted`；该失败发生在子进程运行前，因此只给读取程序平台权限不足以解决当前设备的父进程权限问题。TrollStore 官方说明 no-sandbox 在部分情况下需配合 platform-application，且平台应用需要单独声明 IOKit 用户客户端例外。结合独立诊断程序能够读取当前启动哈希的结果，v6 给 Core 本身增加 platform-application，同时保留原 no-sandbox、AppDataContainers 和明确的数据容器身份。
+
+Core 导入 IOSurfaceCreate 和 MTLCreateSystemDefaultDevice。为避免新增平台权限影响这两类图形接口，声明 AGXDeviceUserClient、AGXSharedUserClient、AGXGLContext、AGXCommandQueue 和 IOSurfaceRootUserClient 例外；名称参考 TrollStore 与相同内核后端作者公开的签名配置。未引入 root 身份切换或其他应用管理权限。独立读取程序保留为后备，原缓存发布器和校验器仍决定成功与否。新日志只查询平台、no-sandbox、AppDataContainers 三项运行时权限，不记录其他签名权限或凭据。
+
+这是根据权限失败证据实施的修复，不能从 EPERM 单独断言系统内部拒绝原因。设备核验应先看到 `patch=6` 和上述三项权限为 1，再看到原缓存校验 `SUCCESS`，最后确认 Core 的环境状态。若仍在获取资源阶段失败，完整日志会区分签名权限、直接读取和子进程读取结果。
+
 独立诊断工具已确认用户安装的是 v2，注册状态为 System，当前启动的 kernelcache 可读；FrontBoard 返回 FBProcessExit 64 / RBSRequestErrorDomain 5，表示启动期间退出。收集到的五份 `.ips` 全部属于旧 build 1，不能解释 v2。诊断 v2 会读取实际安装后的嵌入签名元数据，并在正常启动失败后创建短时独立子进程捕获 stderr；独立启动与桌面启动的差异会在报告中注明。
 
 ## 参考
 
 - [AppleDB 21A327 元数据](https://api.appledb.dev/ios/iOS%3B21A327.json)
 - [TrollStore 权限说明](https://github.com/opa334/TrollStore#unsandboxing)
+- [TrollStore 图形 IOKit 权限配置](https://github.com/opa334/TrollStore/blob/main/TrollStore/entitlements.plist)
+- [内核后端作者的图形 IOKit 权限配置](https://github.com/opa334/darksword-kexploit/blob/main/entitlements.plist)
 - [当前 boot-manifest-hash 读取方式](https://github.com/0x7ff/dimentio/blob/main/libdimentio.c)
 - [苹果 dyld 的兼容版本策略](https://github.com/apple-oss-distributions/dyld/blob/dyld-1122.1.2/common/MachOFile.cpp#L1279)
 

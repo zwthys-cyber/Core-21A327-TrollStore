@@ -14,6 +14,7 @@
 #import <fcntl.h>
 #import <stdio.h>
 #import <stdatomic.h>
+#import <dlfcn.h>
 #import "CoreBootPolicy.h"
 #import "CoreBootProbeClient.h"
 
@@ -45,7 +46,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=5 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=6 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -94,6 +95,32 @@ static void Log(NSString *message) {
     }
 }
 
+// Report only the permissions relevant to acquisition, never arbitrary entitlements.
+static void LogAcquisitionPermissions(void) {
+    typedef CFTypeRef (*CreateTask)(CFAllocatorRef);
+    typedef CFTypeRef (*CopyEntitlement)(CFTypeRef, CFStringRef, CFErrorRef *);
+    CreateTask create = (CreateTask)dlsym(RTLD_DEFAULT, "SecTaskCreateFromSelf");
+    CopyEntitlement copy = (CopyEntitlement)dlsym(RTLD_DEFAULT, "SecTaskCopyValueForEntitlement");
+    if (!create || !copy) { Log(@"runtime acquisition permissions: query API unavailable"); return; }
+    CFTypeRef task = create(kCFAllocatorDefault);
+    if (!task) { Log(@"runtime acquisition permissions: task unavailable"); return; }
+    NSArray<NSString *> *keys = @[@"platform-application", @"com.apple.private.security.no-sandbox",
+        @"com.apple.private.security.storage.AppDataContainers"];
+    NSMutableArray<NSString *> *states = [NSMutableArray array];
+    for (NSString *key in keys) {
+        CFErrorRef error = NULL;
+        CFTypeRef value = copy(task, (__bridge CFStringRef)key, &error);
+        BOOL enabled = value && CFGetTypeID(value) == CFBooleanGetTypeID() &&
+                       CFBooleanGetValue((CFBooleanRef)value);
+        [states addObject:[NSString stringWithFormat:@"%@=%d error=%ld", key, enabled,
+            error ? (long)CFErrorGetCode(error) : 0L]];
+        if (value) CFRelease(value);
+        if (error) CFRelease(error);
+    }
+    CFRelease(task);
+    Log([@"runtime acquisition permissions: " stringByAppendingString:[states componentsJoinedByString:@" "]]);
+}
+
 static NSString *BootHash(void) {
     io_registry_entry_t chosen = IORegistryEntryFromPath(MACH_PORT_NULL, "IODeviceTree:/chosen");
     if (!chosen) { Log(@"Direct IORegistry chosen entry unavailable"); return nil; }
@@ -110,6 +137,7 @@ static NSString *BootHash(void) {
             NSMutableString *hex = [NSMutableString stringWithCapacity:(NSUInteger)count * 2];
             for (CFIndex i = 0; i < count; i++) [hex appendFormat:@"%02X", bytes[i]];
             result = hex;
+            Log([NSString stringWithFormat:@"Direct current-boot hash available (%ld bytes)", (long)count]);
         } else Log([NSString stringWithFormat:@"Direct boot hash has unexpected length: %ld", (long)count]);
     } else Log(@"Direct boot hash has unexpected property type");
     CFRelease(property);
@@ -196,8 +224,9 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=5 product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=6 product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
+        LogAcquisitionPermissions();
         NSString *hash = BootHash();
         if (!hash) {
             Log(@"Direct boot hash unavailable; falling back to bundled platform probe");

@@ -75,10 +75,14 @@ def main(ipa):
         assert uuid == CORE_UUID
         validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
         entitlements = signature(main)
-        assert "platform-application" not in entitlements, "Platform permission must stay isolated to the probe"
+        expected_entitlements = plistlib.loads((ROOT / "patch/TrollStore.entitlements.plist").read_bytes())
+        assert entitlements == expected_entitlements, "Core signing permissions differ from the reviewed configuration"
+        assert entitlements.get("platform-application") is True
         assert entitlements.get("com.apple.private.security.no-sandbox") is True
         assert entitlements.get("com.apple.private.security.storage.AppDataContainers") is True
         assert entitlements.get("com.apple.private.security.container-required") == "qingxiugai.qingxiugai.qinxiugai"
+        assert set(entitlements.get("com.apple.security.exception.iokit-user-client-class", [])) == {
+            "AGXDeviceUserClient", "AGXSharedUserClient", "AGXGLContext", "AGXCommandQueue", "IOSurfaceRootUserClient"}
         assert not any(key in entitlements for key in ["dynamic-codesigning", "com.apple.private.cs.debugger",
                                                      "com.apple.private.skip-library-validation"])
         main_arch = struct.unpack_from("<II", main, 4)
@@ -106,11 +110,11 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == "6" and info["CoreBootCachePatchVersion"] == "5"
+        assert info["CFBundleVersion"] == "7" and info["CoreBootCachePatchVersion"] == "6"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
-    print("PASS: isolated arm64 probe permissions; only two license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
+    print("PASS: Core platform permissions, preserved container and scoped graphics exceptions; independent arm64 probe; only two license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
 
 
 if __name__ == "__main__":
