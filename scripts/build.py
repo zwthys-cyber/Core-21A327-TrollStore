@@ -192,7 +192,9 @@ def main():
     license_library = app / "CCCoreLicense.dylib"
     license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
     dylib = app / "CoreBootCache.dylib"
+    probe = app / "CoreBootProbe"
     source = ROOT / "patch/CoreBootCache.m"
+    probe_source = ROOT / "patch/CoreBootProbe.m"
     common = ["-arch", "arm64e", "-miphoneos-version-min=17.0", "-O2", "-Wall", "-Wextra",
               "-Werror", "-Wno-unused-parameter", "-fobjc-arc", "-fblocks"]
     if sys.platform == "darwin":
@@ -201,6 +203,8 @@ def main():
             "-Wl,-install_name,@executable_path/CoreBootCache.dylib", "-framework", "Foundation",
             "-Wl,-current_version,1.0.0,-compatibility_version,1.0.0",
             "-framework", "UIKit", "-framework", "IOKit", source, "-o", dylib)
+        run("xcrun", "--sdk", "iphoneos", "clang", "-arch", "arm64", *common[2:],
+            "-isysroot", sdk, "-framework", "Foundation", "-framework", "IOKit", probe_source, "-o", probe)
     else:
         if not args.sdk or not args.ldid:
             parser.error("Linux builds require --sdk and --ldid")
@@ -212,17 +216,25 @@ def main():
             "UIKit", "-framework", "IOKit", "-install_name", "@executable_path/CoreBootCache.dylib",
             "-current_version", "1.0.0", "-compatibility_version", "1.0.0",
             "-adhoc_codesign", obj, "-o", dylib)
+        probe_obj = work / "CoreBootProbe.o"
+        run(args.clang, "-target", "arm64-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
+            "-c", probe_source, "-o", probe_obj)
+        run(args.linker, "-arch", "arm64", "-platform_version", "ios", "17.0", "16.5",
+            "-syslibroot", args.sdk, "-lSystem", "-lobjc", "-framework", "Foundation",
+            "-framework", "IOKit", "-e", "_main", "-adhoc_codesign", probe_obj, "-o", probe)
     validate_patch_dependency(binary.read_bytes(), dylib.read_bytes())
     info_path = app / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update(CFBundleVersion="5", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
-                CoreBootCachePatchVersion="4", CoreBootCacheSupportedBuild="21A327",
+    info.update(CFBundleVersion="6", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
+                CoreBootCachePatchVersion="5", CoreBootCacheSupportedBuild="21A327",
                 CoreLocalLicenseGate="disabled-startup")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
     entitlements = ROOT / "patch/TrollStore.entitlements.plist"
+    probe_entitlements = ROOT / "patch/CoreBootProbe.entitlements.plist"
     binary.chmod(0o755)
+    probe.chmod(0o755)
     for library in app.glob("*.dylib"):
         library.chmod(0o755)
         if sys.platform == "darwin":
@@ -230,20 +242,23 @@ def main():
         else:
             run(args.ldid, "-S", library)
     if sys.platform == "darwin":
+        run("codesign", "--force", "--sign", "-", "--timestamp=none", "--entitlements", probe_entitlements, probe)
         run("codesign", "--force", "--sign", "-", "--timestamp=none", "--entitlements", entitlements, app)
         run("codesign", "--verify", "--deep", "--strict", app)
     else:
+        run(args.ldid, "-S" + str(probe_entitlements), probe)
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / "Core-17.0-21A327-TrollStore-v4.ipa"
+    artifact = dist / "Core-17.0-21A327-TrollStore-v5.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(work))
     report = dict(input_sha256=original_hash, artifact=artifact.name,
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=4,
+                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=5,
+                  boot_acquisition="current-boot platform probe via inherited file descriptor",
                   local_license_gate="disabled-startup",
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)

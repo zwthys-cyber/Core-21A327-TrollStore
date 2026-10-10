@@ -15,6 +15,7 @@
 #import <stdio.h>
 #import <stdatomic.h>
 #import "CoreBootPolicy.h"
+#import "CoreBootProbeClient.h"
 
 // Core 1.6, UUID 4ED1FD29-A46A-36B3-8DFC-36F67EA929D1.
 // This declaration describes the original, unmodified cache publisher.
@@ -44,7 +45,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=4 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=5 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -95,11 +96,11 @@ static void Log(NSString *message) {
 
 static NSString *BootHash(void) {
     io_registry_entry_t chosen = IORegistryEntryFromPath(MACH_PORT_NULL, "IODeviceTree:/chosen");
-    if (!chosen) return nil;
+    if (!chosen) { Log(@"Direct IORegistry chosen entry unavailable"); return nil; }
     CFTypeRef property = IORegistryEntryCreateCFProperty(chosen, CFSTR("boot-manifest-hash"),
                                                         kCFAllocatorDefault, 0);
     IOObjectRelease(chosen);
-    if (!property) return nil;
+    if (!property) { Log(@"Direct IORegistry boot-manifest-hash property unavailable"); return nil; }
     NSString *result = nil;
     if (CFGetTypeID(property) == CFDataGetTypeID()) {
         CFDataRef data = (CFDataRef)property;
@@ -109,8 +110,8 @@ static NSString *BootHash(void) {
             NSMutableString *hex = [NSMutableString stringWithCapacity:(NSUInteger)count * 2];
             for (CFIndex i = 0; i < count; i++) [hex appendFormat:@"%02X", bytes[i]];
             result = hex;
-        }
-    }
+        } else Log([NSString stringWithFormat:@"Direct boot hash has unexpected length: %ld", (long)count]);
+    } else Log(@"Direct boot hash has unexpected property type");
     CFRelease(property);
     return result;
 }
@@ -167,6 +168,23 @@ static void ShowFailure(NSString *reason) {
 #endif
 }
 
+static BOOL PublishBootData(id self, SEL selector, NSData *data, NSURL *source, NSURL *cache,
+                           NSURL *metadata, NSString *product, NSString *build, NSString *board) {
+    NSError *error = nil; BOOL published = NO;
+    Publishing = YES;
+    @try {
+        published = [self qm539:data source:source productType:product buildVersion:build boardConfig:board error:&error];
+    } @catch (NSException *exception) {
+        error = [NSError errorWithDomain:@"CoreBootCache" code:2 userInfo:@{NSLocalizedDescriptionKey:
+            [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason]}];
+    } @finally { Publishing = NO; }
+    BOOL valid = published && ValidateOriginal(self, selector, cache, metadata, product, build, board);
+    Log([NSString stringWithFormat:@"publish %@ bytes=%lu result=%d error=%@", source.path,
+        (unsigned long)data.length, valid, error]);
+    if (valid) Log(@"SUCCESS: original cache validator passed; continuing original preparation");
+    return valid;
+}
+
 static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *metadata,
                                  NSString *product, NSString *build, NSString *board) {
     StartupRecord("validator entered");
@@ -178,15 +196,13 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=4 product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=5 product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         NSString *hash = BootHash();
         if (!hash) {
-            Log(@"FAILED: current boot-manifest-hash unavailable");
-            ShowFailure(@"无法识别当前启动系统的内核路径。请将诊断日志发回分析。");
-            return NO;
+            Log(@"Direct boot hash unavailable; falling back to bundled platform probe");
         }
-        for (NSURL *url in Candidates(hash, board)) {
+        for (NSURL *url in (hash ? Candidates(hash, board) : @[])) {
             @autoreleasepool {
                 char resolved[PATH_MAX];
                 if (!realpath(url.fileSystemRepresentation, resolved)) {
@@ -210,25 +226,23 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
                     Log([NSString stringWithFormat:@"read %@: %@", path, error]);
                     continue;
                 }
-                BOOL published = NO;
-                Publishing = YES;
-                @try {
-                    published = [self qm539:data source:url
-                        productType:product buildVersion:build boardConfig:board error:&error];
-                } @catch (NSException *exception) {
-                    error = [NSError errorWithDomain:@"CoreBootCache" code:2
-                        userInfo:@{NSLocalizedDescriptionKey:
-                            [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason]}];
-                } @finally { Publishing = NO; }
-                BOOL valid = published && ValidateOriginal(self, selector, cache, metadata, product, build, board);
-                Log([NSString stringWithFormat:@"publish %@ bytes=%lu result=%d error=%@",
-                     path, (unsigned long)data.length, valid, error]);
-                if (valid) {
-                    Log(@"SUCCESS: original cache validator passed; continuing original preparation");
-                    return YES;
-                }
+                if (PublishBootData(self, selector, data, url, cache, metadata, product, build, board)) return YES;
             }
         }
+        NSError *error = nil;
+        NSURL *directory = [[[NSFileManager defaultManager] URLsForDirectory:NSCachesDirectory
+            inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"CoreBootCache"];
+        NSString *helper = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"CoreBootProbe"];
+        NSDictionary *probe = RunBootProbe(helper, product, build, board, directory, &error);
+        if (probe) {
+            Log([NSString stringWithFormat:@"probe current-boot acquisition passed: bytes=%@", probe[@"bytes"]]);
+            NSString *temporary = probe[@"temporary_path"];
+            NSData *data = [NSData dataWithContentsOfFile:temporary options:NSDataReadingMappedIfSafe error:&error];
+            [[NSFileManager defaultManager] removeItemAtPath:temporary error:NULL];
+            if (data && PublishBootData(self, selector, data, [NSURL fileURLWithPath:probe[@"source_path"]],
+                cache, metadata, product, build, board)) return YES;
+        }
+        if (error) Log([NSString stringWithFormat:@"FAILED: bundled probe: %@", error]);
         Log(@"FAILED: no readable, valid current-boot kernelcache");
         ShowFailure(@"当前系统内核文件读取或校验失败。请使用巨魔安装此 IPA，并将诊断日志发回分析。");
         return NO;

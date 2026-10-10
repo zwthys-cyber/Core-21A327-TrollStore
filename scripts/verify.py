@@ -75,12 +75,22 @@ def main(ipa):
         assert uuid == CORE_UUID
         validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
         entitlements = signature(main)
+        assert "platform-application" not in entitlements, "Platform permission must stay isolated to the probe"
         assert entitlements.get("com.apple.private.security.no-sandbox") is True
         assert entitlements.get("com.apple.private.security.storage.AppDataContainers") is True
         assert entitlements.get("com.apple.private.security.container-required") == "qingxiugai.qingxiugai.qinxiugai"
         assert not any(key in entitlements for key in ["dynamic-codesigning", "com.apple.private.cs.debugger",
                                                      "com.apple.private.skip-library-validation"])
         main_arch = struct.unpack_from("<II", main, 4)
+        probe = archive.read(app + "CoreBootProbe")
+        assert struct.unpack_from("<III", probe, 4) == (0x100000C, 0, 2), "Probe must be an independent arm64 executable"
+        probe_entitlements = signature(probe)
+        assert probe_entitlements == {"platform-application": True, "com.apple.private.security.no-sandbox": True}
+        for pos, cmd, size in commands(probe):
+            if cmd == 0xC:
+                offset = struct.unpack_from("<I", probe, pos + 8)[0]
+                path = probe[pos + offset:pos + size].split(b"\0")[0]
+                assert not path.startswith((b"@executable_path", b"@loader_path", b"@rpath")), "Probe must not load Core's libraries"
         for name in [app + "Core", *libs]:
             binary = archive.read(name)
             signature(binary)
@@ -96,11 +106,11 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == "5" and info["CoreBootCachePatchVersion"] == "4"
+        assert info["CFBundleVersion"] == "6" and info["CoreBootCachePatchVersion"] == "5"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
-    print("PASS: only the two local license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
+    print("PASS: isolated arm64 probe permissions; only two license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
 
 
 if __name__ == "__main__":
