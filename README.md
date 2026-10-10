@@ -8,19 +8,29 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v7` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v8` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。v8 是远程初始化排查版，尚未确认修复 launchd 超时。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v7.ipa`，再安装 `Core-Cache-Prepare-TrollStore.ipa`。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v8.ipa`，再安装 `Core-Cache-Prepare-TrollStore.ipa`；已安装的准备工具可以继续使用。
 2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
 3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
 4. 环境就绪后，才测试原内核按钮。
-5. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”；若 Core 失败，导出它的两份日志。
+5. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”。v8 测试一次内核初始化，等待后续状态结束，再导出 Core 的 `Core-remote-bootstrap.log`、`core-offline-original-id.log`、`Core-21A327-adaptation.log`。
 
-用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v6 的设备日志显示三项签名权限实际存在，但 IORegistry 当前启动哈希属性仍不可读，独立读取程序在 posix_spawn 时仍被拒绝，返回 EPERM；内核利用尚未开始。v7 提供独立的准备应用，通过 Core 自身容器传递缓存；实际环境就绪仍需设备验证。构建、签名和静态检查不能代替设备验证；资源获取补丁不保证原内核利用成功。
+用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v6 的设备日志显示三项签名权限实际存在，但 IORegistry 当前启动哈希属性仍不可读，独立读取程序在 posix_spawn 时仍被拒绝，返回 EPERM；内核利用尚未开始。v7 已在该 iPhone16,2 / 21A327 上验证：完整缓存传输通过原校验器，环境就绪，原 pe-v1 后端到达 state=2 / ready=1，用户界面显示内核初始化成功。该结果只确认本次设备运行；随后 launchd 远程初始化出现第一次异常消息等待失败，悬浮层进入隔离状态。
+
+## v8 远程初始化排查
+
+原远程打开函数返回 0 表示成功。设备日志中的 SpringBoard 已成功；launchd 随后失败。逆向确认首次等待调用 mach_msg，参数为接收消息和接收超时，等待 8000 ms；原代码把所有非零返回值都标记为 `bootstrap-first-exception-timeout`，因此现有字符串不能区分实际超时、无效端口、端口死亡或其他接收错误。
+
+v8 为 1.6 / build 9 / patch 8。只将主程序的 mach_msg、thread_set_exception_ports、thread_resume 三个 libSystem 导入绑定到适配库中的转发函数；适配库仍导入并调用原 libSystem 实现。使用等长别名，保留导入索引、原 stub、指针认证 fixup 和全部程序代码节。按原 UUID、导入格式、库序号、符号类型、原库绑定和字符串不重叠条件核验后才修改。其他导入不变。
+
+转发函数完整保留参数、返回值及 errno，只在原远程模块调用范围内记录调用偏移、异常端口安装/线程恢复结果、mach_msg 原始错误码和耗时、当前进程接收端口类型及消息 ID/长度。日志为 `Documents/Core-remote-bootstrap.log`，启动时写入 patch=8 检查点。没有消息体、卡密或目标进程内存内容。文件写入失败不影响原调用。不延长等待、不绕过隔离、不修改目标线程参数，不把状态强制设为成功。
+
+回归检查覆盖全部非签名主程序字节及精确导入重绑定、未知格式/错误绑定拒绝，并在 macOS 通过真实 Mach 消息验证发送、接收、消息头、超时、无效端口、原异常/恢复调用错误、errno、调用范围及诊断写入失败。它不能模拟手机 launchd 的异常处理策略；需要新设备日志判断下一步修复。
 
 v2 修复原方法指针发布的并发窗口：先保存并发布原实现，再安装钩子。v1 将保存动作放在方法替换返回之后，原离线库已启动的预取线程可能在该窗口调用尚未保存的空指针。这是确认的代码缺陷，是否对应用户本次秒退仍需新 `.ips` 证明。构造函数改用 C / Objective-C runtime API，不在启动入口创建 Foundation 对象，并在每个启动步骤写入同一个诊断日志。版本号为 1.6 / build 3，产物名包含 `v2`。
 

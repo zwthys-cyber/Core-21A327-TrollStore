@@ -7,7 +7,8 @@ import plistlib
 import struct
 import sys
 import zipfile
-from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup
+from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup, inject
+from remote_imports import ALIASES, redirect_remote_imports, records
 
 
 def sections(data):
@@ -74,6 +75,43 @@ def main(ipa):
         assert paths.count(LOAD_PATH[:-1]) == 1
         assert uuid == CORE_UUID
         validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
+        expected_main = redirect_remote_imports(inject(original.read(app + "Core")))
+        # codesign may only resize __LINKEDIT and replace the signature. Check
+        # every other byte, including bind records, import names, and header stubs.
+        signature_offset = None
+        assert main[:32] == expected_main[:32]
+        actual_commands = list(commands(main))
+        expected_commands = list(commands(expected_main))
+        assert actual_commands == expected_commands
+        for (pos, cmd, size) in expected_commands:
+            actual = bytearray(main[pos:pos + size])
+            expected = bytearray(expected_main[pos:pos + size])
+            if cmd == 0x19 and expected[8:24].rstrip(b"\0") == b"__LINKEDIT":
+                actual[32:40] = expected[32:40]  # vmsize
+                actual[48:56] = expected[48:56]  # filesize
+            elif cmd == 0x1D:
+                signature_offset = struct.unpack_from("<I", expected, 8)[0]
+                actual[12:16] = expected[12:16]  # signature length
+            assert actual == expected, "Unexpected main load-command change"
+        assert signature_offset is not None
+        payload_start = 32 + struct.unpack_from("<I", expected_main, 20)[0]
+        assert main[payload_start:signature_offset] == expected_main[payload_start:signature_offset], "Unexpected unsigned program or import-table change"
+        _, chained_imports, symbol_imports = records(main)
+        for alias in ALIASES.values():
+            for table in (chained_imports, symbol_imports):
+                entries = [r for r in table if r["name"] == alias]
+                assert len(entries) == 1 and entries[0]["ordinal"] == 52
+        patch_library = archive.read(app + "CoreBootCache.dylib")
+        symbol_command = next(pos for pos, cmd, _ in commands(patch_library) if cmd == 2)
+        symoff, nsyms, stroff, strsize = struct.unpack_from("<4I", patch_library, symbol_command + 8)
+        exported = set()
+        for index in range(nsyms):
+            string, typ, _, _, _ = struct.unpack_from("<IBBHQ", patch_library, symoff + index * 16)
+            if typ == 0xF:
+                start = stroff + string
+                exported.add(patch_library[start:patch_library.index(b"\0", start, stroff + strsize)])
+        assert set(ALIASES.values()) <= exported, "Missing forwarding exports"
+        assert b"_CoreRemoteTraceTestScope" not in exported, "Test scope override leaked into device build"
         entitlements = signature(main)
         expected_entitlements = plistlib.loads((ROOT / "patch/TrollStore.entitlements.plist").read_bytes())
         assert entitlements == expected_entitlements, "Core signing permissions differ from the reviewed configuration"
@@ -110,11 +148,12 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == "8" and info["CoreBootCachePatchVersion"] == "7"
+        assert info["CFBundleVersion"] == "9" and info["CoreBootCachePatchVersion"] == "8"
+        assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
-    print("PASS: Core platform permissions, container identity and scoped graphics exceptions; independent arm64 probe; only two license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
+    print("PASS: exact unsigned Core payload and three trace imports; forwarding exports; original Core/offline sections and cache/kernel instructions; license startup changes; ABI, dependencies, permissions, resources and signatures verified")
 
 
 if __name__ == "__main__":

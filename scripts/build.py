@@ -188,12 +188,14 @@ def main():
     extract(args.input, work)
     app = work / "Payload/Core.app"
     binary = app / "Core"
-    binary.write_bytes(inject(binary.read_bytes()))
+    from remote_imports import redirect_remote_imports
+    binary.write_bytes(redirect_remote_imports(inject(binary.read_bytes())))
     license_library = app / "CCCoreLicense.dylib"
     license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
     dylib = app / "CoreBootCache.dylib"
     probe = app / "CoreBootProbe"
     source = ROOT / "patch/CoreBootCache.m"
+    trace_source = ROOT / "patch/CoreRemoteTrace.c"
     probe_source = ROOT / "patch/CoreBootProbe.m"
     common = ["-arch", "arm64e", "-miphoneos-version-min=17.0", "-O2", "-Wall", "-Wextra",
               "-Werror", "-Wno-unused-parameter", "-fobjc-arc", "-fblocks"]
@@ -202,7 +204,7 @@ def main():
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
             "-Wl,-install_name,@executable_path/CoreBootCache.dylib", "-framework", "Foundation",
             "-Wl,-current_version,1.0.0,-compatibility_version,1.0.0",
-            "-framework", "UIKit", "-framework", "IOKit", "-framework", "Security", source, "-o", dylib)
+            "-framework", "UIKit", "-framework", "IOKit", "-framework", "Security", source, trace_source, "-o", dylib)
         run("xcrun", "--sdk", "iphoneos", "clang", "-arch", "arm64", *common[2:],
             "-isysroot", sdk, "-framework", "Foundation", "-framework", "IOKit", probe_source, "-o", probe)
     else:
@@ -211,11 +213,14 @@ def main():
         obj = work / "CoreBootCache.o"
         run(args.clang, "-target", "arm64e-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
             "-c", source, "-o", obj)
+        trace_obj = work / "CoreRemoteTrace.o"
+        run(args.clang, "-target", "arm64e-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
+            "-c", trace_source, "-o", trace_obj)
         run(args.linker, "-dylib", "-arch", "arm64e", "-platform_version", "ios", "17.0", "16.5",
             "-syslibroot", args.sdk, "-lSystem", "-lobjc", "-framework", "Foundation", "-framework",
             "UIKit", "-framework", "IOKit", "-framework", "Security", "-install_name", "@executable_path/CoreBootCache.dylib",
             "-current_version", "1.0.0", "-compatibility_version", "1.0.0",
-            "-adhoc_codesign", obj, "-o", dylib)
+            "-adhoc_codesign", obj, trace_obj, "-o", dylib)
         probe_obj = work / "CoreBootProbe.o"
         run(args.clang, "-target", "arm64-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
             "-c", probe_source, "-o", probe_obj)
@@ -225,9 +230,9 @@ def main():
     validate_patch_dependency(binary.read_bytes(), dylib.read_bytes())
     info_path = app / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update(CFBundleVersion="8", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
-                CoreBootCachePatchVersion="7", CoreBootCacheSupportedBuild="21A327",
-                CoreLocalLicenseGate="disabled-startup")
+    info.update(CFBundleVersion="9", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
+                CoreBootCachePatchVersion="8", CoreBootCacheSupportedBuild="21A327",
+                CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -250,16 +255,17 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / "Core-17.0-21A327-TrollStore-v7.ipa"
+    artifact = dist / "Core-17.0-21A327-TrollStore-v8.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(work))
     report = dict(input_sha256=original_hash, artifact=artifact.name,
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=7,
+                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=8,
                   boot_acquisition="separate preparation app with current-boot stamp and digest; direct/probe fallback",
                   local_license_gate="disabled-startup",
+                  remote_trace="three libSystem imports forwarded unchanged; original error codes and receive duration",
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
