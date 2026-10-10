@@ -25,7 +25,7 @@ def main():
         "-framework", "UIKit", "-framework", "IOKit", ROOT / "diagnostics/main.m", "-o", binary)
     info = dict(CFBundleIdentifier="local.core.diagnostics", CFBundleExecutable="CoreDiagnostics",
         CFBundleName="CoreDiagnostics", CFBundleDisplayName="Core 诊断", CFBundlePackageType="APPL",
-        CFBundleShortVersionString="1.0", CFBundleVersion="1", MinimumOSVersion="15.0",
+        CFBundleShortVersionString="1.1", CFBundleVersion="2", MinimumOSVersion="15.0",
         LSRequiresIPhoneOS=True, UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
         UIDeviceFamily=[1,2], UILaunchScreen={}, UISupportedInterfaceOrientations=["UIInterfaceOrientationPortrait"])
     (app / "Info.plist").write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
@@ -35,13 +35,13 @@ def main():
     run("codesign", "--verify", "--deep", "--strict", app)
     dist = ROOT / "dist/diagnostics"
     dist.mkdir(parents=True, exist_ok=True)
-    ipa = dist / "Core-Diagnostics-TrollStore.ipa"
+    ipa = dist / "Core-Diagnostics-TrollStore-v2.ipa"
     with zipfile.ZipFile(ipa, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(app.rglob("*")):
             if path.is_file(): archive.write(path, path.relative_to(work))
     metadata = dict(artifact=ipa.name, sha256=hashlib.sha256(ipa.read_bytes()).hexdigest(),
         architecture="arm64", minimum_ios="15.0", device_runtime_verified=False,
-        scope="Core registration, installed Mach-O metadata, Core logs, startup request result; no Core modification")
+        scope="Core registration, installed Mach-O/signing metadata, Core logs, launch result and standalone stderr capture; no Core binary modification")
     (dist / "build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     print(json.dumps(metadata, indent=2))
 

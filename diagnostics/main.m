@@ -7,6 +7,11 @@
 #import <sys/stat.h>
 #import <unistd.h>
 #import <dlfcn.h>
+#import <spawn.h>
+#import <sys/wait.h>
+#import <fcntl.h>
+#import <errno.h>
+#import <signal.h>
 
 static NSString *const CoreID = @"qingxiugai.qingxiugai.qinxiugai";
 
@@ -35,14 +40,58 @@ static NSString *SysValue(const char *name) {
                                 encoding:NSUTF8StringEncoding] ?: @"unavailable";
 }
 
-static NSDictionary *ErrorInfo(NSError *error) {
+static NSDictionary *ErrorDetails(NSError *error, NSUInteger depth) {
     if (!error) return @{};
     NSMutableDictionary *result = [@{@"domain":error.domain, @"code":@(error.code),
                                      @"description":error.localizedDescription} mutableCopy];
+    NSMutableDictionary *extra = [NSMutableDictionary new];
+    for (NSString *key in error.userInfo) {
+        id value = error.userInfo[key];
+        if ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class]) extra[key] = value;
+    }
+    if (extra.count) result[@"details"] = extra;
     NSError *underlying = error.userInfo[NSUnderlyingErrorKey];
-    if ([underlying isKindOfClass:NSError.class] && underlying != error)
-        result[@"underlying"] = [NSString stringWithFormat:@"%@ %ld %@", underlying.domain,
-                                (long)underlying.code, underlying.localizedDescription];
+    if (depth < 4 && [underlying isKindOfClass:NSError.class] && underlying != error)
+        result[@"underlying"] = ErrorDetails(underlying, depth + 1);
+    return result;
+}
+static NSDictionary *ErrorInfo(NSError *error) { return ErrorDetails(error, 0); }
+
+static uint32_t BE32(const uint8_t *bytes) {
+    uint32_t value; memcpy(&value, bytes, sizeof(value)); return __builtin_bswap32(value);
+}
+
+// Read only the embedded metadata. This does not establish CoreTrust acceptance.
+static NSDictionary *SigningInfo(NSData *data, uint32_t offset, uint32_t length) {
+    if (offset > data.length || length > data.length - offset || length < 12) return @{@"error":@"invalid signature range"};
+    const uint8_t *blob = (const uint8_t *)data.bytes + offset;
+    uint32_t total = BE32(blob + 4), count = BE32(blob + 8);
+    if (BE32(blob) != 0xfade0cc0 || total > length || total < 12 || count > (total - 12) / 8)
+        return @{@"error":@"invalid signature superblob"};
+    NSMutableDictionary *result = [NSMutableDictionary new];
+    NSMutableArray *directories = [NSMutableArray new];
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t slot = BE32(blob + 12 + 8 * i), start = BE32(blob + 16 + 8 * i);
+        if (start > total || total - start < 8) continue;
+        uint32_t size = BE32(blob + start + 4);
+        if (size < 8 || size > total - start) continue;
+        const uint8_t *item = blob + start;
+        if (BE32(item) == 0xfade0c02 && size >= 44) {
+            uint32_t identifier = BE32(item + 20);
+            NSMutableDictionary *directory = [@{@"slot":@(slot), @"version":@(BE32(item + 8)),
+                @"flags":@(BE32(item + 12)), @"code_pages":@(BE32(item + 28)),
+                @"code_limit":@(BE32(item + 32)), @"hash_type":@(item[37]), @"page_shift":@(item[39])} mutableCopy];
+            if (identifier < size) directory[@"identifier"] = [[NSString alloc]
+                initWithBytes:item + identifier length:strnlen((const char *)item + identifier, size - identifier)
+                encoding:NSUTF8StringEncoding] ?: @"invalid";
+            [directories addObject:directory];
+        } else if (slot == 5 && BE32(item) == 0xfade7171) {
+            NSData *xml = [NSData dataWithBytes:item + 8 length:size - 8];
+            id plist = [NSPropertyListSerialization propertyListWithData:xml options:NSPropertyListImmutable format:NULL error:NULL];
+            if ([plist isKindOfClass:NSDictionary.class]) result[@"entitlements"] = plist;
+        } else if (slot == 7) result[@"DER_entitlements_present"] = @YES;
+    }
+    result[@"code_directories"] = directories;
     return result;
 }
 
@@ -80,6 +129,7 @@ static NSDictionary *MachInfo(NSURL *url) {
     result[@"cpu_type"] = @(header.cputype);
     result[@"cpu_subtype"] = @((uint32_t)header.cpusubtype);
     NSMutableArray *libraries = [NSMutableArray new];
+    NSMutableArray *versions = [NSMutableArray new];
     size_t offset = sizeof(header), end = offset + header.sizeofcmds;
     for (uint32_t i = 0; i < header.ncmds; ++i) {
         if (offset > end || end - offset < sizeof(struct load_command)) break;
@@ -87,7 +137,7 @@ static NSDictionary *MachInfo(NSURL *url) {
         memcpy(&command, bytes + offset, sizeof(command));
         if (command.cmdsize < sizeof(command) || command.cmdsize > end - offset) break;
         const uint8_t *body = bytes + offset;
-        if (command.cmd == LC_LOAD_DYLIB || command.cmd == LC_LOAD_WEAK_DYLIB) {
+        if (command.cmd == LC_LOAD_DYLIB || command.cmd == LC_LOAD_WEAK_DYLIB || command.cmd == LC_ID_DYLIB) {
             struct dylib_command dylib;
             if (command.cmdsize >= sizeof(dylib)) {
                 memcpy(&dylib, body, sizeof(dylib));
@@ -95,9 +145,18 @@ static NSDictionary *MachInfo(NSURL *url) {
                     const char *name = (const char *)body + dylib.dylib.name.offset;
                     size_t count = strnlen(name, command.cmdsize - dylib.dylib.name.offset);
                     NSString *text = [[NSString alloc] initWithBytes:name length:count encoding:NSUTF8StringEncoding];
-                    if (text) [libraries addObject:text];
+                    if (text) {
+                        if (command.cmd != LC_ID_DYLIB) [libraries addObject:text];
+                        [versions addObject:@{@"name":text, @"command":@(command.cmd),
+                            @"current_version_raw":@(dylib.dylib.current_version),
+                            @"compatibility_version_raw":@(dylib.dylib.compatibility_version)}];
+                    }
                 }
             }
+        } else if (command.cmd == LC_CODE_SIGNATURE && command.cmdsize >= sizeof(struct linkedit_data_command)) {
+            struct linkedit_data_command signing;
+            memcpy(&signing, body, sizeof(signing));
+            result[@"embedded_signing"] = SigningInfo(data, signing.dataoff, signing.datasize);
         } else if (command.cmd == LC_UUID && command.cmdsize >= sizeof(struct uuid_command)) {
             struct uuid_command uuid;
             memcpy(&uuid, body, sizeof(uuid));
@@ -123,6 +182,7 @@ static NSDictionary *MachInfo(NSURL *url) {
         offset += command.cmdsize;
     }
     result[@"loaded_libraries"] = libraries;
+    result[@"dylib_versions"] = versions;
     result[@"patch_load_present"] = @([libraries containsObject:@"@executable_path/CoreBootCache.dylib"]);
     return result;
 }
@@ -176,7 +236,7 @@ static NSArray *CrashReports(void) {
 }
 
 static NSDictionary *Collect(void) {
-    NSMutableDictionary *report = [@{@"diagnostic_version":@1, @"date":[NSDate date].description,
+    NSMutableDictionary *report = [@{@"diagnostic_version":@2, @"date":[NSDate date].description,
         @"device":SysValue("hw.machine"), @"build":SysValue("kern.osversion"),
         @"board":SysValue("hw.target"), @"uid":@(getuid()), @"Core_bundle_id":CoreID} mutableCopy];
     report[@"helper_paths"] = @{@"HOME":@(getenv("HOME") ?: "unset"),
@@ -249,10 +309,106 @@ static void RecordLaunch(NSDictionary *event) {
     }
 }
 
+// FrontBoard reports only the aggregate launch failure on this device. A separate,
+// short-lived child can expose dyld's stderr before either Core constructor runs.
+// Its result is labelled separately because this is not a SpringBoard app launch.
+static NSDictionary *CaptureCoreLaunch(void) {
+    NSMutableDictionary *result = [@{@"stage":@"standalone stderr capture",
+        @"same_as_FrontBoard_launch":@NO} mutableCopy];
+    dlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices", RTLD_LAZY);
+    Class cls = NSClassFromString(@"LSApplicationProxy");
+    id proxy = [cls respondsToSelector:@selector(applicationProxyForIdentifier:)] ?
+        [cls applicationProxyForIdentifier:CoreID] : nil;
+    NSURL *bundle = [proxy respondsToSelector:@selector(bundleURL)] ? [proxy bundleURL] : nil;
+    NSURL *container = [proxy respondsToSelector:@selector(dataContainerURL)] ? [proxy dataContainerURL] : nil;
+    if (!bundle || !container) { result[@"error"] = @"Core bundle or data container unavailable"; return result; }
+    NSURL *binary = [bundle URLByAppendingPathComponent:@"Core"];
+    NSURL *output = [Documents() URLByAppendingPathComponent:@"Core-launch-stderr.txt"];
+    int fd = open(output.fileSystemRepresentation, O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0600);
+    if (fd < 0) { result[@"output_open_errno"] = @(errno); return result; }
+    if (fd <= STDERR_FILENO) {
+        int duplicate = fcntl(fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+        int savedError = errno;
+        close(fd); fd = duplicate;
+        if (fd < 0) { result[@"output_open_errno"] = @(savedError); return result; }
+    }
+    posix_spawn_file_actions_t actions;
+    int actionError = posix_spawn_file_actions_init(&actions);
+    if (actionError) { close(fd); result[@"file_actions_error"] = @(actionError); return result; }
+    actionError = posix_spawn_file_actions_adddup2(&actions, fd, STDOUT_FILENO);
+    if (!actionError) actionError = posix_spawn_file_actions_adddup2(&actions, fd, STDERR_FILENO);
+    if (!actionError) actionError = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    if (!actionError) actionError = posix_spawn_file_actions_addclose(&actions, fd);
+    if (actionError) {
+        posix_spawn_file_actions_destroy(&actions); close(fd);
+        result[@"file_actions_error"] = @(actionError); return result;
+    }
+    NSMutableDictionary *environment = NSProcessInfo.processInfo.environment.mutableCopy;
+    environment[@"HOME"] = container.path;
+    environment[@"CFFIXED_USER_HOME"] = container.path;
+    environment[@"TMPDIR"] = [[container URLByAppendingPathComponent:@"tmp"] path];
+    NSArray *keys = environment.allKeys;
+    char **env = calloc(keys.count + 1, sizeof(char *));
+    if (!env) { posix_spawn_file_actions_destroy(&actions); close(fd); result[@"error"] = @"environment allocation failed"; return result; }
+    BOOL allocationOK = YES;
+    for (NSUInteger i = 0; i < keys.count; ++i) {
+        env[i] = strdup([[NSString stringWithFormat:@"%@=%@", keys[i], environment[keys[i]]] UTF8String]);
+        if (!env[i]) allocationOK = NO;
+    }
+    char *args[] = {(char *)binary.fileSystemRepresentation, NULL};
+    pid_t child = -1;
+    int spawnError = allocationOK ? posix_spawn(&child, binary.fileSystemRepresentation, &actions, NULL, args, env) : ENOMEM;
+    for (NSUInteger i = 0; i < keys.count; ++i) free(env[i]);
+    free(env);
+    posix_spawn_file_actions_destroy(&actions);
+    close(fd);
+    result[@"posix_spawn_errno"] = @(spawnError);
+    if (spawnError) result[@"posix_spawn_message"] = @(strerror(spawnError));
+    else {
+        result[@"pid"] = @(child);
+        int status = 0;
+        pid_t waited = 0;
+        for (NSUInteger i = 0; i < 30; ++i) {
+            waited = waitpid(child, &status, WNOHANG);
+            if (waited < 0 && errno == EINTR) waited = 0;
+            if (waited != 0) break;
+            usleep(100000);
+        }
+        if (waited == 0) {
+            // Stop only the exact child created above, never an existing Core process.
+            result[@"stopped_by_diagnostic_after_seconds"] = @3;
+            int killed = kill(child, SIGKILL);
+            result[@"timeout_kill_errno"] = @(killed == 0 ? 0 : errno);
+            for (NSUInteger i = 0; i < 10; ++i) {
+                waited = waitpid(child, &status, WNOHANG);
+                if (waited < 0 && errno == EINTR) waited = 0;
+                if (waited != 0) break;
+                usleep(100000);
+            }
+        }
+        if (waited == child) {
+            if (WIFEXITED(status)) result[@"exit_code"] = @(WEXITSTATUS(status));
+            if (WIFSIGNALED(status)) result[@"exit_signal"] = @(WTERMSIG(status));
+        } else if (waited < 0) result[@"wait_errno"] = @(errno);
+        else result[@"child_not_reaped"] = @YES;
+    }
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:output.path];
+    if (handle) {
+        unsigned long long size = [handle seekToEndOfFile];
+        [handle seekToFileOffset:size > 65536 ? size - 65536 : 0];
+        NSData *tail = [handle readDataToEndOfFile];
+        [handle closeFile];
+        result[@"stdout_stderr_tail"] = [[NSString alloc] initWithData:tail encoding:NSUTF8StringEncoding] ?: @"output is not UTF-8";
+        result[@"stdout_stderr_bytes"] = @(size);
+    }
+    return result;
+}
+
 @interface DiagnosticController : UIViewController
 @property(nonatomic,strong) UITextView *text;
 @property(nonatomic,strong) NSURL *reportURL;
 @property(nonatomic,strong) UIButton *collectButton;
+@property(nonatomic,strong) UIButton *launchButton;
 @end
 
 @implementation DiagnosticController
@@ -265,6 +421,7 @@ static void RecordLaunch(NSDictionary *event) {
     help.text = @"先点「记录启动」尝试打开 Core；闪退后返回此工具，点「收集诊断」，再分享报告。";
     help.font = [UIFont systemFontOfSize:16];
     UIButton *launch = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.launchButton = launch;
     [launch setTitle:@"记录启动" forState:UIControlStateNormal];
     [launch addTarget:self action:@selector(launchCore) forControlEvents:UIControlEventTouchUpInside];
     self.collectButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -293,6 +450,7 @@ static void RecordLaunch(NSDictionary *event) {
     self.reportURL = [Documents() URLByAppendingPathComponent:@"Core-diagnostic-report.json"];
 }
 - (void)launchCore {
+    self.launchButton.enabled = NO;
     RecordLaunch(@{@"stage":@"requested"});
     @try {
         dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_LAZY);
@@ -303,8 +461,11 @@ static void RecordLaunch(NSDictionary *event) {
                 RecordLaunch(@{@"stage":@"FrontBoard result", @"request_accepted":@(error == nil),
                                @"error":ErrorInfo(error)});
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    self.text.text = error ? [NSString stringWithFormat:@"启动请求错误：%@\n点「收集诊断」导出完整报告。", error] :
-                        @"系统已接受启动请求。这不代表 Core 启动成功。返回后点「收集诊断」。";
+                    if (error) [self captureFailure];
+                    else {
+                        self.launchButton.enabled = YES;
+                        self.text.text = @"系统已接受启动请求。这不代表 Core 启动成功。返回后点「收集诊断」。";
+                    }
                 });
             }];
             return;
@@ -314,11 +475,27 @@ static void RecordLaunch(NSDictionary *event) {
         BOOL accepted = [workspace respondsToSelector:@selector(openApplicationWithBundleID:)] &&
                         [workspace openApplicationWithBundleID:CoreID];
         RecordLaunch(@{@"stage":@"LaunchServices fallback", @"request_accepted":@(accepted)});
-        self.text.text = accepted ? @"启动请求已提交，返回后点「收集诊断」。" : @"系统未接受启动请求，点「收集诊断」导出报告。";
+        if (!accepted) [self captureFailure];
+        else { self.launchButton.enabled = YES; self.text.text = @"启动请求已提交，返回后点「收集诊断」。"; }
     } @catch (NSException *exception) {
         RecordLaunch(@{@"stage":@"launch exception", @"exception":exception.description});
-        self.text.text = @"启动接口返回异常，点「收集诊断」导出报告。";
+        [self captureFailure];
     }
+}
+- (void)captureFailure {
+    self.collectButton.enabled = NO;
+    self.text.text = @"系统启动失败，正在尝试捕获底层错误，请等待约 4 秒…";
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        @autoreleasepool {
+            @try { RecordLaunch(CaptureCoreLaunch()); }
+            @catch (NSException *exception) { RecordLaunch(@{@"stage":@"capture exception", @"exception":exception.description}); }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self.launchButton.enabled = YES;
+                self.collectButton.enabled = YES;
+                self.text.text = @"启动错误捕获已完成。点「收集诊断」，再「分享报告」。";
+            });
+        }
+    });
 }
 - (void)collectReport {
     self.collectButton.enabled = NO;
