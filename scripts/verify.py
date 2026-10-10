@@ -110,11 +110,11 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == "7" and info["CoreBootCachePatchVersion"] == "6"
+        assert info["CFBundleVersion"] == "8" and info["CoreBootCachePatchVersion"] == "7"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
-    print("PASS: Core platform permissions, preserved container and scoped graphics exceptions; independent arm64 probe; only two license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
+    print("PASS: Core platform permissions, container identity and scoped graphics exceptions; independent arm64 probe; only two license startup instructions changed; original Core and offline sections, ABI, dependencies, signed entitlements and resources verified")
 
 
 if __name__ == "__main__":

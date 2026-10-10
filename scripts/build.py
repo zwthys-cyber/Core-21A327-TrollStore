@@ -225,8 +225,8 @@ def main():
     validate_patch_dependency(binary.read_bytes(), dylib.read_bytes())
     info_path = app / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update(CFBundleVersion="7", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
-                CoreBootCachePatchVersion="6", CoreBootCacheSupportedBuild="21A327",
+    info.update(CFBundleVersion="8", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
+                CoreBootCachePatchVersion="7", CoreBootCacheSupportedBuild="21A327",
                 CoreLocalLicenseGate="disabled-startup")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
@@ -250,15 +250,15 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / "Core-17.0-21A327-TrollStore-v6.ipa"
+    artifact = dist / "Core-17.0-21A327-TrollStore-v7.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(work))
     report = dict(input_sha256=original_hash, artifact=artifact.name,
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=6,
-                  boot_acquisition="platform-enabled Core direct read; bundled platform probe fallback",
+                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=7,
+                  boot_acquisition="separate preparation app with current-boot stamp and digest; direct/probe fallback",
                   local_license_gate="disabled-startup",
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)

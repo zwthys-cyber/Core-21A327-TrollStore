@@ -17,6 +17,7 @@
 #import <dlfcn.h>
 #import "CoreBootPolicy.h"
 #import "CoreBootProbeClient.h"
+#import "CorePreparedCache.h"
 
 // Core 1.6, UUID 4ED1FD29-A46A-36B3-8DFC-36F67EA929D1.
 // This declaration describes the original, unmodified cache publisher.
@@ -46,7 +47,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=6 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=7 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -144,6 +145,18 @@ static NSString *BootHash(void) {
     return result;
 }
 
+static void LogSandboxStatus(void) {
+    typedef int (*SandboxCheck)(pid_t, const char *, int, ...);
+    SandboxCheck check = (SandboxCheck)dlsym(RTLD_DEFAULT, "sandbox_check");
+    if (!check) {
+        void *library = dlopen("/usr/lib/system/libsystem_sandbox.dylib", RTLD_LAZY | RTLD_LOCAL);
+        if (library) check = (SandboxCheck)dlsym(library, "sandbox_check");
+    }
+    if (!check) { Log(@"runtime sandbox query unavailable"); return; }
+    errno = 0; int result = check(getpid(), NULL, 0); int saved = errno;
+    Log([NSString stringWithFormat:@"runtime sandbox_check=%d errno=%d (0=unsandboxed, 1=sandboxed)", result, saved]);
+}
+
 static NSArray<NSURL *> *Candidates(NSString *hash, NSString *board) {
     // Never search other preboot hashes: an older installed build is unsafe here.
     NSString *boot = [@"/private/preboot" stringByAppendingPathComponent:hash];
@@ -224,9 +237,27 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=6 product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=7 product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         LogAcquisitionPermissions();
+        LogSandboxStatus();
+        NSURL *preparedDirectory = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
+            inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"CoreBootCacheInput" isDirectory:YES];
+        NSURL *manifest = [preparedDirectory URLByAppendingPathComponent:@"manifest.json"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:manifest.path]) {
+            NSError *preparedError = nil;
+            NSDictionary *prepared = CBCReadPrepared(preparedDirectory, product, build, board, CBCBootStamp(), &preparedError);
+            if (prepared) {
+                Log([NSString stringWithFormat:@"prepared current-boot acquisition passed: bytes=%lu",
+                    (unsigned long)[prepared[@"data"] length]]);
+                if (PublishBootData(self, selector, prepared[@"data"], [NSURL fileURLWithPath:prepared[@"source_path"]],
+                    cache, metadata, product, build, board)) {
+                    [[NSFileManager defaultManager] removeItemAtURL:manifest error:NULL];
+                    [[NSFileManager defaultManager] removeItemAtURL:[preparedDirectory URLByAppendingPathComponent:@"kernelcache.bin"] error:NULL];
+                    return YES;
+                }
+            } else Log([NSString stringWithFormat:@"prepared current-boot input rejected: %@", preparedError]);
+        } else Log(@"No prepared input; use Core 环境准备 if direct acquisition fails");
         NSString *hash = BootHash();
         if (!hash) {
             Log(@"Direct boot hash unavailable; falling back to bundled platform probe");
@@ -273,7 +304,7 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         }
         if (error) Log([NSString stringWithFormat:@"FAILED: bundled probe: %@", error]);
         Log(@"FAILED: no readable, valid current-boot kernelcache");
-        ShowFailure(@"当前系统内核文件读取或校验失败。请使用巨魔安装此 IPA，并将诊断日志发回分析。");
+        ShowFailure(@"当前系统内核文件尚未准备好。请关闭 Core，打开“Core 环境准备”并点击准备；成功后重新打开 Core。");
         return NO;
     }
 }

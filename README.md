@@ -8,18 +8,19 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v6` artifact，解压得到 IPA。原应用没有完整源码，此处编译适配 dylib 和独立读取程序，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**；下载 `Core-17.0-21A327-TrollStore-v7` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 打开生成的 IPA，覆盖已有 Core。
-2. 完全关闭 Core 后重新启动，等待环境适配完成。
-3. 环境就绪后，才测试原内核按钮。
-4. 若仍失败，在“文件 → 我的 iPhone → Core”导出上述日志。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v7.ipa`，再安装 `Core-Cache-Prepare-TrollStore.ipa`。
+2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
+3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
+4. 环境就绪后，才测试原内核按钮。
+5. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”；若 Core 失败，导出它的两份日志。
 
-用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v5 的设备日志明确显示适配补丁运行，但 IORegistry 当前启动哈希属性不可读，独立读取程序在 posix_spawn 时被拒绝，返回 EPERM；内核利用尚未开始。v6 修正主程序平台权限，实际环境就绪仍需设备验证。构建、签名和静态检查不能代替设备验证；资源获取补丁不保证原内核利用成功。
+用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v6 的设备日志显示三项签名权限实际存在，但 IORegistry 当前启动哈希属性仍不可读，独立读取程序在 posix_spawn 时仍被拒绝，返回 EPERM；内核利用尚未开始。v7 提供独立的准备应用，通过 Core 自身容器传递缓存；实际环境就绪仍需设备验证。构建、签名和静态检查不能代替设备验证；资源获取补丁不保证原内核利用成功。
 
 v2 修复原方法指针发布的并发窗口：先保存并发布原实现，再安装钩子。v1 将保存动作放在方法替换返回之后，原离线库已启动的预取线程可能在该窗口调用尚未保存的空指针。这是确认的代码缺陷，是否对应用户本次秒退仍需新 `.ips` 证明。构造函数改用 C / Objective-C runtime API，不在启动入口创建 Foundation 对象，并在每个启动步骤写入同一个诊断日志。版本号为 1.6 / build 3，产物名包含 `v2`。
 
@@ -42,6 +43,14 @@ v6 为 1.6 / build 7 / patch 6。v5 的设备日志显示 `Probe launch failed (
 Core 导入 IOSurfaceCreate 和 MTLCreateSystemDefaultDevice。为避免新增平台权限影响这两类图形接口，声明 AGXDeviceUserClient、AGXSharedUserClient、AGXGLContext、AGXCommandQueue 和 IOSurfaceRootUserClient 例外；名称参考 TrollStore 与相同内核后端作者公开的签名配置。未引入 root 身份切换或其他应用管理权限。独立读取程序保留为后备，原缓存发布器和校验器仍决定成功与否。新日志只查询平台、no-sandbox、AppDataContainers 三项运行时权限，不记录其他签名权限或凭据。
 
 这是根据权限失败证据实施的修复，不能从 EPERM 单独断言系统内部拒绝原因。设备核验应先看到 `patch=6` 和上述三项权限为 1，再看到原缓存校验 `SUCCESS`，最后确认 Core 的环境状态。若仍在获取资源阶段失败，完整日志会区分签名权限、直接读取和子进程读取结果。
+
+v7 为 1.6 / build 8 / patch 7。用户更新的 v6 日志已确认 platform-application、no-sandbox、AppDataContainers 三项均为 1，但启动哈希属性和 posix_spawn 仍失败。这排除了“仅缺少平台权限”作为完整解释。不能把签名声明等同于实际无沙箱状态，也不能从单个 EPERM 区分沙箱与执行签名限制；新增 sandbox_check 自身状态记录，不修改原内核后端。
+
+新的“Core 环境准备”是单独安装、由桌面启动的 arm64 UIKit 应用，沿用此前在设备上成功读取启动哈希的诊断应用配置，并通过 LSApplicationProxy 查找 Core 自己的数据容器。它只读取当前启动哈希下的 kernelcache，原子写入 `Documents/CoreBootCacheInput/kernelcache.bin`，随后发布 `manifest.json`。目录保存设备、构建、主板、kern.boottime、启动哈希、源路径、实际长度和 SHA-256。准备应用写入后，使用与 Core 相同的接收检查回读确认完整。它不启动 Core 子进程、不执行内核利用、不联网。
+
+Core 在直接获取前先检查自己的输入目录：严格拒绝型号/主板/系统不符、其他启动时间、启动路径异常、类型错误、超限数据、符号链接、损坏文件或摘要不符。接受完整传输后，仍调用原 qm539 发布器和 qm509 验证器；只有两者成功才返回原准备流程。成功后删除这两个传输文件，保留原发布器建立的正常缓存。当前启动时间不可读时拒绝输入，重启后的旧传输不会被接受。Core 采用已能启动的 v6 签名和容器设置；不依赖 Core 的沙箱限制被解除。
+
+macOS 接收测试覆盖真实文件传输、独立已知 SHA-256、错误设备/系统/主板、两种启动时间不符、路径越界、摘要/长度/数字类型错误、缺失当前启动时间、损坏文件、链接、目录及超限清单。独立应用的读取和写入权限仍需实机测试；之前的诊断结果证明读取路径可用，尚不能保证新应用写入成功。设备成功记录应依次为准备工具的 `SUCCESS prepared current-boot cache`、Core 的 `prepared current-boot acquisition passed` 和原缓存校验 `SUCCESS`。
 
 独立诊断工具已确认用户安装的是 v2，注册状态为 System，当前启动的 kernelcache 可读；FrontBoard 返回 FBProcessExit 64 / RBSRequestErrorDomain 5，表示启动期间退出。收集到的五份 `.ips` 全部属于旧 build 1，不能解释 v2。诊断 v2 会读取实际安装后的嵌入签名元数据，并在正常启动失败后创建短时独立子进程捕获 stderr；独立启动与桌面启动的差异会在报告中注明。
 
