@@ -13,12 +13,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run packaging tests
         run: python3 -m unittest discover -s tests -v
+      - name: Test hook publication against an immediate concurrent callback
+        run: |
+          xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework IOKit tests/test_hook_runtime.m -o /tmp/core-hook-test
+          /tmp/core-hook-test
       - name: Build device dylib and TrollStore IPA
         run: python3 scripts/build.py
       - name: Validate output
-        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore.ipa
+        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-v2.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: Core-17.0-21A327-TrollStore
+          name: Core-17.0-21A327-TrollStore-v2
           path: dist/*
           retention-days: 14

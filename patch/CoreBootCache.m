@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
+#ifndef CBC_HOST_TEST
 #import <UIKit/UIKit.h>
+#endif
 #import <IOKit/IOKitLib.h>
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
@@ -9,6 +11,9 @@
 #import <errno.h>
 #import <string.h>
 #import <stdlib.h>
+#import <fcntl.h>
+#import <stdio.h>
+#import <stdatomic.h>
 #import "CoreBootPolicy.h"
 
 // Core 1.6, UUID 4ED1FD29-A46A-36B3-8DFC-36F67EA929D1.
@@ -20,9 +25,40 @@
 @end
 
 typedef BOOL (*CacheValidator)(id, SEL, NSURL *, NSURL *, NSString *, NSString *, NSString *);
-static CacheValidator OriginalValidator;
+static _Atomic(CacheValidator) OriginalValidator;
 static _Thread_local BOOL Publishing;
 static BOOL Attempted;
+
+// Avoid Foundation, ObjC allocation and thread-local initialization at the first checkpoint.
+static void StartupRecord(const char *phase) {
+    const char *container = getenv("HOME");
+    if (!container || (!strstr(container, "/Containers/Data/Application/") &&
+                       !strstr(container, "/Containers/Data/PluginKitPlugin/"))) return;
+    char directory[PATH_MAX], path[PATH_MAX], line[512];
+    int count = snprintf(directory, sizeof(directory), "%s/Documents", container);
+    if (count <= 0 || (size_t)count >= sizeof(directory)) return;
+    mkdir(directory, 0700);
+    count = snprintf(path, sizeof(path), "%s/Core-21A327-adaptation.log", directory);
+    if (count <= 0 || (size_t)count >= sizeof(path)) return;
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+    if (fd < 0) return;
+    count = snprintf(line, sizeof(line), "patch=2 pid=%u startup: %s\n", getpid(), phase);
+    if (count > 0 && (size_t)count < sizeof(line)) {
+        ssize_t result;
+        do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
+    }
+    close(fd);
+}
+
+static BOOL ValidateOriginal(id self, SEL selector, NSURL *cache, NSURL *metadata,
+                             NSString *product, NSString *build, NSString *board) {
+    CacheValidator original = atomic_load_explicit(&OriginalValidator, memory_order_acquire);
+    if (!original) {
+        StartupRecord("ERROR original validator unavailable");
+        return NO;
+    }
+    return original(self, selector, cache, metadata, product, build, board);
+}
 
 static NSString *SysString(const char *key) {
     size_t size = 0;
@@ -105,6 +141,7 @@ static NSArray<NSURL *> *Candidates(NSString *hash, NSString *board) {
 }
 
 static void ShowFailure(NSString *reason) {
+#ifndef CBC_HOST_TEST
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
         for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -123,19 +160,23 @@ static void ShowFailure(NSString *reason) {
         [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
         [controller presentViewController:alert animated:YES completion:nil];
     });
+#else
+    Log(reason);
+#endif
 }
 
 static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *metadata,
                                  NSString *product, NSString *build, NSString *board) {
-    if (OriginalValidator(self, selector, cache, metadata, product, build, board)) return YES;
+    StartupRecord("validator entered");
+    if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
     if (Publishing || !CBCIdentityMatches(product.UTF8String, build.UTF8String, board.UTF8String,
         SysString("hw.product").UTF8String, SysString("kern.osversion").UTF8String,
         SysString("hw.target").UTF8String)) return NO;
     @synchronized (self) {
-        if (OriginalValidator(self, selector, cache, metadata, product, build, board)) return YES;
+        if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=1 product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=2 product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         NSString *hash = BootHash();
         if (!hash) {
@@ -172,8 +213,12 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
                 @try {
                     published = [self qm539:data source:url
                         productType:product buildVersion:build boardConfig:board error:&error];
+                } @catch (NSException *exception) {
+                    error = [NSError errorWithDomain:@"CoreBootCache" code:2
+                        userInfo:@{NSLocalizedDescriptionKey:
+                            [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason]}];
                 } @finally { Publishing = NO; }
-                BOOL valid = published && OriginalValidator(self, selector, cache, metadata, product, build, board);
+                BOOL valid = published && ValidateOriginal(self, selector, cache, metadata, product, build, board);
                 Log([NSString stringWithFormat:@"publish %@ bytes=%lu result=%d error=%@",
                      path, (unsigned long)data.length, valid, error]);
                 if (valid) {
@@ -189,18 +234,24 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
 }
 
 __attribute__((constructor)) static void InstallBootCachePatch(void) {
-    @autoreleasepool {
-        Class cls = NSClassFromString(@"QXA107");
-        SEL selector = NSSelectorFromString(@"qm509:metadataURL:matchesProduct:build:board:");
-        Method method = class_getInstanceMethod(cls, selector);
-        Method publisher = class_getInstanceMethod(cls,
-            NSSelectorFromString(@"qm539:source:productType:buildVersion:boardConfig:error:"));
-        if (!method || !publisher || method_getNumberOfArguments(method) != 7 ||
-            method_getNumberOfArguments(publisher) != 8) {
-            NSLog(@"[CoreBootCache] Unsupported Core ABI; patch not installed");
-            return;
-        }
-        OriginalValidator = (CacheValidator)method_setImplementation(method, (IMP)ValidateWithBootCache);
-        NSLog(@"[CoreBootCache] Installed current-boot kernelcache fallback for 21A327");
+    StartupRecord("constructor entered");
+    Class cls = objc_getClass("QXA107");
+    SEL selector = sel_registerName("qm509:metadataURL:matchesProduct:build:board:");
+    Method method = class_getInstanceMethod(cls, selector);
+    Method publisher = class_getInstanceMethod(cls,
+        sel_registerName("qm539:source:productType:buildVersion:boardConfig:error:"));
+    StartupRecord("methods resolved");
+    if (!method || !publisher || method_getNumberOfArguments(method) != 7 ||
+        method_getNumberOfArguments(publisher) != 8) {
+        StartupRecord("unsupported Core ABI; hook skipped");
+        return;
     }
+    // The original CoreOffline constructor may already have launched the prefetch worker.
+    // Publish its callable original BEFORE another thread can observe the replacement.
+    CacheValidator original = (CacheValidator)method_getImplementation(method);
+    if (!original) { StartupRecord("missing original; hook skipped"); return; }
+    atomic_store_explicit(&OriginalValidator, original, memory_order_release);
+    StartupRecord("original published");
+    method_setImplementation(method, (IMP)ValidateWithBootCache);
+    StartupRecord("hook installed");
 }
