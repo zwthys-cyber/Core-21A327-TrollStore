@@ -1,4 +1,4 @@
-"""Limit the reviewed Core binary to enemy markers within 200 metres.
+"""Limit the reviewed Core binary to named enemy markers within 300 metres.
 
 This changes the application's UI and feature execution only. It does not
 change the game, the kernel backend, target process names, or detection paths.
@@ -9,7 +9,8 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-200m"
+PROFILE = "enemy-markers-300m-names"
+RANGE_METRES = 300
 
 
 def word(value):
@@ -57,7 +58,6 @@ DISABLED_READS = {
     0xDB3CC: "68234439",  # threat list collection
     0xDB46C: "6a974039",  # offscreen distance/indicator
     0xDB470: "69874039",  # offscreen indicator
-    0xDB5EC: "08014039",  # name/health panel style: native fallback is none
     0xDB680: "08014039",  # weapon (both player categories)
     0xDB69C: "68f34339",  # radar player markers
     0xDB864: "68234439",  # threat collection
@@ -117,10 +117,31 @@ def changes():
     for offset, expected in DISABLED_READS.items():
         destination = int.from_bytes(bytes.fromhex(expected), "little") & 31
         add(offset, expected, word(0x52800000 | destination), "disable unrelated render gate")
-    # Native line, box, distance and skeleton use the same preference for both
+    # Native line, box, distance, name and skeleton use the same preference for both
     # player categories. Old category switches cannot enable another feature.
     for offset in (0xDB630, 0xDB644, 0xDB658, 0xDB66C):
         add(offset, "08014039", word(0x39400000 | (0x23 << 10) | (27 << 5) | 8), "shared nearby-enemy toggle")
+
+    # Enter only the original compact name path, independently of old panel
+    # preferences. Keep the validated name lookup, native string copy, empty
+    # human/bot fallback and cleanup. Skip team numbers and all health drawing.
+    add(0xDB5EC, "08014039", word(0x39400000 | (0x23 << 10) | (27 << 5) | 8), "shared name toggle")
+    add(0xDB604, "686b68b8", word(0x52800028), "fixed compact name path")
+    add(0xDBF84, "fa0300f9", word(0x2F00E40C), "no team-number width")
+    add(0xDBF88, "e0430891", branch(0xDBF88, 0xDBFC0), "skip team-number formatting")
+    add(0xDC014, "82292d1e", word(0x2F00E402), "center name using its measured width")
+    add(0xDC050, "487fba0a", branch(0xDC050, 0xDC088), "skip team-number drawing")
+    add(0xDC08C, "a029201e", word(0xD503201F), "remove team-prefix padding")
+    add(0xDC09C, "e6040194", word(0x12800000), "white name text")
+    restore = b"".join([
+        word(0x1E2041EE),  # fmov s14, s15: restore original horizontal position
+        word(0xBD400000 | ((0xE0 // 4) << 10) | (31 << 5) | 13),
+        word(0xBD400000 | ((0x164 // 4) << 10) | (31 << 5) | 15),
+        word(0xBD400000 | ((0xDC // 4) << 10) | (31 << 5) | 10),
+        word(0xBD400000 | ((0xEC // 4) << 10) | (31 << 5) | 11),
+        branch(0xDC0F8, 0xDC358),  # original string cleanup and remaining restores
+    ])
+    add(0xDC0E4, "604642bd0859a8520101271e0018211e01102e1e0020211e", restore, "restore actor geometry and distance; skip health panel")
 
     # The native collector has separate human/bot skeleton gates. Updating
     # render gates alone leaves joint validity unset when old skeleton settings
@@ -129,7 +150,7 @@ def changes():
     # and range as the renderer before it chooses how many joints to acquire.
     for offset, expected in [(0xD88C0, "68e64239"), (0xD88D0, "688a4039")]:
         add(offset, expected, word(0x39400000 | (0x23 << 10) | (19 << 5) | 8), "shared toggle in native skeleton collector")
-    add(0xD88DC, "604240bd", word(0x52800008 | (200 << 5)), "collector skeleton range 200 metres")
+    add(0xD88DC, "604240bd", word(0x52800008 | (RANGE_METRES << 5)), "collector skeleton range 300 metres")
     add(0xD88E0, "00d8215e", word(0x1E220100), "convert fixed collector range to float")
 
     # Use unreachable aim-candidate instructions inside the same renderer frame;
@@ -181,11 +202,11 @@ def changes():
     add(0xDCBCC, "88be4039", word(0x39400000 | (0x23 << 10) | (20 << 5) | 8), "nearby markers request per-joint visibility")
     add(0xDCBD8, "7aa64739", branch(0xDCBD8, 0xDD4D0), "omit red/white skeleton when visibility is unavailable")
 
-    # Fix the original range clamp input to 200.0f. Keep native finite-distance,
+    # Fix the original range clamp input to 300.0f. Keep native finite-distance,
     # enemy-team and screen projection checks and original actor-loop cleanup.
-    add(0xDB278, "603340bd", word(0x52A00008 | (0x4348 << 5)), "fixed 200-metre range")
-    add(0xDB27C, "488fa852", word(0x1E270100), "range clamp input 200.0f")
-    add(0xDCAA4, "004140bd", word(0x52800008 | (200 << 5)), "skeleton range 200 metres")
+    add(0xDB278, "603340bd", word(0x52A00008 | (0x4396 << 5)), "fixed 300-metre range")
+    add(0xDB27C, "488fa852", word(0x1E270100), "range clamp input 300.0f")
+    add(0xDCAA4, "004140bd", word(0x52800008 | (RANGE_METRES << 5)), "skeleton range 300 metres")
     add(0xDCAA8, "00d8215e", word(0x1E220100), "convert fixed skeleton range to float")
     for offset, expected in [(0xDC788, "2b030194"), (0xDC7DC, "16030194"),
                               (0xDCA3C, "7e020194")]:
@@ -211,7 +232,7 @@ def changes():
         word(0xD503201F), word(0xD503201F),
     ])
     add(0xDCD40, "c95b009029c1099120910291e8000037885b00d008310691086978381f010071e87b40f90010889ab3010194", color, "fixed white-visible / red-obstructed skeleton colors")
-    for offset, old, new in [(0x743F3D, "玩家显示", "200米标记"),
+    for offset, old, new in [(0x743F3D, "玩家显示", "300米标记"),
                              (0x743F64, "显示距离", "附近敌人"),
                              (0x744522, "玩家", "位置")]:
         add(offset, old.encode(), new.encode(), "minimal display label")
