@@ -60,7 +60,8 @@ class MinimalFeatureTests(unittest.TestCase):
         allowed = {i for offset in words for i in range(offset, offset + 4)}
         for offset in [0xDD464, 0xDB278, 0xDB27C, 0xDC788, 0xDC790, 0xDC794,
                        0xDC7DC, 0xDC7E4, 0xDC7E8, 0xDCA3C, 0xDCAA4,
-                       0xDCAA8, 0xDCBD8, 0xDCD78]:
+                       0xDCAA8, 0xDCBD8, 0xDCD78,
+                       0xD88C0, 0xD88D0, 0xD88DC, 0xD88E0]:
             allowed.update(range(offset, offset + 4))
         for offset, length in [(0xDD4C0, 64), (0xDCD40, 44)]:
             allowed.update(range(offset, offset + length))
@@ -73,7 +74,8 @@ class MinimalFeatureTests(unittest.TestCase):
         self.assertEqual(self.original[:0xC1A04], self.binary[:0xC1A04])
         self.assertEqual(self.original[0xC1A08:0xCBE64], self.binary[0xC1A08:0xCBE64])
         # Native geometry acquisition, readiness management and query routines.
-        self.assertEqual(self.original[0xD33F4:0xDB144], self.binary[0xD33F4:0xDB144])
+        self.assertEqual(self.original[0xD33F4:0xD88C0], self.binary[0xD33F4:0xD88C0])
+        self.assertEqual(self.original[0xD88E4:0xDB144], self.binary[0xD88E4:0xDB144])
 
     def test_rejects_unknown_input_and_reapplication(self):
         modified = bytearray(self.original)
@@ -168,6 +170,53 @@ class MinimalFeatureTests(unittest.TestCase):
         # even when a previous aim-candidate return value was nonzero.
         mu.emu_start(BASE + 0xDD464, BASE + 0xDBDC8, count=3)
         self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), BASE + 0xDBDC8)
+
+    def test_native_collector_acquires_bones_with_old_skeleton_settings_off(self):
+        mu = self.emulator()
+        context = STACK + 0x1000
+        mu.reg_write(registers.UC_ARM64_REG_X19, context)
+        # Replay v10's collector to demonstrate the missing acquisition gate.
+        mu.mem_write(BASE + 0xD88BC, self.original[0xD88BC:0xD88F0])
+        mu.mem_write(context + 0x23, b"\x01")
+        mu.mem_write(context + 0x22, b"\x00")
+        mu.mem_write(context + 0xB9, b"\x00")
+        mu.mem_write(context + 0x40, struct.pack("<I", 200))
+        mu.reg_write(registers.UC_ARM64_REG_S10, 0x42C80000)  # 100 metres
+        for bot in [0, 1]:
+            mu.reg_write(registers.UC_ARM64_REG_W28, bot)
+            mu.emu_start(BASE + 0xD88BC, BASE + 0xD88EC, count=30)
+            self.assertEqual(mu.reg_read(registers.UC_ARM64_REG_W28), 0)
+        # A fresh emulator also avoids cached translations of v10 instructions.
+        mu = self.emulator()
+        mu.reg_write(registers.UC_ARM64_REG_X19, context)
+        for enabled in [0, 1]:
+            for bot in [0, 1]:
+                for old_flag in [0, 1, 255]:
+                    for old_range in [1, 200, 1000]:
+                        for distance in [100, 200, 200.01, float("nan"), float("inf")]:
+                            with self.subTest(enabled=enabled, bot=bot, old_flag=old_flag,
+                                              old_range=old_range, distance=distance):
+                                mu.mem_write(context + 0x23, bytes([enabled]))
+                                mu.mem_write(context + 0x22, bytes([old_flag]))
+                                mu.mem_write(context + 0xB9, bytes([old_flag]))
+                                mu.mem_write(context + 0x40, struct.pack("<I", old_range))
+                                mu.reg_write(registers.UC_ARM64_REG_W28, bot)
+                                mu.reg_write(registers.UC_ARM64_REG_S10,
+                                             struct.unpack("<I", struct.pack("<f", distance))[0])
+                                mu.emu_start(BASE + 0xD88BC, BASE + 0xD88EC, count=30)
+                                self.assertEqual(mu.reg_read(registers.UC_ARM64_REG_W28),
+                                                 int(enabled and distance <= 200))
+        # Native model scan must include all 14 segments when collection is on,
+        # rather than only the head/bounding-box endpoints when it is off.
+        pairs = struct.unpack("<28i", mu.mem_read(BASE + 0xAC8698, 112))
+        mu.mem_write(STACK + 0x804C, struct.pack("<I", 61))
+        for enabled in [0, 1]:
+            mu.reg_write(registers.UC_ARM64_REG_X8, BASE + 0xAC8698)
+            mu.reg_write(registers.UC_ARM64_REG_W28, enabled)
+            mu.emu_start(BASE + 0xD8BA0, BASE + 0xD8D30, count=1000)
+            self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), BASE + 0xD8D30)
+            self.assertEqual(mu.reg_read(registers.UC_ARM64_REG_W25),
+                             max(pairs) if enabled else max(pairs[:2]))
 
     def test_fixed_range_and_native_actor_filter(self):
         mu = self.emulator()

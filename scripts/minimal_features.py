@@ -118,6 +118,16 @@ def changes():
     for offset in (0xDB630, 0xDB644, 0xDB658, 0xDB66C):
         add(offset, "08014039", word(0x39400000 | (0x23 << 10) | (27 << 5) | 8), "shared nearby-enemy toggle")
 
+    # The native collector has separate human/bot skeleton gates. Updating
+    # render gates alone leaves joint validity unset when old skeleton settings
+    # are off. Its x19 is the current configuration/context snapshot; keep the
+    # original bone reads and validation, but use the same nearby-enemy toggle
+    # and range as the renderer before it chooses how many joints to acquire.
+    for offset, expected in [(0xD88C0, "68e64239"), (0xD88D0, "688a4039")]:
+        add(offset, expected, word(0x39400000 | (0x23 << 10) | (19 << 5) | 8), "shared toggle in native skeleton collector")
+    add(0xD88DC, "604240bd", word(0x52800008 | (200 << 5)), "collector skeleton range 200 metres")
+    add(0xD88E0, "00d8215e", word(0x1E220100), "convert fixed collector range to float")
+
     # Use unreachable aim-candidate instructions inside the same renderer frame
     # for two branch-only helpers; preserve its PAC, stack and unwind layout.
     # The unconditional loop continuation prevents normal fallthrough into them.

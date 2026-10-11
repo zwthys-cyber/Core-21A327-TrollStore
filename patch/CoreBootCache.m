@@ -1,6 +1,9 @@
 #import <Foundation/Foundation.h>
 #ifndef CBC_HOST_TEST
 #import <UIKit/UIKit.h>
+#import <mach/mach.h>
+#import <mach-o/dyld.h>
+#import <mach-o/loader.h>
 #endif
 #import <IOKit/IOKitLib.h>
 #import <objc/runtime.h>
@@ -50,7 +53,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=10 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=11 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -98,6 +101,75 @@ static void Log(NSString *message) {
         } @catch (__unused NSException *exception) {}
     }
 }
+
+#ifndef CBC_HOST_TEST
+// Read only this process's pinned Core image. Aggregate cache counts are sampled
+// diagnostics, not frame counters or proof that any individual actor is drawn.
+static uintptr_t MarkerImageBase(void) {
+    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+    const unsigned char expected[16] = {0x4e,0xd1,0xfd,0x29,0xa4,0x6a,0x36,0xb3,
+        0x8d,0xfc,0x36,0xf6,0x7e,0xa9,0x29,0xd1};
+    if (!header || header->magic != MH_MAGIC_64 || header->ncmds > 512 ||
+        header->sizeofcmds > 65536) return 0;
+    const unsigned char *cursor = (const void *)(header + 1);
+    size_t remaining = header->sizeofcmds;
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if (remaining < sizeof(struct load_command)) return 0;
+        const struct load_command *command = (const void *)cursor;
+        if (command->cmdsize < sizeof(*command) || command->cmdsize > remaining) return 0;
+        if (command->cmd == LC_UUID && command->cmdsize == sizeof(struct uuid_command)) {
+            const struct uuid_command *uuid = (const void *)command;
+            return memcmp(uuid->uuid, expected, sizeof(expected)) == 0 ? (uintptr_t)header : 0;
+        }
+        cursor += command->cmdsize;
+        remaining -= command->cmdsize;
+    }
+    return 0;
+}
+
+static BOOL MarkerRead(uintptr_t address, void *buffer, size_t length) {
+    vm_size_t copied = 0;
+    return vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)length,
+        (vm_address_t)buffer, &copied) == KERN_SUCCESS && copied == length;
+}
+
+static void StartMarkerDiagnostics(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        uintptr_t base = MarkerImageBase();
+        if (!base) { Log(@"patch=11 markers diagnostics skipped: Core UUID mismatch"); return; }
+        static dispatch_source_t timer;
+        if (timer) return;
+        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+        if (!timer) return;
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                                  5 * NSEC_PER_SEC, NSEC_PER_SEC);
+        dispatch_source_set_event_handler(timer, ^{
+            unsigned char config[0x1ea], valid[128], obstructed[128];
+            uintptr_t scenes[3];
+            if (!MarkerRead(base + 0xC54270, config, sizeof(config)) ||
+                !MarkerRead(base + 0xC15EC8, scenes, sizeof(scenes)) ||
+                !MarkerRead(base + 0xC4E28C, valid, sizeof(valid)) ||
+                !MarkerRead(base + 0xC4E18C, obstructed, sizeof(obstructed))) return;
+            unsigned validCount = 0, obstructedCount = 0;
+            for (size_t i = 0; i < sizeof(valid); i++) {
+                if (valid[i] & 1) {
+                    validCount++;
+                    if (obstructed[i]) obstructedCount++;
+                }
+            }
+            NSString *state = [NSString stringWithFormat:
+                @"patch=11 markers sampled enabled=%u visibility_request=%u geometry_ready=%u scenes=%d/%d/%d cached_valid_joints=%u cached_obstructed_joints=%u",
+                config[0x23], config[0x2f], config[0x1e9], scenes[0] != 0,
+                scenes[1] != 0, scenes[2] != 0, validCount, obstructedCount];
+            static NSString *previous;
+            static unsigned ticks;
+            if (![state isEqualToString:previous] || ++ticks % 12 == 0) Log(state);
+            previous = state;
+        });
+        dispatch_resume(timer);
+    });
+}
+#endif
 
 // Report only the permissions relevant to acquisition, never arbitrary entitlements.
 static void LogAcquisitionPermissions(void) {
@@ -240,7 +312,7 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=10 profile=enemy-markers-200m product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=11 profile=enemy-markers-200m product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         LogAcquisitionPermissions();
         LogSandboxStatus();
@@ -336,4 +408,7 @@ __attribute__((constructor)) static void InstallBootCachePatch(void) {
     StartupRecord("original published");
     method_setImplementation(method, (IMP)ValidateWithBootCache);
     StartupRecord("hook installed");
+#ifndef CBC_HOST_TEST
+    StartMarkerDiagnostics();
+#endif
 }

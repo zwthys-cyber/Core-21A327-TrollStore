@@ -17,9 +17,9 @@ INPUT_SHA256 = "04d5f9763f5c4dcd19d40fcd52d152cebaa7c18ec68dedb0e90c972fb1c2153c
 CORE_UUID = bytes.fromhex("4ed1fd29a46a36b38dfc36f67ea929d1")
 LOAD_PATH = b"@executable_path/CoreBootCache.dylib\0"
 DYLIB_VERSION = 0x10000
-PATCH_VERSION = 10
-BUNDLE_BUILD = "11"
-ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v10-200m.ipa"
+PATCH_VERSION = 11
+BUNDLE_BUILD = "12"
+ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v11-200m.ipa"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -269,6 +269,7 @@ def main():
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
                   core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=PATCH_VERSION,
                   feature_profile=PROFILE, minimal_changes=manifest(),
+                  marker_diagnostics="read-only local readiness and cached joint counts; sampled every 5 seconds",
                   boot_acquisition="separate preparation app with current-boot stamp and digest; direct/probe fallback",
                   local_license_gate="disabled-startup",
                   remote_trace="three libSystem imports forwarded unchanged; original error codes and receive duration",
