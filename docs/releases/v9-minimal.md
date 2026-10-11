@@ -23,3 +23,9 @@ v8 曾通过本次设备的主要功能验证，用户随后反馈游戏封禁 7
 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v9-Minimal.ipa`。已安装的“Core 环境准备”可继续使用。原环境准备和初始化流程不变；手机重启后需要按当前启动重新准备缓存。悬浮页只显示“初始化”和“位置”，位置页的“位置距离”开关控制原投影位置的距离文字。
 
 已知后续 launchd 初始化接收超时尚未修复；系统隔离状态和原成功校验不变。保留原运行诊断日志。本次不新增或修改授权组件行为，服务器真实有效期与绑定状态未更改。
+
+## 本次发布
+
+[GitHub 精简测试版下载](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)。构建来源提交为 `5d15b0b32f2d00d60b78878e077847918e72762c`，[GitHub Actions 构建](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38112324902) 全部检查成功。下载后的主 IPA 已再次核验；7 项 Release 资产已回下载并与本地暂存逐字节比较一致。
+
+主 IPA SHA-256：`9a0a0e48a5313dcbd82266bae0704e043abadb7f8398c90be1cf21a254147cfc`。设备运行仍未验证。

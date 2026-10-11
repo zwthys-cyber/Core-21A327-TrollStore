@@ -2,7 +2,7 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前构建为 **v9 Minimal（1.6 / build 10 / patch 9）**，只保留原初始化依赖与敌人位置、距离显示。悬浮菜单只含初始化和位置距离；原自瞄、压枪处理入口停用，其他绘制读取开关在执行处固定关闭，旧设置无法重新开启。详见 [v9 精简说明](docs/releases/v9-minimal.md)。这是基于原 Core 的精简适配，不是完整源码重写，原未使用例程仍在二进制中。
+当前发布为 [**v9 Minimal 精简测试版（1.6 / build 10 / patch 9）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)，只保留原初始化依赖与敌人位置、距离显示。悬浮菜单只含初始化和位置距离；原自瞄、压枪处理入口停用，其他绘制读取开关在执行处固定关闭，旧设置无法重新开启。详见 [v9 精简说明](docs/releases/v9-minimal.md)。这是基于原 Core 的精简适配，不是完整源码重写，原未使用例程仍在二进制中。
 
 此前发布版本：[Core 1.6 · v8 · TrollStore](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)。用户曾确认内核初始化、获取信息和悬浮菜单操作可用，随后反馈游戏账号被封 7 天。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v9 尚未实机验证，后续 launchd 超时仍未解决。
 
