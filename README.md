@@ -2,9 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前构建为 **v12 遮挡启动修复测试版（1.6 / build 13 / patch 12）**：在敌人位置显示细方框、射线、距离和红白骨骼，固定只显示 200 米内目标。位置页的“附近敌人”开关统一控制这四项。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。v12 接回精简界面时遗漏的原遮挡启动调用，并选择原“全局”模式，保留 v11 的骨骼采集修正。详见 [v12 说明](docs/releases/v12-200m.md)。自瞄、压枪及其余显示保持停用；这是基于原 Core 的修改，原未使用例程仍在二进制中。
+当前版本为 [**v12 遮挡启动修复测试版（1.6 / build 13 / patch 12）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m)：在敌人位置显示细方框、射线、距离和红白骨骼，固定只显示 200 米内目标。位置页的“附近敌人”开关统一控制这四项。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。v12 接回精简界面时遗漏的原遮挡启动调用，并选择原“全局”模式，保留 v11 的骨骼采集修正。详见 [v12 说明](docs/releases/v12-200m.md)。自瞄、压枪及其余显示保持停用；这是基于原 Core 的修改，原未使用例程仍在二进制中。
 
-v12 正在构建核验；发布后在 [Releases](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases) 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v12-200m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。实机红白显示与稳定性仍待确认。
+v12 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v12-200m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。实机红白显示与稳定性仍待确认。
 
 此前版本：[v11 骨骼采集修复测试版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v11-200m)（设备日志显示遮挡引擎未就绪、三个场景对象均为空）及 [v10 标记测试版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v10-200m)（用户截图已显示白色方框、射线和距离）及 [v9 距离精简版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)（用户已看到距离文字）及 [v8](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)（用户曾确认内核初始化、获取信息和悬浮菜单可用，随后反馈游戏账号被封 7 天）。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v12 尚未实机验证，后续 launchd 超时仍未解决。
 
