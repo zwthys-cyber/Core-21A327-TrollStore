@@ -28,4 +28,4 @@ v8 曾通过本次设备的主要功能验证，用户随后反馈游戏封禁 7
 
 [GitHub 精简测试版下载](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)。构建来源提交为 `5d15b0b32f2d00d60b78878e077847918e72762c`，[GitHub Actions 构建](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38112324902) 全部检查成功。下载后的主 IPA 已再次核验；7 项 Release 资产已回下载并与本地暂存逐字节比较一致。
 
-主 IPA SHA-256：`9a0a0e48a5313dcbd82266bae0704e043abadb7f8398c90be1cf21a254147cfc`。设备运行仍未验证。
+主 IPA SHA-256：`9a0a0e48a5313dcbd82266bae0704e043abadb7f8398c90be1cf21a254147cfc`。随后用户确认已显示距离文字；该反馈不等同于全部初始化、显示及稳定性检查完成。

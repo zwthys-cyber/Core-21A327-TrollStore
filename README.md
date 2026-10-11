@@ -2,9 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前发布为 [**v9 Minimal 精简测试版（1.6 / build 10 / patch 9）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)，只保留原初始化依赖与敌人位置、距离显示。悬浮菜单只含初始化和位置距离；原自瞄、压枪处理入口停用，其他绘制读取开关在执行处固定关闭，旧设置无法重新开启。详见 [v9 精简说明](docs/releases/v9-minimal.md)。这是基于原 Core 的精简适配，不是完整源码重写，原未使用例程仍在二进制中。
+当前版本为 [**v10 200 米标记测试版（1.6 / build 11 / patch 10）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v10-200m)：在敌人位置显示细方框、射线、距离和红白骨骼，固定只显示 200 米内目标。位置页的“附近敌人”开关统一控制这四项。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。详见 [v10 说明](docs/releases/v10-200m.md)。自瞄、压枪及其余显示保持停用；这是基于原 Core 的修改，原未使用例程仍在二进制中。
 
-此前发布版本：[Core 1.6 · v8 · TrollStore](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)。用户曾确认内核初始化、获取信息和悬浮菜单操作可用，随后反馈游戏账号被封 7 天。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v9 尚未实机验证，后续 launchd 超时仍未解决。
+此前版本：[v9 距离精简版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)（用户已看到距离文字）及 [v8](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)（用户曾确认内核初始化、获取信息和悬浮菜单可用，随后反馈游戏账号被封 7 天）。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v10 尚未实机验证，后续 launchd 超时仍未解决。
 
 AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装版本的 kernelcache，导致环境适配失败并禁用内核按钮。补丁在原缓存验证失败后，读取 IORegistry 当前 `boot-manifest-hash` 对应目录中的 kernelcache，交给原缓存发布器生成元数据及 SHA-256，再由原验证器检查。原准备流程通过后才会变为就绪。
 
@@ -12,17 +12,17 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v9-Minimal` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施精简修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v10-200m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v9-Minimal.ipa`；已安装的准备工具可以继续使用。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v10-200m.ipa`；已安装的准备工具可以继续使用。
 2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
 3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
 4. 环境就绪后，才测试原内核按钮。
-5. 悬浮注册和获取信息完成后，位置页仅有“位置距离”开关。开启后使用原投影坐标显示距离文字，不显示其他信息。安装和签名核验通过不能证明游戏使用安全。
+5. 悬浮注册和获取信息完成后，位置页开启“附近敌人”。200 米内显示细方框、射线和距离；原遮挡数据可用后显示红白骨骼。红白依据关节点，无法给出身体皮肤的精确遮挡边界。安装和签名核验通过不能证明游戏使用安全。
 6. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”。运行诊断仍为 Core 的 `Core-remote-bootstrap.log`、`core-offline-original-id.log`、`Core-21A327-adaptation.log`。
 
 用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v6 的设备日志显示三项签名权限实际存在，但 IORegistry 当前启动哈希属性仍不可读，独立读取程序在 posix_spawn 时仍被拒绝，返回 EPERM；内核利用尚未开始。v7 已在该 iPhone16,2 / 21A327 上验证：完整缓存传输通过原校验器，环境就绪，原 pe-v1 后端到达 state=2 / ready=1，用户界面显示内核初始化成功。该结果只确认本次设备运行；随后 launchd 远程初始化出现第一次异常消息等待失败，悬浮层进入隔离状态。
