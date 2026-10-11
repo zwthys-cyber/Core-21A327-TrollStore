@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Install ARM64 instruction-test dependency
+        run: python3 -m pip install --user --break-system-packages unicorn==2.1.4
       - name: Run packaging tests
         run: python3 -m unittest discover -s tests -v
       - name: Test hook publication against an immediate concurrent callback
@@ -34,9 +36,9 @@ jobs:
           xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation tests/test_boot_probe_runtime.m -o /tmp/core-probe-test
           /tmp/core-probe-test
       - name: Validate output
-        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-v8.ipa
+        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-v9-Minimal.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: Core-17.0-21A327-TrollStore-v8
+          name: Core-17.0-21A327-TrollStore-v9-Minimal
           path: dist/*
           retention-days: 14

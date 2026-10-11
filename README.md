@@ -2,7 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-发布版本：[Core 1.6 · v8 · TrollStore](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)。此次发布直接使用已验证的 v8 IPA。用户已在 iPhone16,2 / 21A327 确认内核初始化、获取信息和悬浮菜单操作可用；后续 launchd 超时仍存在，卡密服务器到期后的使用尚未验证。完整安装步骤、校验值及验证范围见 [v8 发布说明](docs/releases/v8.md)。
+当前构建为 **v9 Minimal（1.6 / build 10 / patch 9）**，只保留原初始化依赖与敌人位置、距离显示。悬浮菜单只含初始化和位置距离；原自瞄、压枪处理入口停用，其他绘制读取开关在执行处固定关闭，旧设置无法重新开启。详见 [v9 精简说明](docs/releases/v9-minimal.md)。这是基于原 Core 的精简适配，不是完整源码重写，原未使用例程仍在二进制中。
+
+此前发布版本：[Core 1.6 · v8 · TrollStore](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)。用户曾确认内核初始化、获取信息和悬浮菜单操作可用，随后反馈游戏账号被封 7 天。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v9 尚未实机验证，后续 launchd 超时仍未解决。
 
 AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装版本的 kernelcache，导致环境适配失败并禁用内核按钮。补丁在原缓存验证失败后，读取 IORegistry 当前 `boot-manifest-hash` 对应目录中的 kernelcache，交给原缓存发布器生成元数据及 SHA-256，再由原验证器检查。原准备流程通过后才会变为就绪。
 
@@ -10,17 +12,18 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-已发布文件可直接从上述 Release 下载；重新构建时，在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v8` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，再修改本地授权组件的启动入口、注入并重签用户提供的 IPA。v8 保留远程初始化诊断；此次实机验证确认主要功能可用，尚未修复后续 launchd 超时。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v9-Minimal` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施精简修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v8.ipa`，再安装 `Core-Cache-Prepare-TrollStore.ipa`；已安装的准备工具可以继续使用。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v9-Minimal.ipa`；已安装的准备工具可以继续使用。
 2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
 3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
 4. 环境就绪后，才测试原内核按钮。
-5. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”。v8 测试一次内核初始化，等待后续状态结束，再导出 Core 的 `Core-remote-bootstrap.log`、`core-offline-original-id.log`、`Core-21A327-adaptation.log`。
+5. 悬浮注册和获取信息完成后，位置页仅有“位置距离”开关。开启后使用原投影坐标显示距离文字，不显示其他信息。安装和签名核验通过不能证明游戏使用安全。
+6. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”。运行诊断仍为 Core 的 `Core-remote-bootstrap.log`、`core-offline-original-id.log`、`Core-21A327-adaptation.log`。
 
 用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v6 的设备日志显示三项签名权限实际存在，但 IORegistry 当前启动哈希属性仍不可读，独立读取程序在 posix_spawn 时仍被拒绝，返回 EPERM；内核利用尚未开始。v7 已在该 iPhone16,2 / 21A327 上验证：完整缓存传输通过原校验器，环境就绪，原 pe-v1 后端到达 state=2 / ready=1，用户界面显示内核初始化成功。该结果只确认本次设备运行；随后 launchd 远程初始化出现第一次异常消息等待失败，悬浮层进入隔离状态。
 
@@ -77,4 +80,4 @@ macOS 接收测试覆盖真实文件传输、独立已知 SHA-256、错误设备
 - [当前 boot-manifest-hash 读取方式](https://github.com/0x7ff/dimentio/blob/main/libdimentio.c)
 - [苹果 dyld 的兼容版本策略](https://github.com/apple-oss-distributions/dyld/blob/dyld-1122.1.2/common/MachOFile.cpp#L1279)
 
-`python3 -m unittest discover -s tests -v` 验证设备身份与启动目录隔离、未知构建拒绝、注入后代码保留，以及授权组件仅两个入口指令改变；`scripts/verify.py` 检查最终 IPA 的所有代码节、ABI、资源和签名页哈希，严格限定许可库的八字节修改。
+`python3 -m unittest discover -s tests -v` 验证设备身份与启动目录隔离、未知构建拒绝、注入后代码保留、授权组件允许范围，以及精简后的 ARM64 菜单分派、输入工作线程返回、旧设置隔离、唯一开关与窗口配对。ARM64 测试使用 `unicorn==2.1.4`，只执行合成配置与 UI 桩，不模拟设备初始化或游戏。`scripts/verify.py` 检查最终 IPA 的全部非签名字节、允许精简变更、ABI、资源和签名页哈希。

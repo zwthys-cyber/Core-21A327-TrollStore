@@ -17,6 +17,9 @@ INPUT_SHA256 = "04d5f9763f5c4dcd19d40fcd52d152cebaa7c18ec68dedb0e90c972fb1c2153c
 CORE_UUID = bytes.fromhex("4ed1fd29a46a36b38dfc36f67ea929d1")
 LOAD_PATH = b"@executable_path/CoreBootCache.dylib\0"
 DYLIB_VERSION = 0x10000
+PATCH_VERSION = 9
+BUNDLE_BUILD = "10"
+ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v9-Minimal.ipa"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -189,7 +192,8 @@ def main():
     app = work / "Payload/Core.app"
     binary = app / "Core"
     from remote_imports import redirect_remote_imports
-    binary.write_bytes(redirect_remote_imports(inject(binary.read_bytes())))
+    from minimal_features import PROFILE, minimal_core, manifest
+    binary.write_bytes(redirect_remote_imports(inject(minimal_core(binary.read_bytes()))))
     license_library = app / "CCCoreLicense.dylib"
     license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
     dylib = app / "CoreBootCache.dylib"
@@ -230,8 +234,9 @@ def main():
     validate_patch_dependency(binary.read_bytes(), dylib.read_bytes())
     info_path = app / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update(CFBundleVersion="9", UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
-                CoreBootCachePatchVersion="8", CoreBootCacheSupportedBuild="21A327",
+    info.update(CFBundleVersion=BUNDLE_BUILD, UIFileSharingEnabled=True, LSSupportsOpeningDocumentsInPlace=True,
+                CoreBootCachePatchVersion=str(PATCH_VERSION), CoreBootCacheSupportedBuild="21A327",
+                CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
@@ -255,14 +260,15 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / "Core-17.0-21A327-TrollStore-v8.ipa"
+    artifact = dist / ARTIFACT_NAME
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(work))
     report = dict(input_sha256=original_hash, artifact=artifact.name,
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=8,
+                  core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=PATCH_VERSION,
+                  feature_profile=PROFILE, minimal_changes=manifest(),
                   boot_acquisition="separate preparation app with current-boot stamp and digest; direct/probe fallback",
                   local_license_gate="disabled-startup",
                   remote_trace="three libSystem imports forwarded unchanged; original error codes and receive duration",

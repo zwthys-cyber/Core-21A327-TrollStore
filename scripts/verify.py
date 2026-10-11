@@ -7,8 +7,9 @@ import plistlib
 import struct
 import sys
 import zipfile
-from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup, inject
+from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup, inject, PATCH_VERSION, BUNDLE_BUILD
 from remote_imports import ALIASES, redirect_remote_imports, records
+from minimal_features import PROFILE, minimal_core
 
 
 def sections(data):
@@ -75,7 +76,7 @@ def main(ipa):
         assert paths.count(LOAD_PATH[:-1]) == 1
         assert uuid == CORE_UUID
         validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
-        expected_main = redirect_remote_imports(inject(original.read(app + "Core")))
+        expected_main = redirect_remote_imports(inject(minimal_core(original.read(app + "Core"))))
         # codesign may only resize __LINKEDIT and replace the signature. Check
         # every other byte, including bind records, import names, and header stubs.
         signature_offset = None
@@ -139,6 +140,8 @@ def main(ipa):
             assert struct.unpack_from("<II", binary, 4) == main_arch, f"ABI mismatch: {name}"
             if name in original.namelist():
                 expected = original.read(name)
+                if name == app + "Core":
+                    expected = minimal_core(expected)
                 if name == app + "CCCoreLicense.dylib":
                     expected = disable_license_startup(expected)
                 assert sections(binary) == sections(expected), f"Unexpected program section change: {name}"
@@ -148,12 +151,13 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == "9" and info["CoreBootCachePatchVersion"] == "8"
+        assert info["CFBundleVersion"] == BUNDLE_BUILD and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
+        assert info["CoreFeatureProfile"] == PROFILE
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
-    print("PASS: exact unsigned Core payload and three trace imports; forwarding exports; original Core/offline sections and cache/kernel instructions; license startup changes; ABI, dependencies, permissions, resources and signatures verified")
+    print("PASS: exact minimal-profile payload and three trace imports; forwarding exports; all other Core/offline sections and cache/kernel instructions; license startup changes; ABI, dependencies, permissions, resources and signatures verified")
 
 
 if __name__ == "__main__":
