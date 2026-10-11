@@ -2,9 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前构建为 **v13 姓名与 300 米标记测试版（1.6 / build 14 / patch 13）**：在敌人位置显示白色名字、细方框、射线、距离和红白骨骼，固定只显示 300 米内目标。位置页的“附近敌人”开关统一控制这五项。名字居中显示在方框上方，沿用原姓名读取、字符串复制、空姓名提示和清理；血条、队伍编号及其他显示仍停用。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。详见 [v13 说明](docs/releases/v13-300m.md)。
+当前版本为 [**v13 姓名与 300 米标记测试版（1.6 / build 14 / patch 13）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v13-300m)：在敌人位置显示白色名字、细方框、射线、距离和红白骨骼，固定只显示 300 米内目标。位置页的“附近敌人”开关统一控制这五项。名字居中显示在方框上方，沿用原姓名读取、字符串复制、空姓名提示和清理；血条、队伍编号及其他显示仍停用。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。详见 [v13 说明](docs/releases/v13-300m.md)。
 
-v13 正在构建核验；发布后在 [Releases](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases) 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v13-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。v13 姓名显示与 300 米范围仍待实机确认。
+v13 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v13-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。v13 姓名显示与 300 米范围仍待实机确认。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v13 保留这项原启动调用和“全局”模式，以及 v11 的原骨骼采集修正；只增加姓名文字和扩大显示范围。其余历史版本见 [v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
