@@ -9,7 +9,7 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-300m-names"
+PROFILE = "enemy-markers-300m-readable"
 RANGE_METRES = 300
 
 
@@ -133,6 +133,8 @@ def changes():
     add(0xDC050, "487fba0a", branch(0xDC050, 0xDC088), "skip team-number drawing")
     add(0xDC08C, "a029201e", word(0xD503201F), "remove team-prefix padding")
     add(0xDC09C, "e6040194", word(0x12800000), "white name text")
+    add(0xDBF7C, "01d0241e", word(0x1E259001), "name font 14 drawing units times native scale")
+    add(0xDC0E0, "527e0194", call(0xDC0E0, 0xDC0FC), "outlined name text through native text helper")
     restore = b"".join([
         word(0x1E2041EE),  # fmov s14, s15: restore original horizontal position
         word(0xBD400000 | ((0xE0 // 4) << 10) | (31 << 5) | 13),
@@ -142,6 +144,39 @@ def changes():
         branch(0xDC0F8, 0xDC358),  # original string cleanup and remaining restores
     ])
     add(0xDC0E4, "604642bd0859a8520101271e0018211e01102e1e0020211e", restore, "restore actor geometry and distance; skip health panel")
+
+    # The compact name path bypasses this original health block. Tail-call the
+    # existing outlined-text helper with the measured name position, preserving
+    # its caller's LR, native string lifetime and authenticated return frame.
+    name_outline = b"".join([
+        word(0xAA0403E0),  # mov x0, x4 (text)
+        word(0xCB0400A1),  # sub x1, x5, x4 (byte length)
+        word(0xBD400040),  # ldr s0, [x2] (left position already centered)
+        word(0xBD400441),  # ldr s1, [x2, #4]
+        word(0x1E204102),  # fmov s2, s8 (font size)
+        word(0x52800002),  # mov w2, #0 (do not center a second time)
+        branch(0xDC114, 0xDF47C),
+    ])
+    add(0xDC0FC, "21cc201e0820201e00e4002f0c4c211e600240bd0190201e0108211e", name_outline, "native outlined-name argument bridge in bypassed health block")
+    ray_origin = b"".join([
+        word(0xBD400A62),  # ldr s2, [x19, #8] (screen height)
+        word(0x1E349003),  # fmov s3, #-10
+        word(0x1E232842),  # fadd s2, s2, s3
+        word(0xBD0307E2),  # str s2, [sp, #0x304]
+        branch(0xDC130, 0xDC774),
+    ])
+    add(0xDC120, "0008031f03102c1eee41201e22bd031fe25b02bd", ray_origin, "bottom-center ray origin in bypassed health block")
+    ray_alpha = b"".join([
+        word(0x52A85908),  # mov w8, #100.0f bits
+        word(0x1E270100),  # fmov s0, w8
+        word(0x1E2021A0),  # fcmp s13, s0 (original finite actor distance)
+        word(0x12800000),  # near: opaque white
+        word(0x12B1E008),  # far: white with alpha 0x70
+        word(0x1A88D000),  # csel w0, w0, w8, le
+        branch(0xDC158, 0xDC78C),
+    ])
+    add(0xDC140, "e24302bde04702bd2808231ee1630991e2030991e00316aa63648452", ray_alpha, "dim rays beyond 100 metres in bypassed health block")
+    add(0xDC76C, "0824a852", branch(0xDC76C, 0xDC120), "ray begins ten drawing units above screen bottom")
 
     # The native collector has separate human/bot skeleton gates. Updating
     # render gates alone leaves joint validity unset when old skeleton settings
@@ -208,7 +243,8 @@ def changes():
     add(0xDB27C, "488fa852", word(0x1E270100), "range clamp input 300.0f")
     add(0xDCAA4, "004140bd", word(0x52800008 | (RANGE_METRES << 5)), "skeleton range 300 metres")
     add(0xDCAA8, "00d8215e", word(0x1E220100), "convert fixed skeleton range to float")
-    for offset, expected in [(0xDC788, "2b030194"), (0xDC7DC, "16030194"),
+    add(0xDC788, "2b030194", branch(0xDC788, 0xDC140), "distance-based ray opacity")
+    for offset, expected in [(0xDC7DC, "16030194"),
                               (0xDCA3C, "7e020194")]:
         add(offset, expected, word(0x12800000), "white line/box/distance independent of old colors")
     for offset in (0xDC790, 0xDC7E4):

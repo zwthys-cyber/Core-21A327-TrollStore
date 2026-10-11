@@ -2,11 +2,11 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前版本为 [**v13 姓名与 300 米标记测试版（1.6 / build 14 / patch 13）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v13-300m)：在敌人位置显示白色名字、细方框、射线、距离和红白骨骼，固定只显示 300 米内目标。位置页的“附近敌人”开关统一控制这五项。名字居中显示在方框上方，沿用原姓名读取、字符串复制、空姓名提示和清理；血条、队伍编号及其他显示仍停用。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。详见 [v13 说明](docs/releases/v13-300m.md)。
+当前版本为 [**v14 画面可读性升级测试版（1.6 / build 15 / patch 14）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v14-300m)：白色名字增大并加原生黑色描边，射线从屏幕底部中央引出，100 米以外的射线降低亮度。固定显示 300 米内目标，位置页的“附近敌人”统一控制名字、细方框、射线、距离和红白骨骼。名字居中显示在方框上方；骨骼按原关节点遮挡结果分段着色，两端无阻挡为白色，有阻挡为红色，原数据未就绪时跳过。远程诊断日志新增 2 MiB 轮换和一份最多 2 MiB 的尾部备份。详见 [v14 说明](docs/releases/v14-300m.md)。
 
-v13 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v13-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。v13 姓名显示与 300 米范围仍待实机确认。
+在 v14 Release 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v14-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。发布核验进度见 v14 说明；v14 的画面调整仍待实机确认。
 
-用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v13 保留这项原启动调用和“全局”模式，以及 v11 的原骨骼采集修正；只增加姓名文字和扩大显示范围。其余历史版本见 [v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
+用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v14 沿用这项原启动调用和“全局”模式，以及 v11 的骨骼采集修正、v13 的姓名读取和 300 米限制。其余历史版本见 [v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
 AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装版本的 kernelcache，导致环境适配失败并禁用内核按钮。补丁在原缓存验证失败后，读取 IORegistry 当前 `boot-manifest-hash` 对应目录中的 kernelcache，交给原缓存发布器生成元数据及 SHA-256，再由原验证器检查。原准备流程通过后才会变为就绪。
 
@@ -14,13 +14,13 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v13-300m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v14-300m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v13-300m.ipa`；已安装的准备工具可以继续使用。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v14-300m.ipa`；已安装的准备工具可以继续使用。
 2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
 3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
 4. 环境就绪后，才测试原内核按钮。

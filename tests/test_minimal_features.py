@@ -8,6 +8,7 @@ import random
 import struct
 import unittest
 import zipfile
+from itertools import product
 
 from test_patch import ROOT
 from build import commands
@@ -63,9 +64,10 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDCAA8, 0xDCBD8, 0xDCD78,
                        0xD88C0, 0xD88D0, 0xD88DC, 0xD88E0,
                        0xDB604, 0xDBF84, 0xDBF88, 0xDC014, 0xDC050,
-                       0xDC08C, 0xDC09C]:
+                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C]:
             allowed.update(range(offset, offset + 4))
-        for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24)]:
+        for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24),
+                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28)]:
             allowed.update(range(offset, offset + length))
         for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
             allowed.update(range(offset, offset + length))
@@ -199,12 +201,20 @@ class MinimalFeatureTests(unittest.TestCase):
 
                         def external_call(uc, address, size, _):
                             ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
+                            if ins == 0xD503237F:  # synthetic PACIBSP frame only
+                                uc.reg_write(UC_ARM64_REG_PC, address + 4)
+                                return
+                            if ins == 0xD65F0FFF:  # synthetic RETAB only
+                                uc.reg_write(UC_ARM64_REG_PC, uc.reg_read(UC_ARM64_REG_X30))
+                                return
                             if ins & 0xFC000000 != 0x94000000:
                                 return
                             delta = ins & 0x3FFFFFF
                             if delta & 0x2000000:
                                 delta -= 0x4000000
                             target = address + delta * 4 - BASE
+                            if target == 0xDC0FC:
+                                return  # execute the actual argument bridge and native helper
                             if target == 0xDF55C:
                                 lookups.append(uc.reg_read(UC_ARM64_REG_X0))
                                 uc.reg_write(UC_ARM64_REG_X0, name_object)
@@ -220,15 +230,26 @@ class MinimalFeatureTests(unittest.TestCase):
                             elif target == 0x143400:
                                 pointer, end = uc.reg_read(UC_ARM64_REG_X1), uc.reg_read(registers.UC_ARM64_REG_X2)
                                 value = bytes(uc.mem_read(pointer, end - pointer)).decode()
-                                for reg, result in [(registers.UC_ARM64_REG_S0, len(value) * 6), (registers.UC_ARM64_REG_S1, 11)]:
+                                self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S0), 0x41600000)
+                                for reg, result in [(registers.UC_ARM64_REG_S0, len(value) * 6), (registers.UC_ARM64_REG_S1, 14)]:
                                     uc.reg_write(reg, struct.unpack('<I', struct.pack('<f', result))[0])
-                            elif target == 0x13BA28:
-                                pointer, end = uc.reg_read(registers.UC_ARM64_REG_X4), uc.reg_read(registers.UC_ARM64_REG_X5)
+                            elif target == 0x123E30:
+                                uc.reg_write(UC_ARM64_REG_X0, 0x1234)
+                            elif target == 0x130E08:
+                                uc.reg_write(UC_ARM64_REG_X0, 0x789)
+                            elif target == 0x11D434:
+                                self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), BASE + 0xAC8648)
+                                uc.reg_write(UC_ARM64_REG_W0, 0xB2000000)
+                            elif target == 0x13BAE0:
+                                pointer, end = uc.reg_read(registers.UC_ARM64_REG_X5), uc.reg_read(registers.UC_ARM64_REG_X6)
                                 value = bytes(uc.mem_read(pointer, end - pointer)).decode()
                                 point = struct.unpack('<2f', uc.mem_read(uc.reg_read(registers.UC_ARM64_REG_X2), 8))
                                 self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFFFFFFFF)
-                                self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), 0x1234)
-                                self.assertEqual(uc.reg_read(UC_ARM64_REG_X1), 0x789)
+                                self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), 0x789)
+                                self.assertEqual(uc.reg_read(UC_ARM64_REG_X1), 0x1234)
+                                self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S0), 0x41600000)
+                                self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S2), 0x3F800000)
+                                self.assertEqual(struct.unpack('<I', uc.mem_read(uc.reg_read(UC_ARM64_REG_SP), 4))[0], 0xB2000000)
                                 draws.append((value, point))
                             elif target == 0x725240:
                                 frees.append(uc.reg_read(UC_ARM64_REG_X0))
@@ -420,19 +441,21 @@ class MinimalFeatureTests(unittest.TestCase):
                                  BASE + (0xDBB54 if accepted else 0xDBDC0))
 
     def test_native_line_and_box_draw_only_when_enabled_with_fixed_style(self):
-        for enabled in [0, 1]:
-            with self.subTest(enabled=enabled):
+        for enabled, distance, (width, height) in product([0, 1], [0, 100, 100.01, 250, 300],
+                                                        [(800, 600), (1280, 720)]):
+            with self.subTest(enabled=enabled, distance=distance, width=width, height=height):
                 mu = self.emulator()
                 mu.mem_write(CONFIG, b"\xff" * 0x500)  # old widths/colors ignored
                 context = STACK + 0x1000
-                mu.mem_write(context, struct.pack("<3f", 1, 800, 600))
+                mu.mem_write(context, struct.pack("<3f", 1, width, height))
                 mu.reg_write(registers.UC_ARM64_REG_X19, context)
                 mu.reg_write(registers.UC_ARM64_REG_X22, 0x1234)
                 mu.reg_write(UC_ARM64_REG_X27, CONFIG)
                 for reg, value in [(registers.UC_ARM64_REG_S14, 100),
                                    (registers.UC_ARM64_REG_S10, 100),
                                    (registers.UC_ARM64_REG_S11, 100),
-                                   (registers.UC_ARM64_REG_S9, 300)]:
+                                   (registers.UC_ARM64_REG_S9, 300),
+                                   (registers.UC_ARM64_REG_S13, distance)]:
                     mu.reg_write(reg, struct.unpack("<I", struct.pack("<f", value))[0])
                 for offset in [0x150, 0x160]:
                     mu.mem_write(STACK + 0x8000 + offset, struct.pack("<I", enabled))
@@ -450,7 +473,8 @@ class MinimalFeatureTests(unittest.TestCase):
                     points = [struct.unpack("<2f", uc.mem_read(uc.reg_read(reg), 8))
                               for reg in [registers.UC_ARM64_REG_X1, registers.UC_ARM64_REG_X2]]
                     calls.append((target, points))
-                    self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFFFFFFFF)
+                    color = 0x70FFFFFF if target == 0x13AD48 and distance > 100 else 0xFFFFFFFF
+                    self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), color)
                     self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S0), 0x3F800000)
                     uc.reg_write(UC_ARM64_REG_PC, address + 4)
 
@@ -458,7 +482,7 @@ class MinimalFeatureTests(unittest.TestCase):
                 mu.emu_start(BASE + 0xDC754, BASE + 0xDC804, count=100)
                 self.assertEqual([c[0] for c in calls], [0x13AD48, 0x13B1C0] if enabled else [])
                 if enabled:
-                    self.assertEqual(calls[0][1], [(400.0, 10.0), (100.0, 70.0)])
+                    self.assertEqual(calls[0][1], [(width / 2, height - 10), (100.0, 70.0)])
                     self.assertEqual(calls[1][1], [(150.0, 100.0), (50.0, 300.0)])
 
     def test_skeleton_requires_native_readiness_and_all_geometry_objects(self):

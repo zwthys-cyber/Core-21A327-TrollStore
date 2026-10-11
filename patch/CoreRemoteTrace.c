@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 #if __has_feature(ptrauth_calls)
@@ -44,6 +46,47 @@ static uint64_t Milliseconds(void) {
     return (uint64_t)t.tv_sec * 1000 + (uint64_t)t.tv_nsec / 1000000;
 }
 
+#define CORE_REMOTE_LOG_LIMIT (2 * 1024 * 1024)
+
+static int WriteAll(int fd, const char *bytes, size_t length) {
+    while (length) {
+        ssize_t count = write(fd, bytes, length);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) return 0;
+        bytes += count;
+        length -= (size_t)count;
+    }
+    return 1;
+}
+
+// Keep the most recent tail in one bounded backup. The active inode stays in
+// place so independent file descriptors share the same nonblocking lock.
+static int RotateRemoteLog(int fd, const char *path, off_t size) {
+    char backup[PATH_MAX];
+    int count = snprintf(backup, sizeof(backup), "%s.1", path);
+    if (count <= 0 || (size_t)count >= sizeof(backup)) return 0;
+    int archive = open(backup, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (archive < 0) return 0;
+    struct stat status;
+    int result = 0;
+    if (fstat(archive, &status) || !S_ISREG(status.st_mode) || status.st_nlink != 1 ||
+        ftruncate(archive, 0)) goto done;
+    off_t offset = size > CORE_REMOTE_LOG_LIMIT ? size - CORE_REMOTE_LOG_LIMIT : 0;
+    char buffer[4096];
+    while (offset < size) {
+        size_t length = (size_t)(size - offset);
+        if (length > sizeof(buffer)) length = sizeof(buffer);
+        ssize_t readCount;
+        do { readCount = pread(fd, buffer, length, offset); } while (readCount < 0 && errno == EINTR);
+        if (readCount <= 0 || !WriteAll(archive, buffer, (size_t)readCount)) goto done;
+        offset += readCount;
+    }
+    result = ftruncate(fd, 0) == 0;
+done:
+    close(archive);
+    return result;
+}
+
 static void Record(const char *format, ...) {
     int saved = errno;
     const char *home = getenv("CFFIXED_USER_HOME");
@@ -56,7 +99,7 @@ static void Record(const char *format, ...) {
     clock_gettime(CLOCK_REALTIME, &now);
     uint64_t thread = 0;
     pthread_threadid_np(NULL, &thread);
-    n = snprintf(line, sizeof(line), "patch=13 time=%lld.%03ld pid=%d tid=%llu ",
+    n = snprintf(line, sizeof(line), "patch=14 time=%lld.%03ld pid=%d tid=%llu ",
         (long long)now.tv_sec, now.tv_nsec / 1000000, getpid(), (unsigned long long)thread);
     if (n <= 0 || (size_t)n >= sizeof(line) - 1) { errno = saved; return; }
     va_list args;
@@ -66,10 +109,15 @@ static void Record(const char *format, ...) {
     if (count < 0 || (size_t)count >= sizeof(line) - (size_t)n - 1) { errno = saved; return; }
     size_t length = (size_t)n + (size_t)count;
     line[length++] = '\n';
-    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0600);
+    int fd = open(path, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (fd >= 0) {
-        ssize_t result;
-        do { result = write(fd, line, length); } while (result < 0 && errno == EINTR);
+        struct stat status;
+        if (!flock(fd, LOCK_EX | LOCK_NB) && !fstat(fd, &status) &&
+            S_ISREG(status.st_mode) && status.st_nlink == 1 &&
+            (status.st_size <= CORE_REMOTE_LOG_LIMIT - (off_t)length ||
+             RotateRemoteLog(fd, path, status.st_size))) {
+            WriteAll(fd, line, length);
+        }
         close(fd);
     }
     errno = saved;

@@ -17,9 +17,9 @@ INPUT_SHA256 = "04d5f9763f5c4dcd19d40fcd52d152cebaa7c18ec68dedb0e90c972fb1c2153c
 CORE_UUID = bytes.fromhex("4ed1fd29a46a36b38dfc36f67ea929d1")
 LOAD_PATH = b"@executable_path/CoreBootCache.dylib\0"
 DYLIB_VERSION = 0x10000
-PATCH_VERSION = 13
-BUNDLE_BUILD = "14"
-ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v13-300m.ipa"
+PATCH_VERSION = 14
+BUNDLE_BUILD = "15"
+ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v14-300m.ipa"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -269,11 +269,15 @@ def main():
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
                   core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=PATCH_VERSION,
                   feature_profile=PROFILE, minimal_changes=manifest(),
-                  marker_names="original validated lookup, native string copy and fallback; white centered name only, no health panel or team number",
+                  marker_names="original validated lookup, native string copy and fallback; centered white name with native black outline, font 14 times native scale",
+                  marker_rays="bottom center, 10 drawing units above screen bottom; opaque white through 100 metres, white alpha 0x70 beyond 100 through 300 metres",
                   marker_diagnostics="read-only local activation, mode, target binding, source availability, readiness and cached joint counts; sampled every 5 seconds",
                   boot_acquisition="separate preparation app with current-boot stamp and digest; direct/probe fallback",
                   local_license_gate="disabled-startup",
                   remote_trace="three libSystem imports forwarded unchanged; original error codes and receive duration",
+                  remote_log_rotation=dict(active_limit_bytes=2 * 1024 * 1024,
+                                           backup_limit_bytes=2 * 1024 * 1024, backup_count=1,
+                                           retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
