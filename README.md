@@ -2,11 +2,11 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前版本为 [**v11 骨骼采集修复测试版（1.6 / build 12 / patch 11）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v11-200m)：在敌人位置显示细方框、射线、距离和红白骨骼，固定只显示 200 米内目标。位置页的“附近敌人”开关统一控制这四项。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。v11 同时修正原采集器遗漏的旧骨骼开关与距离限制。详见 [v11 说明](docs/releases/v11-200m.md)。自瞄、压枪及其余显示保持停用；这是基于原 Core 的修改，原未使用例程仍在二进制中。
+当前构建为 **v12 遮挡启动修复测试版（1.6 / build 13 / patch 12）**：在敌人位置显示细方框、射线、距离和红白骨骼，固定只显示 200 米内目标。位置页的“附近敌人”开关统一控制这四项。骨骼按原关节点遮挡查询分段着色，两端无阻挡为白色，有阻挡为红色；原数据未就绪时不绘制红白骨骼。v12 接回精简界面时遗漏的原遮挡启动调用，并选择原“全局”模式，保留 v11 的骨骼采集修正。详见 [v12 说明](docs/releases/v12-200m.md)。自瞄、压枪及其余显示保持停用；这是基于原 Core 的修改，原未使用例程仍在二进制中。
 
-v11 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v11-200m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。实机显示与稳定性仍待确认。
+v12 正在构建核验；发布后在 [Releases](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases) 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v12-200m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。实机红白显示与稳定性仍待确认。
 
-此前版本：[v10 标记测试版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v10-200m)（用户截图已显示白色方框、射线和距离，红白骨骼未确认）及 [v9 距离精简版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)（用户已看到距离文字）及 [v8](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)（用户曾确认内核初始化、获取信息和悬浮菜单可用，随后反馈游戏账号被封 7 天）。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v11 尚未实机验证，后续 launchd 超时仍未解决。
+此前版本：[v11 骨骼采集修复测试版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v11-200m)（设备日志显示遮挡引擎未就绪、三个场景对象均为空）及 [v10 标记测试版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v10-200m)（用户截图已显示白色方框、射线和距离）及 [v9 距离精简版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v9-minimal)（用户已看到距离文字）及 [v8](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v8)（用户曾确认内核初始化、获取信息和悬浮菜单可用，随后反馈游戏账号被封 7 天）。现有设备日志不包含游戏封禁原因，无法确定具体检测项。精简或重写不能保证避免封禁，读取敌人信息本身仍可能触发游戏规则。v12 尚未实机验证，后续 launchd 超时仍未解决。
 
 AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装版本的 kernelcache，导致环境适配失败并禁用内核按钮。补丁在原缓存验证失败后，读取 IORegistry 当前 `boot-manifest-hash` 对应目录中的 kernelcache，交给原缓存发布器生成元数据及 SHA-256，再由原验证器检查。原准备流程通过后才会变为就绪。
 
@@ -14,13 +14,13 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v11-200m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v12-200m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v11-200m.ipa`；已安装的准备工具可以继续使用。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v12-200m.ipa`；已安装的准备工具可以继续使用。
 2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
 3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
 4. 环境就绪后，才测试原内核按钮。

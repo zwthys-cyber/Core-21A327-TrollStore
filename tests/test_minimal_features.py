@@ -53,7 +53,7 @@ class MinimalFeatureTests(unittest.TestCase):
                  0xCD804, 0xCD818, 0xDB658, 0xDC858,
                  0xDB1B0, 0xDB2FC, 0xDB3CC, 0xDB46C, 0xDB470, 0xDB5EC,
                  0xDB630, 0xDB644, 0xDB66C, 0xDB680, 0xDB69C, 0xDB864,
-                 0xDBBC4, 0xDCBCC, 0xDCDC0, 0xDD490, 0xDD4B0, 0xDD5F0,
+                 0xDBBC4, 0xDCBCC, 0xDCDC0, 0xDD5F0,
                  0xDD758, 0xDDEBC, 0xDDEC8, 0xDDF70, 0xDDFC4, 0xDE014,
                  0xDE5B4, 0xDE5D0, 0xDE734, 0xDEBE8, 0xDEC30,
                  0xDED8C, 0xDED94, 0xDEE00, 0xDEE08}
@@ -63,7 +63,7 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDCAA8, 0xDCBD8, 0xDCD78,
                        0xD88C0, 0xD88D0, 0xD88DC, 0xD88E0]:
             allowed.update(range(offset, offset + 4))
-        for offset, length in [(0xDD4C0, 64), (0xDCD40, 44)]:
+        for offset, length in [(0xDD468, 152), (0xDCD40, 44)]:
             allowed.update(range(offset, offset + length))
         for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
             allowed.update(range(offset, offset + length))
@@ -122,7 +122,7 @@ class MinimalFeatureTests(unittest.TestCase):
         mu.mem_write(CONFIG, b"\xff" * 0x500)
         for offset in [0xDB2FC, 0xDB3CC, 0xDB46C, 0xDB470, 0xDB5EC,
                        0xDB680, 0xDB69C, 0xDB864,
-                       0xDBBC4, 0xDCDC0, 0xDD490, 0xDD4B0, 0xDD5F0, 0xDD758,
+                       0xDBBC4, 0xDCDC0, 0xDD5F0, 0xDD758,
                        0xDDEBC, 0xDDEC8, 0xDDF70, 0xDDFC4, 0xDE014, 0xDE5B4,
                        0xDE5D0, 0xDE734, 0xDEBE8, 0xDEC30, 0xDED8C, 0xDED94,
                        0xDEE00, 0xDEE08]:
@@ -154,6 +154,7 @@ class MinimalFeatureTests(unittest.TestCase):
     def test_visibility_request_tracks_checkbox_without_enabling_aim(self):
         mu = self.emulator()
         mu.reg_write(UC_ARM64_REG_X27, CONFIG)
+        mu.mem_write(CONFIG + 0x18, struct.pack("<Q", 0))  # no bound target yet
         for enabled in [1, 0, 1]:
             mu.mem_write(CONFIG + 0x23, bytes([enabled]))
             mu.mem_write(CONFIG + 0x168, b"\x01")  # old aim setting enabled
@@ -170,6 +171,81 @@ class MinimalFeatureTests(unittest.TestCase):
         # even when a previous aim-candidate return value was nonzero.
         mu.emu_start(BASE + 0xDD464, BASE + 0xDBDC8, count=3)
         self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), BASE + 0xDBDC8)
+
+    def test_visibility_activation_runs_original_global_initializer_once(self):
+        # Execute the original activation and initializer. A synthetic failed
+        # backend snapshot must leave readiness/scene objects unavailable.
+        # This also tests saved-on settings and target binding after first frame.
+        mu = self.emulator()
+        activations, initializers = [], []
+
+        def native_calls(uc, address, size, _):
+            if address == BASE + 0xD3EAC:
+                activations.append(address)
+            if address == BASE + 0xD36A8:
+                initializers.append(address)
+            instruction = struct.unpack("<I", uc.mem_read(address, 4))[0]
+            if instruction == 0xD503237F:  # emulator-only PACIBSP skip
+                uc.reg_write(UC_ARM64_REG_PC, address + 4)
+            elif instruction == 0xD65F0FFF:  # emulator-only RETAB skip
+                uc.reg_write(UC_ARM64_REG_PC, uc.reg_read(UC_ARM64_REG_X30))
+            elif instruction & 0xFC000000 == 0x94000000:
+                delta = instruction & 0x3FFFFFF
+                if delta & 0x2000000:
+                    delta -= 0x4000000
+                target = address + delta * 4 - BASE
+                if target == 0xD3EAC:
+                    return  # execute actual original activation
+                self.assertIn(target, [0x725090, 0x7250A0, 0x64C7C])
+                if target == 0x64C7C:
+                    uc.reg_write(UC_ARM64_REG_W0, 0)  # no validated backend snapshot
+                uc.reg_write(UC_ARM64_REG_PC, address + 4)
+
+        mu.hook_add(UC_HOOK_CODE, native_calls)
+        for enabled in [0, 1]:
+            for bound in [0, 1]:
+                for old_request in [0, 1]:
+                    for old_mode in [0, 1]:
+                        for armed in [0, 1]:
+                            with self.subTest(enabled=enabled, bound=bound,
+                                              old_request=old_request, mode=old_mode, armed=armed):
+                                activations.clear(); initializers.clear()
+                                mu.mem_write(CONFIG + 0x18, struct.pack("<Q", 0x100010000 if bound else 0))
+                                mu.mem_write(CONFIG + 0x23, bytes([enabled]))
+                                mu.mem_write(CONFIG + 0x2F, bytes([old_request]))
+                                mu.mem_write(CONFIG + 0x130, struct.pack("<I", old_mode))
+                                mu.mem_write(CONFIG + 0x168, b"\x01")
+                                mu.mem_write(CONFIG + 0x1E9, b"\x00")
+                                mu.mem_write(BASE + 0xC4E400, bytes([armed]))
+                                for i in range(3):
+                                    mu.mem_write(BASE + 0xC15EC8 + 8*i, struct.pack("<Q", 0))
+                                saved = {registers.UC_ARM64_REG_X19: STACK + 0x1000,
+                                         registers.UC_ARM64_REG_X22: 0x1234,
+                                         UC_ARM64_REG_X27: CONFIG}
+                                for reg, value in saved.items():
+                                    mu.reg_write(reg, value)
+                                mu.reg_write(UC_ARM64_REG_X30, RETURN)
+                                mu.emu_start(BASE + 0xDB1B0, BASE + 0xDB1B4, count=400)
+                                called = bool(enabled and bound and
+                                              (not old_request or not old_mode or not armed))
+                                self.assertEqual(len(activations), int(called))
+                                self.assertEqual(len(initializers), int(called))
+                                self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), BASE + 0xDB1B4)
+                                self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), STACK + 0x8000)
+                                for reg, value in saved.items():
+                                    self.assertEqual(mu.reg_read(reg), value)
+                                self.assertEqual(mu.reg_read(UC_ARM64_REG_W8), 0)
+                                self.assertEqual(mu.mem_read(CONFIG + 0x168, 1), b"\x01")
+                                self.assertEqual(mu.mem_read(CONFIG + 0x2F, 1), bytes([enabled]))
+                                self.assertEqual(mu.mem_read(CONFIG + 0x1E9, 1), b"\x00")
+                                self.assertEqual(mu.mem_read(BASE + 0xC15EC8, 24), b"\x00" * 24)
+                                mode = struct.unpack("<I", mu.mem_read(CONFIG + 0x130, 4))[0]
+                                self.assertEqual(mode, 1 if enabled and bound else old_mode)
+                                # A failed original initialization is not retried
+                                # on every frame after the activation has armed.
+                                mu.emu_start(BASE + 0xDB1B0, BASE + 0xDB1B4, count=400)
+                                self.assertEqual(len(activations), int(called))
+                                self.assertEqual(len(initializers), int(called))
 
     def test_native_collector_acquires_bones_with_old_skeleton_settings_off(self):
         mu = self.emulator()

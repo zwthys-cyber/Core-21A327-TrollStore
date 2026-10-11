@@ -37,6 +37,10 @@ def cbz(source, target, register, wide=False):
                 (((delta // 4) & 0x7FFFF) << 5) | register)
 
 
+def call(source, target):
+    return word(int.from_bytes(branch(source, target), "little") | 0x80000000)
+
+
 def adrp(source, target, register):
     pages = ((target & ~0xFFF) - (source & ~0xFFF)) // 4096
     if not -(1 << 20) <= pages < (1 << 20):
@@ -59,8 +63,8 @@ DISABLED_READS = {
     0xDB864: "68234439",  # threat collection
     0xDBBC4: "68b34039",  # tracked equipment
     0xDCDC0: "68bb4039",  # trajectory
-    0xDD490: "6aab4539",  # aim circle
-    0xDD4B0: "69a74539",  # aim circle
+    # The former aim-circle gates at DD490/DD4B0 are inside the unreachable
+    # candidate block reused below; its unconditional bypass disables them.
     0xDD5F0: "683b4639",  # recoil circle
     0xDD758: "68234439",  # threat list display
     0xDDEBC: "68ab4039",  # loot
@@ -128,16 +132,38 @@ def changes():
     add(0xD88DC, "604240bd", word(0x52800008 | (200 << 5)), "collector skeleton range 200 metres")
     add(0xD88E0, "00d8215e", word(0x1E220100), "convert fixed collector range to float")
 
-    # Use unreachable aim-candidate instructions inside the same renderer frame
-    # for two branch-only helpers; preserve its PAC, stack and unwind layout.
+    # Use unreachable aim-candidate instructions inside the same renderer frame;
+    # preserve its PAC, stack and unwind layout. Native activation uses the same
+    # existing caller frame as other renderer calls, with its saved outer LR.
     # The unconditional loop continuation prevents normal fallthrough into them.
     add(0xDD464, "e86f41b9", branch(0xDD464, 0xDBDC8), "disable aim-candidate processing")
-    add(0xDB1B0, "68a34539", branch(0xDB1B0, 0xDD4C0), "synchronize visibility request and keep aim off")
+    add(0xDB1B0, "68a34539", branch(0xDB1B0, 0xDD468), "synchronize visibility and restore original activation")
     helper = b"".join([
         word(0x39400000 | (0x23 << 10) | (27 << 5) | 9),  # ldrb w9, [x27, #0x23]
+        word(0x39400000 | (0x2F << 10) | (27 << 5) | 10), # old visibility request
         word(0x39000000 | (0x2F << 10) | (27 << 5) | 9),  # strb w9, [x27, #0x2f]
-        word(0x52800008),                                # mov w8, #0 (aim)
-        branch(0xDD4CC, 0xDB1B4),
+        cbz(0xDD474, 0xDD4BC, 9),                        # no activation while off
+        word(0xF9400000 | ((0x18 // 8) << 10) | (27 << 5) | 8),
+        cbz(0xDD47C, 0xDD4BC, 8, True),                  # original target binding gate
+        word(0xB9400000 | ((0x130 // 4) << 10) | (27 << 5) | 11),
+        word(0x52800028),                                # original 'global' mode = 1
+        word(0xB9000000 | ((0x130 // 4) << 10) | (27 << 5) | 8),
+        word(0x7100055F),                                # cmp w10, #1
+        branch(0xDD490, 0xDD4B8, 1),                     # request changed to on
+        word(0x7100057F),                                # cmp w11, #1
+        branch(0xDD498, 0xDD4B8, 1),                     # mode changed to global
+        adrp(0xDD49C, 0xC4E000, 8),
+        word(0x39400000 | (0x400 << 10) | (8 << 5) | 8),
+        cbz(0xDD4A4, 0xDD4B8, 8),                       # saved settings: arm once
+        branch(0xDD4A8, 0xDD4BC),
+        word(0xD503201F), word(0xD503201F), word(0xD503201F),
+        call(0xDD4B8, 0xD3EAC),                         # original UI activation
+        word(0x52800008),                                # aim stays off
+        branch(0xDD4C0, 0xDB1B4),
+        word(0xD503201F), word(0xD503201F), word(0xD503201F),
+    ])
+    add(0xDD468, "084bff34085340390a1340b95f010c72e9179f1aaa00a03788000037604642bd0820201ee9d79f1a6aab45398a0000362a0080526949ff34040000146a0249394a010052e948ff3469a745390901090a894807376a480736606341bd00d8215ea021201ee847ff54", helper, "restore native global visibility activation in disabled candidate block")
+    readiness = b"".join([
         word(0x39400000 | (0x1E9 << 10) | (19 << 5) | 26),
         cbz(0xDD4D4, 0xDCDB8, 26),                      # native context readiness
         word(0x39400000 | (0x1E9 << 10) | (20 << 5) | 8),
@@ -151,7 +177,7 @@ def changes():
         cbz(0xDD4F8, 0xDCDB8, 9, True),
         branch(0xDD4FC, 0xDCBDC),
     ])
-    add(0xDD4C0, "606341bd00d8215ea021201ee847ff54096341392801082a8847073689020034695341b908b307913f090071800300543f050071c10c005400eb41bd01f741bd", helper, "visibility request/readiness helpers in disabled candidate block")
+    add(0xDD4D0, "096341392801082a8847073689020034695341b908b307913f090071800300543f050071c10c005400eb41bd01f741bd", readiness, "visibility readiness helper in disabled candidate block")
     add(0xDCBCC, "88be4039", word(0x39400000 | (0x23 << 10) | (20 << 5) | 8), "nearby markers request per-joint visibility")
     add(0xDCBD8, "7aa64739", branch(0xDCBD8, 0xDD4D0), "omit red/white skeleton when visibility is unavailable")
 

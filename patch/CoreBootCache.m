@@ -53,7 +53,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=11 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=12 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -136,7 +136,7 @@ static BOOL MarkerRead(uintptr_t address, void *buffer, size_t length) {
 static void StartMarkerDiagnostics(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         uintptr_t base = MarkerImageBase();
-        if (!base) { Log(@"patch=11 markers diagnostics skipped: Core UUID mismatch"); return; }
+        if (!base) { Log(@"patch=12 markers diagnostics skipped: Core UUID mismatch"); return; }
         static dispatch_source_t timer;
         if (timer) return;
         timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
@@ -144,12 +144,20 @@ static void StartMarkerDiagnostics(void) {
         dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
                                   5 * NSEC_PER_SEC, NSEC_PER_SEC);
         dispatch_source_set_event_handler(timer, ^{
-            unsigned char config[0x1ea], valid[128], obstructed[128];
-            uintptr_t scenes[3];
+            unsigned char config[0x1ea], valid[128], obstructed[128], armed, running;
+            uintptr_t scenes[3], target;
+            uint32_t mode;
+            uint64_t sourceKey, sourceValue;
             if (!MarkerRead(base + 0xC54270, config, sizeof(config)) ||
                 !MarkerRead(base + 0xC15EC8, scenes, sizeof(scenes)) ||
                 !MarkerRead(base + 0xC4E28C, valid, sizeof(valid)) ||
-                !MarkerRead(base + 0xC4E18C, obstructed, sizeof(obstructed))) return;
+                !MarkerRead(base + 0xC4E18C, obstructed, sizeof(obstructed)) ||
+                !MarkerRead(base + 0xC4E400, &armed, sizeof(armed)) ||
+                !MarkerRead(base + 0xC4E3C8, &running, sizeof(running)) ||
+                !MarkerRead(base + 0xBD4860, &sourceKey, sizeof(sourceKey)) ||
+                !MarkerRead(base + 0xBD4AB8, &sourceValue, sizeof(sourceValue))) return;
+            memcpy(&target, config + 0x18, sizeof(target));
+            memcpy(&mode, config + 0x130, sizeof(mode));
             unsigned validCount = 0, obstructedCount = 0;
             for (size_t i = 0; i < sizeof(valid); i++) {
                 if (valid[i] & 1) {
@@ -158,8 +166,9 @@ static void StartMarkerDiagnostics(void) {
                 }
             }
             NSString *state = [NSString stringWithFormat:
-                @"patch=11 markers sampled enabled=%u visibility_request=%u geometry_ready=%u scenes=%d/%d/%d cached_valid_joints=%u cached_obstructed_joints=%u",
-                config[0x23], config[0x2f], config[0x1e9], scenes[0] != 0,
+                @"patch=12 markers sampled enabled=%u visibility_request=%u target_bound=%d visibility_mode=%u visibility_armed=%u geometry_running=%u source_offset_available=%d geometry_ready=%u scenes=%d/%d/%d cached_valid_joints=%u cached_obstructed_joints=%u",
+                config[0x23], config[0x2f], target != 0, mode, armed, running,
+                sourceKey != sourceValue, config[0x1e9], scenes[0] != 0,
                 scenes[1] != 0, scenes[2] != 0, validCount, obstructedCount];
             static NSString *previous;
             static unsigned ticks;
@@ -312,7 +321,7 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=11 profile=enemy-markers-200m product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=12 profile=enemy-markers-200m product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         LogAcquisitionPermissions();
         LogSandboxStatus();
