@@ -4,7 +4,7 @@
 
 当前版本为 [**v14 画面可读性升级测试版（1.6 / build 15 / patch 14）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v14-300m)：白色名字增大并加原生黑色描边，射线从屏幕底部中央引出，100 米以外的射线降低亮度。固定显示 300 米内目标，位置页的“附近敌人”统一控制名字、细方框、射线、距离和红白骨骼。名字居中显示在方框上方；骨骼按原关节点遮挡结果分段着色，两端无阻挡为白色，有阻挡为红色，原数据未就绪时跳过。远程诊断日志新增 2 MiB 轮换和一份最多 2 MiB 的尾部备份。详见 [v14 说明](docs/releases/v14-300m.md)。
 
-在 v14 Release 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v14-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。发布核验进度见 v14 说明；v14 的画面调整仍待实机确认。
+v14 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v14-300m.ipa` 主安装包，7 个发布附件已与编译和暂存产物核对一致。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。v14 的画面调整仍待实机确认。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v14 沿用这项原启动调用和“全局”模式，以及 v11 的骨骼采集修正、v13 的姓名读取和 300 米限制。其余历史版本见 [v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
