@@ -4,7 +4,7 @@
 
 当前版本为 [**v16 人数和身份标注测试版（1.6 / build 17 / patch 16）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v16-300m)：屏幕顶部中央显示 300 米内已获取敌人的红色总数，包含真人、人机及屏幕外目标；名字后追加“【真人】”或“【人机】”。总数为一个带黑色描边的数字。位置页的“附近敌人”统一控制总数、名字与标签、方框、射线、距离、红白骨骼及屏幕外黄色箭头。原方向提示与日志轮换继续使用。详见 [v16 说明](docs/releases/v16-300m.md)。
 
-在 v16 Release 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v16-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。构建和发布核验进度见 v16 说明；新增人数与身份标签仍待实机确认。
+v16 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v16-300m.ipa` 主安装包，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。新增人数与身份标签仍待实机确认。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v16 沿用原遮挡启动和“全局”模式、骨骼采集、姓名读取、300 米限制及方向提示。历史版本见 [v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
