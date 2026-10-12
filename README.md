@@ -4,7 +4,7 @@
 
 当前版本为 [**v15 屏幕外方向提示测试版（1.6 / build 16 / patch 15）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v15-300m)：侧面和背后的屏幕外目标增加黄色方向箭头、黑色轮廓及距离，沿屏幕边缘提示，并随当前朝向变化。保持 300 米范围；位置页的“附近敌人”统一控制正面名字、细方框、射线、距离、红白骨骼，以及屏幕外箭头和距离。正面保留 v14 的名字描边、底部射线和远处射线变淡，远程诊断日志继续限制为两份、每份 2 MiB。详见 [v15 说明](docs/releases/v15-300m.md)。
 
-在 v15 Release 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v15-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。构建和发布核验进度见 v15 说明；新方向提示仍待实机确认。
+v15 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v15-300m.ipa` 主安装包，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。新方向提示仍待实机确认。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v15 沿用这项原启动调用和“全局”模式，以及 v11 的骨骼采集、v13 的姓名读取和范围、v14 的可读性调整。历史版本见 [v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
