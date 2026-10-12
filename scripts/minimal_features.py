@@ -9,7 +9,7 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-300m-readable"
+PROFILE = "enemy-markers-300m-direction"
 RANGE_METRES = 300
 
 
@@ -56,8 +56,6 @@ def adrp(source, target, register):
 DISABLED_READS = {
     0xDB2FC: "68f34339",  # radar frame
     0xDB3CC: "68234439",  # threat list collection
-    0xDB46C: "6a974039",  # offscreen distance/indicator
-    0xDB470: "69874039",  # offscreen indicator
     0xDB680: "08014039",  # weapon (both player categories)
     0xDB69C: "68f34339",  # radar player markers
     0xDB864: "68234439",  # threat collection
@@ -121,6 +119,47 @@ def changes():
     # player categories. Old category switches cannot enable another feature.
     for offset in (0xDB630, 0xDB644, 0xDB658, 0xDB66C):
         add(offset, "08014039", word(0x39400000 | (0x23 << 10) | (27 << 5) | 8), "shared nearby-enemy toggle")
+
+    # Offscreen arrows and their distance follow the same sole checkbox. The
+    # native actor/team, finite-distance, 300-metre and on-screen tests run first.
+    for offset, expected, register in [(0xDB46C, "6a974039", 10), (0xDB470, "69874039", 9)]:
+        add(offset, expected, word(0x39400000 | (0x23 << 10) | (27 << 5) | register), "shared offscreen arrow/distance toggle")
+    add(0xDBD00, "cd050194", word(0x12A01FE0), "opaque yellow direction arrow and distance")
+    add(0xDBD18, "684341b9", word(0x52800008), "fixed native arrow style zero")
+    add(0xDBD28, "684741b9", word(0x52800508), "fixed native arrow size 40 drawing units")
+    add(0xDBD48, "6087402d", word(0x2D408660), "arrow bounds from current screen context")
+    add(0xDC244, "6c0340bd", word(0xBD40026C), "offscreen distance font uses current native scale")
+    add(0xDC2AC, "6497402d", word(0x2D409664), "offscreen label bounds from current screen context")
+
+    # The radar gate remains disabled. Reuse only its unreachable math block
+    # to derive a horizontal bearing from original cached world X/Y and camera
+    # yaw, rather than the mirrored projection of a target behind the camera.
+    # Preserve the native edge-clamp inputs across libc math calls; return to
+    # its original placement, arrow renderer, distance text and loop cleanup.
+    direction = bytearray.fromhex(
+        "e24302bde34702bde44b02bd011b40bd64f641bd2138241e001f40bd64fa41bd0038241e6b1242bd"
+        "0910b0120800261e087900121f01096be80400542800261e087900121f01096b680400546801261e"
+        "087900121f01096be80300544800261e087900121f01096b680300544801261e087900121f01096b"
+        "e802005404102e1e4020241e8d0200544021241e4d0200540820201e610000542820201ec0010054"
+        "000000940800009001f142bd6109211e0038211e000000940440201e2040211e8140201ee24342bd"
+        "e34742bde44b42bd00000014e24342bde34742bde44b42bdf47f41b900000014"
+    )
+    direction[40 * 4:41 * 4] = call(0xDB748, 0x7255E0)  # atan2f(delta_y, delta_x)
+    direction[41 * 4:42 * 4] = adrp(0xDB74C, 0xAC8000, 8)
+    direction[45 * 4:46 * 4] = call(0xDB75C, 0x725390)  # sin/cos(bearing - camera yaw)
+    direction[52 * 4:53 * 4] = branch(0xDB778, 0xDBD98)
+    direction[57 * 4:58 * 4] = branch(0xDB78C, 0xDBDC0)
+    add(0xDB6A8,
+        "e043c03d01102e1e0020211e8d0d0054e0fb40bda021201e280d0054e8cb40f9011940bd2800261e"
+        "087900120910b0121f01096b4c0c0054e8cb40f9021d40bd4800261e087900121f01096b8c0b0054"
+        "601242bd0800261e087900121f01096bec0a00548856b8520301271e0028231e684f00b003f142bd"
+        "0008231e63f641bd6138211ee35740bd6808211e61fa41bd2138221e6a08211e1427199402082a1e"
+        "0209011f21082a1e0085001f0108201e4104021f21c0211ee343c03d2020231e2d010054683e00d0"
+        "034d4abd2020231ead000054e343c03d6118211e4208211e0008211ee1fb41bd",
+        bytes(direction), "validated camera-relative bearing in disabled radar block")
+    add(0xDBD90, "2139221e", branch(0xDBD90, 0xDB6A8), "derive offscreen bearing independently of screen projection")
+    add(0xDBD98, "27d5a27e", word(0x1E20C027), "horizontal edge magnitude from bearing vector")
+    add(0xDBD9C, "65d5aa7e", word(0x1E20C005), "vertical edge magnitude from bearing vector")
 
     # Enter only the original compact name path, independently of old panel
     # preferences. Keep the validated name lookup, native string copy, empty

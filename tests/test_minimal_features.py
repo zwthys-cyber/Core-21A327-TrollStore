@@ -5,6 +5,7 @@ Pointer authentication is skipped only in synthetic call-frame tests; native
 prologue and epilogue instructions remain in the packaged application.
 """
 import random
+import math
 import struct
 import unittest
 import zipfile
@@ -66,8 +67,10 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDB604, 0xDBF84, 0xDBF88, 0xDC014, 0xDC050,
                        0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C]:
             allowed.update(range(offset, offset + 4))
+        for offset in [0xDBD00, 0xDBD18, 0xDBD28, 0xDBD48, 0xDBD90, 0xDBD98, 0xDBD9C, 0xDC244, 0xDC2AC]:
+            allowed.update(range(offset, offset + 4))
         for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24),
-                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28)]:
+                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDB6A8, 232)]:
             allowed.update(range(offset, offset + length))
         for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
             allowed.update(range(offset, offset + length))
@@ -124,7 +127,7 @@ class MinimalFeatureTests(unittest.TestCase):
     def test_render_gates_ignore_enabled_old_preferences(self):
         mu = self.emulator()
         mu.mem_write(CONFIG, b"\xff" * 0x500)
-        for offset in [0xDB2FC, 0xDB3CC, 0xDB46C, 0xDB470,
+        for offset in [0xDB2FC, 0xDB3CC,
                        0xDB680, 0xDB69C, 0xDB864,
                        0xDBBC4, 0xDCDC0, 0xDD5F0, 0xDD758,
                        0xDDEBC, 0xDDEC8, 0xDDF70, 0xDDFC4, 0xDE014, 0xDE5B4,
@@ -143,6 +146,10 @@ class MinimalFeatureTests(unittest.TestCase):
                 self.assertEqual(mu.reg_read(register), 0)
         for enabled in [0, 1]:
             mu.mem_write(CONFIG + 0x23, bytes([enabled]))
+            for offset, reg in [(0xDB46C, UC_ARM64_REG_W10), (0xDB470, UC_ARM64_REG_W9)]:
+                mu.reg_write(UC_ARM64_REG_X27, CONFIG)
+                mu.emu_start(BASE + offset, BASE + offset + 4, count=1)
+                self.assertEqual(mu.reg_read(reg), enabled)
             for offset in [0xDB630, 0xDB644, 0xDB658, 0xDB66C, 0xDCBCC]:
                 mu.reg_write(UC_ARM64_REG_X27, CONFIG)
                 mu.reg_write(UC_ARM64_REG_X20, CONFIG)
@@ -484,6 +491,200 @@ class MinimalFeatureTests(unittest.TestCase):
                 if enabled:
                     self.assertEqual(calls[0][1], [(width / 2, height - 10), (100.0, 70.0)])
                     self.assertEqual(calls[1][1], [(150.0, 100.0), (50.0, 300.0)])
+
+    def test_offscreen_arrows_keep_correct_bearing_and_distance(self):
+        # Run original actor/team/range checks, native edge placement, the native
+        # seven-point arrow (fill + outline), and outlined distance text. Only
+        # libc math/string, cache cleanup, font lookup and graphics are stubbed.
+        diagonal = math.sqrt(0.5)
+        directions = [
+            (0, (10000, 0), (0, -1)), (0, (0, 10000), (1, 0)),
+            (0, (-10000, 0), (0, 1)), (0, (0, -10000), (-1, 0)),
+            (0, (10000, 10000), (diagonal, -diagonal)),
+            (0, (-10000, 10000), (diagonal, diagonal)),
+            (0, (-10000, -10000), (-diagonal, diagonal)),
+            (0, (10000, -10000), (-diagonal, -diagonal)),
+            (90, (0, 10000), (0, -1)), (90, (-10000, 0), (1, 0)),
+            (180, (10000, 0), (0, 1)), (270, (0, 10000), (0, 1)),
+            (360, (10000, 0), (0, -1)), (-90, (10000, 0), (1, 0)),
+        ]
+        cases = [dict(enabled=enabled, bot=bot, width=width, height=height,
+                      yaw=yaw, delta=delta, direction=direction)
+                 for enabled, bot, (width, height), (yaw, delta, direction)
+                 in product([0, 1], [0, 1], [(800, 600), (1280, 720)], directions)]
+        defaults = dict(enabled=1, bot=0, width=800, height=600, yaw=0,
+                        delta=(-10000, 0), direction=(0, 1))
+        for overrides in [dict(distance=300), dict(distance=300.01, invalid=True),
+                          dict(distance=-1, invalid=True), dict(distance=float('nan'), invalid=True),
+                          dict(distance=float('inf'), invalid=True), dict(team=1, invalid=True),
+                          dict(on_screen=1, invalid=True), dict(delta=(0, 0), invalid=True),
+                          dict(delta=(float('inf'), 0), invalid=True),
+                          dict(delta=(0, float('nan')), invalid=True),
+                          dict(yaw=float('nan'), invalid=True), dict(yaw=float('inf'), invalid=True),
+                          dict(width=0, invalid=True), dict(height=-1, invalid=True),
+                          dict(width=float('nan'), invalid=True), dict(height=float('inf'), invalid=True)]:
+            cases.append(defaults | overrides)
+        for case in cases:
+            with self.subTest(**case):
+                mu = self.emulator()
+                context, actor, font_owner = STACK + 0x1000, STACK + 0x2000, STACK + 0x6000
+                distance = case.get('distance', 100)
+                width, height, enabled = case['width'], case['height'], case['enabled']
+                mu.mem_write(CONFIG, b'\xff' * 0x500)  # unrelated saved styles/radar/colors ignored
+                mu.mem_write(CONFIG + 0x23, bytes([enabled]))
+                mu.mem_write(CONFIG + 0x318, struct.pack('<Q', 0x789))
+                mu.mem_write(BASE + 0xC54940, struct.pack('<Q', font_owner))
+                mu.mem_write(font_owner + 0x11C0, struct.pack('<Q', 0x789))
+                mu.mem_write(context, struct.pack('<3f', 1, width, height))
+                mu.mem_write(context + 0x3A8, struct.pack('<I', 1))
+                mu.mem_write(context + 0x1F4, struct.pack('<2f', 1000, 2000))
+                mu.mem_write(context + 0x210, struct.pack('<f', case['yaw']))
+                mu.mem_write(actor, struct.pack('<Q', 0x123123))
+                mu.mem_write(actor + 8, struct.pack('<I', case.get('team', 2)))
+                mu.mem_write(actor + 0xC, bytes([case['bot']]))
+                dx, dy = case['delta']
+                mu.mem_write(actor + 0x18, struct.pack('<2f', 1000 + dx, 2000 + dy))
+                # A misleading/invalid projected coordinate must not reverse the
+                # rear arrow; direction is derived from cached world coordinates.
+                mu.mem_write(actor + 0x28, struct.pack('<2f', float('nan'), -10000))
+                mu.mem_write(actor + 0x40, struct.pack('<f', distance))
+                mu.mem_write(actor + 0x4C, bytes([case.get('on_screen', 0)]))
+                mu.mem_write(STACK + 0x8118, struct.pack('<Q', actor + 0x1F8))
+                mu.mem_write(STACK + 0x80F0, struct.pack('<Q', context + 0x350))
+                mu.mem_write(STACK + 0x80FC, struct.pack('<f', 300))
+                for reg, value in [(registers.UC_ARM64_REG_X19, context),
+                                   (registers.UC_ARM64_REG_X22, 0x1234),
+                                   (UC_ARM64_REG_X23, BASE + 0xC54000),
+                                   (registers.UC_ARM64_REG_X24, actor),
+                                   (UC_ARM64_REG_X25, actor + 0x1F8),
+                                   (UC_ARM64_REG_X27, CONFIG),
+                                   (registers.UC_ARM64_REG_X28, BASE + 0xC54000)]:
+                    mu.reg_write(reg, value)
+                mu.reg_write(registers.UC_ARM64_REG_W20, 1)  # prior actor-loop state
+                mu.emu_start(BASE + 0xDB46C, BASE + 0xDB480, count=10)
+                self.assertEqual(struct.unpack('<I', mu.mem_read(STACK + 0x80B0, 4))[0], enabled)
+                self.assertEqual(struct.unpack('<I', mu.mem_read(STACK + 0x80D4, 4))[0], enabled)
+                fills, outlines, labels, arrow_arguments = [], [], [], []
+
+                def float_read(reg):
+                    return struct.unpack('<f', struct.pack('<I', mu.reg_read(reg)))[0]
+
+                def float_write(reg, value):
+                    mu.reg_write(reg, struct.unpack('<I', struct.pack('<f', value))[0])
+
+                def external_call(uc, address, size, _):
+                    if address == BASE + 0xDBCA0:
+                        uc.emu_stop()  # on-screen actor remains on its original front-marker path
+                        return
+                    ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
+                    if ins == 0xD503237F:
+                        uc.reg_write(UC_ARM64_REG_PC, address + 4)
+                        return
+                    if ins == 0xD65F0FFF:
+                        uc.reg_write(UC_ARM64_REG_PC, uc.reg_read(UC_ARM64_REG_X30))
+                        return
+                    if ins & 0xFC000000 != 0x94000000:
+                        return
+                    delta = ins & 0x3FFFFFF
+                    if delta & 0x2000000:
+                        delta -= 0x4000000
+                    target = address + delta * 4 - BASE
+                    if target == 0xD3F70:
+                        arrow_arguments.append((float_read(registers.UC_ARM64_REG_S0),
+                                                float_read(registers.UC_ARM64_REG_S1)))
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W2), 0)
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W1), 0xFF00FFFF)
+                        self.assertEqual(float_read(registers.UC_ARM64_REG_S2), 40)
+                        return  # execute original polygon generation and authenticated frame
+                    if target == 0xDF47C:
+                        return  # execute original outlined text wrapper
+                    if target == 0xF38BC:
+                        pass  # original unrelated cache cleanup
+                    elif target == 0x123E30:
+                        uc.reg_write(UC_ARM64_REG_X0, 0x1234)
+                    elif target == 0x130E08:
+                        uc.reg_write(UC_ARM64_REG_X0, 0x789)
+                    elif target in [0x7255E0, 0x725390]:
+                        a, b = float_read(registers.UC_ARM64_REG_S0), float_read(registers.UC_ARM64_REG_S1)
+                        for reg in range(registers.UC_ARM64_REG_S2, registers.UC_ARM64_REG_S7 + 1):
+                            uc.reg_write(reg, 0)  # libc may clobber caller-saved edge inputs
+                        if target == 0x7255E0:
+                            float_write(registers.UC_ARM64_REG_S0, math.atan2(a, b))
+                        else:
+                            float_write(registers.UC_ARM64_REG_S0, math.sin(a))
+                            float_write(registers.UC_ARM64_REG_S1, math.cos(a))
+                    elif target in [0x13C8AC, 0x139458]:
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), 0x1234)
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W2), 7)
+                        points = struct.unpack('<14f', uc.mem_read(uc.reg_read(UC_ARM64_REG_X1), 56))
+                        points = list(zip(points[::2], points[1::2]))
+                        self.assertTrue(all(math.isfinite(v) for point in points for v in point))
+                        if target == 0x13C8AC:
+                            self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFF00FFFF)
+                            fills.append(points)
+                        else:
+                            self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFF000000)
+                            outlines.append(points)
+                    elif target == 0x726A30:
+                        dest, length = uc.reg_read(UC_ARM64_REG_X0), uc.reg_read(UC_ARM64_REG_X1)
+                        metres = struct.unpack('<I', uc.mem_read(uc.reg_read(UC_ARM64_REG_SP), 4))[0]
+                        value = f'{metres}m'.encode()
+                        self.assertLess(len(value), length)
+                        uc.mem_write(dest, value + b'\0')
+                        uc.reg_write(UC_ARM64_REG_X0, len(value))
+                    elif target == 0x726B20:
+                        pointer = uc.reg_read(UC_ARM64_REG_X0)
+                        value = bytearray()
+                        while uc.mem_read(pointer + len(value), 1) != b'\0':
+                            value.extend(uc.mem_read(pointer + len(value), 1))
+                        uc.reg_write(UC_ARM64_REG_X0, len(value))
+                    elif target == 0x143400:
+                        pointer = uc.reg_read(UC_ARM64_REG_X1)
+                        value = bytearray()
+                        while uc.mem_read(pointer + len(value), 1) != b'\0':
+                            value.extend(uc.mem_read(pointer + len(value), 1))
+                        float_write(registers.UC_ARM64_REG_S0, len(value) * 6)
+                        float_write(registers.UC_ARM64_REG_S1, 12)
+                    elif target == 0x11D434:
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), BASE + 0xAC8648)
+                        uc.reg_write(UC_ARM64_REG_W0, 0xB2000000)
+                    elif target == 0x13BAE0:
+                        pointer, end = uc.reg_read(registers.UC_ARM64_REG_X5), uc.reg_read(registers.UC_ARM64_REG_X6)
+                        value = bytes(uc.mem_read(pointer, end - pointer)).decode()
+                        point = struct.unpack('<2f', uc.mem_read(uc.reg_read(registers.UC_ARM64_REG_X2), 8))
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFF00FFFF)
+                        self.assertEqual(float_read(registers.UC_ARM64_REG_S0), 12)
+                        self.assertEqual(float_read(registers.UC_ARM64_REG_S2), 1)
+                        labels.append((value, point))
+                    else:
+                        self.fail(f'Unexpected offscreen call {target:#x}')
+                    uc.reg_write(UC_ARM64_REG_PC, address + 4)
+
+                mu.hook_add(UC_HOOK_CODE, external_call)
+                mu.emu_start(BASE + 0xDB5A0, BASE + 0xDBDC8, count=1600)
+                expected_draw = enabled and not case.get('invalid', False)
+                self.assertEqual(len(fills), int(expected_draw))
+                self.assertEqual(len(outlines), int(expected_draw))
+                self.assertEqual(len(labels), int(expected_draw))
+                if expected_draw:
+                    dx, dy = case['direction']
+                    scale = min((width / 2 - 60) / abs(dx) if dx else float('inf'),
+                                (height / 2 - 60) / abs(dy) if dy else float('inf'))
+                    tip = (width / 2 + dx * scale, height / 2 + dy * scale)
+                    for actual, expected in zip(arrow_arguments[0], tip):
+                        self.assertAlmostEqual(actual, expected, delta=0.002)
+                    for actual, expected in zip(fills[0][0], tip):
+                        self.assertAlmostEqual(actual, expected, delta=0.002)
+                    for point in fills[0][1:]:
+                        self.assertLess((point[0] - tip[0]) * dx + (point[1] - tip[1]) * dy, 0)
+                    self.assertEqual(fills, outlines)
+                    self.assertEqual(labels[0][0], f'{round(distance)}m')
+                    self.assertTrue(all(0 < x < width and 0 < y < height for x, y in fills[0]))
+                    x, y = labels[0][1]
+                    self.assertTrue(0 < x < width and 0 < y < height)
+                self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), STACK + 0x8000)
+                if not case.get('on_screen', 0):
+                    self.assertEqual(mu.reg_read(registers.UC_ARM64_REG_W20), 1)
 
     def test_skeleton_requires_native_readiness_and_all_geometry_objects(self):
         mu = self.emulator()
