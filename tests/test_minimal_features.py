@@ -65,14 +65,15 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDCAA8, 0xDCBD8, 0xDCD78,
                        0xD88C0, 0xD88D0, 0xD88DC, 0xD88E0,
                        0xDB604, 0xDBF84, 0xDBF88, 0xDC014, 0xDC050,
-                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C]:
+                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C, 0xDBF60]:
             allowed.update(range(offset, offset + 4))
         for offset in [0xDBD00, 0xDBD18, 0xDBD28, 0xDBD48, 0xDBD90, 0xDBD98, 0xDBD9C, 0xDC244, 0xDC2AC]:
             allowed.update(range(offset, offset + 4))
         for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24),
-                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDB6A8, 232)]:
+                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDB6A8, 232),
+                               (0xDB790, 48), (0xDED8C, 240)]:
             allowed.update(range(offset, offset + length))
-        for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
+        for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6), (0x743F71, 12)]:
             allowed.update(range(offset, offset + length))
         changed = {i for i, (a, b) in enumerate(zip(self.original, self.binary)) if a != b}
         self.assertTrue(changed <= allowed)
@@ -131,8 +132,7 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDB680, 0xDB69C, 0xDB864,
                        0xDBBC4, 0xDCDC0, 0xDD5F0, 0xDD758,
                        0xDDEBC, 0xDDEC8, 0xDDF70, 0xDDFC4, 0xDE014, 0xDE5B4,
-                       0xDE5D0, 0xDE734, 0xDEBE8, 0xDEC30, 0xDED8C, 0xDED94,
-                       0xDEE00, 0xDEE08]:
+                       0xDE5D0, 0xDE734, 0xDEBE8, 0xDEC30]:
             with self.subTest(offset=hex(offset)):
                 for reg in [UC_ARM64_REG_W8, UC_ARM64_REG_W9, UC_ARM64_REG_W10, UC_ARM64_REG_W23]:
                     mu.reg_write(reg, 0xFFFFFFFF)
@@ -171,7 +171,7 @@ class MinimalFeatureTests(unittest.TestCase):
         # short/long string selection, empty fallback, positioning and cleanup.
         for enabled in [0, 1]:
             for bot in [0, 1]:
-                for name in ['Enemy', '测试玩家', 'LongEnemy_' * 5, '']:
+                for name in ['Enemy', '测试玩家', 'LongEnemy_' * 5, '', '0123456789', '01234567890']:
                     with self.subTest(enabled=enabled, bot=bot, name=name):
                         mu = self.emulator()
                         context, actor, name_object = STACK + 0x1000, STACK + 0x2000, STACK + 0x3000
@@ -204,7 +204,7 @@ class MinimalFeatureTests(unittest.TestCase):
                         mu.emu_start(BASE + 0xDB5DC, BASE + 0xDB618, count=30)
                         mu.reg_write(registers.UC_ARM64_REG_S13, struct.unpack('<I', struct.pack('<f', 250))[0])
                         mu.reg_write(registers.UC_ARM64_REG_S15, struct.unpack('<I', struct.pack('<f', 8))[0])
-                        draws, frees, lookups = [], [], []
+                        draws, frees, lookups, suffixes = [], [], [], []
 
                         def external_call(uc, address, size, _):
                             ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
@@ -234,6 +234,20 @@ class MinimalFeatureTests(unittest.TestCase):
                                 while uc.mem_read(pointer + len(value), 1) != b'\0':
                                     value.extend(uc.mem_read(pointer + len(value), 1))
                                 put_string(uc.reg_read(UC_ARM64_REG_X0), bytes(value), copy_heap)
+                            elif target == 0x724E50:
+                                obj = uc.reg_read(UC_ARM64_REG_X0)
+                                self.assertEqual(obj, STACK + 0x8300)
+                                data = bytes(uc.mem_read(obj, 24))
+                                if data[23] & 0x80:
+                                    pointer, length = struct.unpack('<2Q', data[:16])
+                                    value = bytes(uc.mem_read(pointer, length))
+                                else:
+                                    value = data[:data[23]]
+                                suffix = bytes(uc.mem_read(uc.reg_read(UC_ARM64_REG_X1), uc.reg_read(registers.UC_ARM64_REG_X2)))
+                                self.assertEqual(suffix.decode(), '【人机】' if bot else '【真人】')
+                                self.assertEqual(len(suffix), 12)
+                                suffixes.append(suffix.decode())
+                                put_string(obj, value + suffix, copy_heap)
                             elif target == 0x143400:
                                 pointer, end = uc.reg_read(UC_ARM64_REG_X1), uc.reg_read(registers.UC_ARM64_REG_X2)
                                 value = bytes(uc.mem_read(pointer, end - pointer)).decode()
@@ -269,13 +283,16 @@ class MinimalFeatureTests(unittest.TestCase):
                         self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), BASE + 0xDC754)
                         self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), STACK + 0x8000)
                         self.assertEqual(bytes(mu.mem_read(name_object, 24)), original_string)
+                        if len(raw) > 22:
+                            self.assertEqual(bytes(mu.mem_read(source_heap, len(raw))), raw)
                         if enabled:
-                            shown = name or ('人机' if bot else '未知玩家')
+                            shown = (name or ('人机' if bot else '未知玩家')) + ('【人机】' if bot else '【真人】')
                             self.assertEqual(lookups, [0x123123])
+                            self.assertEqual(suffixes, ['【人机】' if bot else '【真人】'])
                             self.assertEqual(draws, [(shown, (400 - len(shown) * 3, 176))])
-                            self.assertEqual(frees, [copy_heap] if len(raw) > 22 else [])
+                            self.assertEqual(frees, [copy_heap] if len(shown.encode()) > 22 else [])
                         else:
-                            self.assertEqual((lookups, draws, frees), ([], [], []))
+                            self.assertEqual((lookups, draws, frees, suffixes), ([], [], [], []))
                         for reg, expected in [(registers.UC_ARM64_REG_S9, 700), (registers.UC_ARM64_REG_S10, 600),
                                               (registers.UC_ARM64_REG_S11, 200), (registers.UC_ARM64_REG_S13, 250),
                                               (registers.UC_ARM64_REG_S14, 400), (registers.UC_ARM64_REG_S15, 8)]:
@@ -685,6 +702,143 @@ class MinimalFeatureTests(unittest.TestCase):
                 self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), STACK + 0x8000)
                 if not case.get('on_screen', 0):
                     self.assertEqual(mu.reg_read(registers.UC_ARM64_REG_W20), 1)
+
+    def test_enemy_counts_reset_and_include_filtered_front_and_rear_targets(self):
+        mu = self.emulator()
+        context, actor = STACK + 0x1000, STACK + 0x2000
+        mu.mem_write(context + 0x3A8, struct.pack('<I', 1))
+        mu.mem_write(CONFIG, b'\xff' * 0x500)
+        mu.mem_write(CONFIG + 0x23, b'\0')
+        mu.reg_write(registers.UC_ARM64_REG_X19, context)
+        mu.reg_write(UC_ARM64_REG_X27, CONFIG)
+        mu.mem_write(STACK + 0x8118, struct.pack('<Q', actor + 0x1F8))
+        mu.mem_write(STACK + 0x80F0, struct.pack('<Q', context + 0x350))
+        mu.mem_write(STACK + 0x80FC, struct.pack('<f', 300))
+        counters = BASE + 0xC548B0
+        mu.mem_write(counters, struct.pack('<2I', 91, 92))
+        # Execute the original per-frame clear, rather than resetting in the fixture.
+        mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=4)
+        self.assertEqual(struct.unpack('<2I', mu.mem_read(counters, 8)), (0, 0))
+        destinations = {BASE + 0xDBBC4, BASE + 0xDBDC8}
+        mu.hook_add(UC_HOOK_CODE, lambda uc, address, size, _: uc.emu_stop()
+                    if address in destinations else None)
+        cases = [(0, 1, 2, 15, True), (1, 0, 2, 20, True),
+                 (0, 0, 2, 300, True), (1, 1, 2, 299.99, True), (0, 0, 2, 1, True),
+                 (0, 0, 2, 300.01, False), (0, 1, 1, 25, False), (1, 0, 1, 25, False),
+                 (0, 1, 2, -1, False), (1, 0, 2, float('inf'), False),
+                 (0, 0, 2, float('nan'), False)]
+        totals = [0, 0]
+        for bot, on_screen, team, distance, accepted in cases:
+            with self.subTest(bot=bot, on_screen=on_screen, team=team, distance=distance):
+                mu.mem_write(actor + 8, struct.pack('<I', team))
+                mu.mem_write(actor + 0xC, bytes([bot]))
+                mu.mem_write(actor + 0x40, struct.pack('<f', distance))
+                mu.mem_write(actor + 0x4C, bytes([on_screen]))
+                mu.reg_write(registers.UC_ARM64_REG_X24, actor)
+                mu.reg_write(UC_ARM64_REG_X25, actor + 0x1F8)
+                mu.reg_write(registers.UC_ARM64_REG_W20, 1)
+                mu.emu_start(BASE + 0xDB5A0, BASE + 0xDBDC8, count=250)
+                totals[bot] += int(accepted)
+                self.assertEqual(struct.unpack('<2I', mu.mem_read(counters, 8)), tuple(totals))
+        self.assertEqual(totals, [3, 2])
+        mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=4)
+        self.assertEqual(struct.unpack('<2I', mu.mem_read(counters, 8)), (0, 0))
+
+    def test_top_count_draws_one_centered_red_number_with_native_outline(self):
+        normal = [dict(enabled=e, humans=h, bots=b, scale=scale, width=w, height=height)
+                  for e, (h, b), (scale, w, height) in product([0, 1],
+                    [(0, 0), (1, 0), (0, 1), (3, 2), (80, 20), (0xFFFFFFFF, 0xFFFFFFFF)],
+                    [(1, 800, 600), (2, 1280, 720), (0.75, 800, 600)])]
+        default = dict(enabled=1, humans=3, bots=2, scale=1, width=800, height=600)
+        cases = normal + [default | values | dict(invalid=True) for values in
+                         [dict(scale=0), dict(scale=-1), dict(scale=float('nan')),
+                          dict(scale=float('inf')), dict(width=0), dict(width=float('nan')),
+                          dict(width=float('inf')), dict(height=0), dict(height=float('nan')),
+                          dict(height=float('inf')), dict(height=88),
+                          dict(format_result=-1), dict(format_result=16)]]
+        for case in cases:
+            with self.subTest(**case):
+                mu = self.emulator()
+                context, font_owner = STACK + 0x1000, STACK + 0x6000
+                scale, width, height = case['scale'], case['width'], case['height']
+                mu.mem_write(context, struct.pack('<3f', scale, width, height))
+                mu.mem_write(CONFIG, b'\xff' * 0x500)  # old count flags/styles do not matter
+                mu.mem_write(CONFIG + 0x23, bytes([case['enabled']]))
+                mu.mem_write(CONFIG + 0x318, struct.pack('<Q', 0x789))
+                mu.mem_write(BASE + 0xC54940, struct.pack('<Q', font_owner))
+                mu.mem_write(font_owner + 0x11C0, struct.pack('<Q', 0x789))
+                counters = struct.pack('<2I', case['humans'], case['bots'])
+                mu.mem_write(BASE + 0xC548B0, counters)
+                mu.reg_write(registers.UC_ARM64_REG_X19, context)
+                mu.reg_write(UC_ARM64_REG_X27, CONFIG)
+                draws, formats = [], []
+                total = min(case['humans'] + case['bots'], 0xFFFFFFFF)
+
+                def external_call(uc, address, size, _):
+                    ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
+                    if ins == 0xD503237F:
+                        uc.reg_write(UC_ARM64_REG_PC, address + 4)
+                        return
+                    if ins == 0xD65F0FFF:
+                        uc.reg_write(UC_ARM64_REG_PC, uc.reg_read(UC_ARM64_REG_X30))
+                        return
+                    if ins & 0xFC000000 != 0x94000000:
+                        return
+                    delta = ins & 0x3FFFFFF
+                    if delta & 0x2000000:
+                        delta -= 0x4000000
+                    target = address + delta * 4 - BASE
+                    if target == 0xDF47C:
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W2), 1)
+                        return  # native centering, outline, draw arguments and frame
+                    if target == 0x726A30:
+                        fmt = uc.reg_read(registers.UC_ARM64_REG_X2)
+                        self.assertEqual(bytes(uc.mem_read(fmt, 3)), b'%u\0')
+                        value = struct.unpack('<Q', uc.mem_read(uc.reg_read(UC_ARM64_REG_SP), 8))[0]
+                        self.assertEqual(value, total)
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X1), 16)
+                        formats.append(value)
+                        text = str(value).encode()
+                        uc.mem_write(uc.reg_read(UC_ARM64_REG_X0), text + b'\0')
+                        uc.reg_write(UC_ARM64_REG_W0, case.get('format_result', len(text)))
+                    elif target == 0x143400:
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), 0x789)
+                        size_value = struct.unpack('<f', struct.pack('<I', uc.reg_read(registers.UC_ARM64_REG_S0)))[0]
+                        self.assertEqual(size_value, 24 * scale)
+                        uc.reg_write(registers.UC_ARM64_REG_S0, struct.unpack('<I', struct.pack('<f', len(str(total)) * 6 * scale))[0])
+                        uc.reg_write(registers.UC_ARM64_REG_S1, struct.unpack('<I', struct.pack('<f', 24 * scale))[0])
+                    elif target == 0x123E30:
+                        uc.reg_write(UC_ARM64_REG_X0, 0x1234)
+                    elif target == 0x130E08:
+                        uc.reg_write(UC_ARM64_REG_X0, 0x789)
+                    elif target == 0x11D434:
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), BASE + 0xAC8648)
+                        uc.reg_write(UC_ARM64_REG_W0, 0xB2000000)
+                    elif target == 0x13BAE0:
+                        pointer, end = uc.reg_read(registers.UC_ARM64_REG_X5), uc.reg_read(registers.UC_ARM64_REG_X6)
+                        text = bytes(uc.mem_read(pointer, end - pointer)).decode()
+                        point = struct.unpack('<2f', uc.mem_read(uc.reg_read(registers.UC_ARM64_REG_X2), 8))
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFF0000FF)
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), 0x789)
+                        self.assertEqual(uc.reg_read(UC_ARM64_REG_X1), 0x1234)
+                        self.assertEqual(struct.unpack('<f', struct.pack('<I', uc.reg_read(registers.UC_ARM64_REG_S0)))[0], 24 * scale)
+                        self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S2), 0x3F800000)
+                        self.assertEqual(struct.unpack('<I', uc.mem_read(uc.reg_read(UC_ARM64_REG_SP), 4))[0], 0xB2000000)
+                        draws.append((text, point))
+                    else:
+                        self.fail(f'Unexpected top-count call {target:#x}')
+                    uc.reg_write(UC_ARM64_REG_PC, address + 4)
+
+                mu.hook_add(UC_HOOK_CODE, external_call)
+                mu.emu_start(BASE + 0xDED8C, BASE + 0xDEF0C, count=300)
+                self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), BASE + 0xDEF0C)
+                self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), STACK + 0x8000)
+                self.assertEqual(bytes(mu.mem_read(BASE + 0xC548B0, 8)), counters)
+                if case['enabled'] and not case.get('invalid', False):
+                    self.assertEqual(formats, [total])
+                    self.assertEqual(draws, [(str(total), (width / 2 - len(str(total)) * 3 * scale, 64 * scale))])
+                else:
+                    self.assertEqual(draws, [])
 
     def test_skeleton_requires_native_readiness_and_all_geometry_objects(self):
         mu = self.emulator()

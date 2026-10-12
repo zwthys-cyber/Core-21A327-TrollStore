@@ -99,7 +99,7 @@ static void Record(const char *format, ...) {
     clock_gettime(CLOCK_REALTIME, &now);
     uint64_t thread = 0;
     pthread_threadid_np(NULL, &thread);
-    n = snprintf(line, sizeof(line), "patch=15 time=%lld.%03ld pid=%d tid=%llu ",
+    n = snprintf(line, sizeof(line), "patch=16 time=%lld.%03ld pid=%d tid=%llu ",
         (long long)now.tv_sec, now.tv_nsec / 1000000, getpid(), (unsigned long long)thread);
     if (n <= 0 || (size_t)n >= sizeof(line) - 1) { errno = saved; return; }
     va_list args;

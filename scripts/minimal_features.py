@@ -9,7 +9,7 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-300m-direction"
+PROFILE = "enemy-markers-300m-count-tags"
 RANGE_METRES = 300
 
 
@@ -75,10 +75,6 @@ DISABLED_READS = {
     0xDE734: "68b34539",  # auxiliary aim display
     0xDEBE8: "68134739",  # auxiliary input display
     0xDEC30: "68af4539",  # aim connection line
-    0xDED8C: "689f4039",  # player count
-    0xDED94: "68d34239",  # bot count
-    0xDEE00: "689f4039",  # player count layout
-    0xDEE08: "77d34239",  # bot count layout
 }
 
 
@@ -160,6 +156,53 @@ def changes():
     add(0xDBD90, "2139221e", branch(0xDBD90, 0xDB6A8), "derive offscreen bearing independently of screen projection")
     add(0xDBD98, "27d5a27e", word(0x1E20C027), "horizontal edge magnitude from bearing vector")
     add(0xDBD9C, "65d5aa7e", word(0x1E20C005), "vertical edge magnitude from bearing vector")
+
+    # Append a category suffix to the original local string copy. Native append
+    # handles short/long growth; the existing cleanup frees that copy. The name
+    # cache is unchanged and classification uses the original bot flag, not text.
+    tag = b"".join([
+        word(0xBD00EFEB),  # replay original save of actor vertical coordinate
+        word(0x39400000 | (0x240 << 10) | (19 << 5) | 8),
+        adrp(0xDB798, 0x743000, 1),
+        word(0x91000000 | (0xF71 << 10) | (1 << 5) | 1),
+        adrp(0xDB7A0, 0x744000, 9),
+        word(0x91000000 | (0x8C9 << 10) | (9 << 5) | 9),
+        word(0x7100011F),  # cmp w8, #0
+        word(0x9A890021),  # csel x1, x1, x9, eq
+        word(0x910C03E0),  # add x0, sp, #0x300 (local std::string)
+        word(0x52800182),  # mov w2, #12 (UTF-8 suffix bytes)
+        call(0xDB7B8, 0x724E50),
+        branch(0xDB7BC, 0xDBF64),
+    ])
+    add(0xDB790, "e3ff41bd4128211e0028231ee11302bde01702bd9f020071e83f083215019f5ae1430891e00316aae07740bde20315aa", tag, "append original bot/human category in disabled radar block")
+    add(0xDBF60, "ebef00bd", branch(0xDBF60, 0xDB790), "tag name copy before font measurement")
+    add(0x743F71, "显示骨骼".encode(), "【真人】".encode(), "human suffix stored in unreachable old checkbox label")
+
+    # Original counters reset every frame and increment after enemy-team and
+    # finite 300-metre checks, before projection. Display their combined total,
+    # including offscreen actors, as one centered red number with native outline.
+    counter = bytearray.fromhex(
+        "688f4039480700346826402d6a0a40bd0910b0120801261e087900121f01096b680600540821201e"
+        "2d0600542801261e087900121f01096ba80500542821201e6d0500544801261e087900121f01096b"
+        "e80400544821201ead0400540110271e0b09211e0850a8520101271e0c09211e60292c1e00202a1e"
+        "aa03005400102c1e2909201e0800009009b148b908b548b90801098b090080121f0109eb0891899a"
+        "e80300f9e0030c91010280520200009042600091000000941f0000718d0100541f4000714a010054"
+        "e10300aae0030c9122008052e31f805203e0bf722041201e8141201e6241201e0000009400000014"
+    )
+    counter[33 * 4:34 * 4] = adrp(0xDEE10, 0xC54000, 8)
+    counter[43 * 4:44 * 4] = adrp(0xDEE38, 0x73D000, 2)
+    counter[45 * 4:46 * 4] = call(0xDEE40, 0x726A30)
+    counter[50 * 4:51 * 4] = word(0x2A0003E1)  # snprintf returns int; explicitly clear length's upper bits
+    counter[58 * 4:59 * 4] = call(0xDEE74, 0xDF47C)
+    counter[59 * 4:60 * 4] = branch(0xDEE78, 0xDEF0C)
+    add(0xDED8C,
+        "689f40398800003768d342391f050071810b0054343300b094ca2b91682b41b9753741b976d20991"
+        "293300d029d927911f05007182b2899ae8b248b9e80300f9e00316aa01028052171f1994283300d0"
+        "08012891bf06007182b2889a74120a9128b748b9e80300f9e00314aa010280520d1f1994689f4039"
+        "2805003677d34239e00316aa441f1994f50300aa680640bdff06007181050054690240bd60930291"
+        "82f90094e30300aa00102c1e0009201e01d0371e2001011f0190361e0028211e610240bd02d0261e"
+        "2208221e0849a8520101271ee00316aae10315aa2200805284010094e00314aa2b1f1994f50300aa",
+        bytes(counter), "red top-center total from original per-frame enemy counters")
 
     # Enter only the original compact name path, independently of old panel
     # preferences. Keep the validated name lookup, native string copy, empty

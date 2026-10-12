@@ -2,11 +2,11 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前版本为 [**v15 屏幕外方向提示测试版（1.6 / build 16 / patch 15）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v15-300m)：侧面和背后的屏幕外目标增加黄色方向箭头、黑色轮廓及距离，沿屏幕边缘提示，并随当前朝向变化。保持 300 米范围；位置页的“附近敌人”统一控制正面名字、细方框、射线、距离、红白骨骼，以及屏幕外箭头和距离。正面保留 v14 的名字描边、底部射线和远处射线变淡，远程诊断日志继续限制为两份、每份 2 MiB。详见 [v15 说明](docs/releases/v15-300m.md)。
+当前版本为 [**v16 人数和身份标注测试版（1.6 / build 17 / patch 16）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v16-300m)：屏幕顶部中央显示 300 米内已获取敌人的红色总数，包含真人、人机及屏幕外目标；名字后追加“【真人】”或“【人机】”。总数为一个带黑色描边的数字。位置页的“附近敌人”统一控制总数、名字与标签、方框、射线、距离、红白骨骼及屏幕外黄色箭头。原方向提示与日志轮换继续使用。详见 [v16 说明](docs/releases/v16-300m.md)。
 
-v15 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v15-300m.ipa` 主安装包，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。新方向提示仍待实机确认。
+在 v16 Release 的 Assets 中下载 `Core-17.0-21A327-TrollStore-v16-300m.ipa` 主安装包。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。构建和发布核验进度见 v16 说明；新增人数与身份标签仍待实机确认。
 
-用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v15 沿用这项原启动调用和“全局”模式，以及 v11 的骨骼采集、v13 的姓名读取和范围、v14 的可读性调整。历史版本见 [v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
+用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。v16 沿用原遮挡启动和“全局”模式、骨骼采集、姓名读取、300 米限制及方向提示。历史版本见 [v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
 AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装版本的 kernelcache，导致环境适配失败并禁用内核按钮。补丁在原缓存验证失败后，读取 IORegistry 当前 `boot-manifest-hash` 对应目录中的 kernelcache，交给原缓存发布器生成元数据及 SHA-256，再由原验证器检查。原准备流程通过后才会变为就绪。
 
@@ -14,17 +14,17 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 ## GitHub 构建
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v15-300m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
+在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v16-300m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
 输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
 
 ## 安装和核验
 
-1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v15-300m.ipa`；已安装的准备工具可以继续使用。
+1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-v16-300m.ipa`；已安装的准备工具可以继续使用。
 2. 完全关闭 Core，打开“Core 环境准备”，点击“准备 Core 环境”。
 3. 显示准备成功后，再打开 Core，等待原环境校验；两步之间不要重启手机。
 4. 环境就绪后，才测试原内核按钮。
-5. 悬浮注册和获取信息完成后，位置页开启“附近敌人”。300 米内的屏幕目标显示名字、细方框、射线和距离；屏幕外目标显示黄色方向箭头和距离；原遮挡数据可用后显示红白骨骼。红白依据关节点，无法给出身体皮肤的精确遮挡边界。安装和签名核验通过不能证明游戏使用安全。
+5. 悬浮注册和获取信息完成后，位置页开启“附近敌人”。顶部显示 300 米内敌人红色总数；屏幕目标显示带真人/人机标签的名字、细方框、射线和距离；屏幕外目标显示黄色方向箭头和距离；原遮挡数据可用后显示红白骨骼。红白依据关节点，无法给出身体皮肤的精确遮挡边界。安装和签名核验通过不能证明游戏使用安全。
 6. 若准备工具失败，导出“文件 → 我的 iPhone → Core 环境准备 → Core-cache-preparation.log”。运行诊断仍为 Core 的 `Core-remote-bootstrap.log`、`core-offline-original-id.log`、`Core-21A327-adaptation.log`。
 
 用户已确认 v3 能正常打开，v4 已不再出现卡密弹窗。v6 的设备日志显示三项签名权限实际存在，但 IORegistry 当前启动哈希属性仍不可读，独立读取程序在 posix_spawn 时仍被拒绝，返回 EPERM；内核利用尚未开始。v7 已在该 iPhone16,2 / 21A327 上验证：完整缓存传输通过原校验器，环境就绪，原 pe-v1 后端到达 state=2 / ready=1，用户界面显示内核初始化成功。该结果只确认本次设备运行；随后 launchd 远程初始化出现第一次异常消息等待失败，悬浮层进入隔离状态。
