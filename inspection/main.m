@@ -25,7 +25,7 @@ static NSURL *ReportURL(void) {
 }
 
 static NSDictionary *InspectGame(void) {
-    NSMutableDictionary *report = [@{@"diagnostic_version":@1, @"date":NSDate.date.description,
+    NSMutableDictionary *report = [@{@"diagnostic_version":@2, @"date":NSDate.date.description,
         @"device":SystemString("hw.machine"), @"system_build":SystemString("kern.osversion"),
         @"target_bundle_id":GameID, @"silhouette_implemented":@NO, @"live_mesh_verified":@NO,
         @"target_process_started":@NO, @"target_process_memory_read":@NO,
@@ -55,9 +55,44 @@ static NSDictionary *InspectGame(void) {
     report[@"installed_game"] = @{@"bundle_id":GameID, @"executable":executable,
         @"version":info[@"CFBundleShortVersionString"] ?: @"", @"build":info[@"CFBundleVersion"] ?: @""};
     report[@"executable_header"] = CSIInspectExecutable([bundle URLByAppendingPathComponent:executable]);
-    report[@"bundle_resources"] = CSIInventory(bundle, 15000, 512, 8);
+    report[@"bundle_resources"] = CSIInventory(bundle, 15000, 2048, 8);
     NSURL *container = [proxy respondsToSelector:@selector(dataContainerURL)] ? [proxy dataContainerURL] : nil;
-    report[@"downloaded_resources"] = container ? CSIInventory(container, 15000, 512, 8) : CSIError(@"data-container-unavailable");
+    report[@"downloaded_resources"] = container ? CSIInventory(container, 15000, 2048, 8) : CSIError(@"data-container-unavailable");
+    NSMutableArray *samples = [NSMutableArray new];
+    NSString *version = info[@"CFBundleShortVersionString"], *build = info[@"CFBundleVersion"];
+    NSCharacterSet *digitsAndDots = [NSCharacterSet characterSetWithCharactersInString:@"0123456789."];
+    if ([version isKindOfClass:NSString.class] && [build isKindOfClass:NSString.class] &&
+        version.length && version.length <= 32 && build.length && build.length <= 32 &&
+        [version rangeOfCharacterFromSet:digitsAndDots.invertedSet].location == NSNotFound &&
+        [build rangeOfCharacterFromSet:digitsAndDots.invertedSet].location == NSNotFound) {
+        for (NSString *name in @[@"map_avatar_base", @"map_avatar_filter"]) {
+            NSString *path = [NSString stringWithFormat:@"cookeddata/shadowtrackerextra/content/paks/%@_%@.%@.pak", name, version, build];
+            NSMutableDictionary *sample = [CSIPakSample(bundle, path) mutableCopy];
+            sample[@"root"] = @"bundle"; sample[@"relative_path"] = path; [samples addObject:sample];
+        }
+        NSString *path = [NSString stringWithFormat:@"Documents/ShadowTrackerExtra/Saved/Paks/map_avatermesh_%@.%@.pak", version, build];
+        NSMutableDictionary *sample = [CSIPakSample(container, path) mutableCopy];
+        sample[@"root"] = @"downloaded"; sample[@"relative_path"] = path; [samples addObject:sample];
+    }
+    // Scan avatar files separately so activity packs do not consume their limit.
+    NSString *avatarPath = @"Documents/ShadowTrackerExtra/Saved/Paks/avatarpaks";
+    NSDictionary *avatars = container ? CSIInventory([container URLByAppendingPathComponent:avatarPath], 4096, 2048, 4) :
+        CSIError(@"data-container-unavailable");
+    report[@"avatar_resource_directory"] = avatars;
+    NSUInteger avatarSamples = 0;
+    for (NSDictionary *resource in avatars[@"resources"]) {
+        NSString *name = resource[@"relative_path"];
+        if (![name.pathExtension.lowercaseString isEqual:@"pak"]) continue;
+        NSString *path = [avatarPath stringByAppendingPathComponent:name];
+        NSMutableDictionary *sample = [CSIPakSample(container, path) mutableCopy];
+        sample[@"root"] = @"downloaded"; sample[@"relative_path"] = path; [samples addObject:sample];
+        if (++avatarSamples >= 8) break;
+    }
+    report[@"pak_edge_samples"] = samples;
+    NSUInteger sampled = 0;
+    for (NSDictionary *sample in samples) if ([sample[@"status"] isEqual:@"sampled"]) sampled++;
+    report[@"successful_pak_edge_samples"] = @(sampled);
+    report[@"bounded_resource_edges_read"] = @(sampled > 0);
     report[@"status"] = @"inspection-complete";
     report[@"next_requirement"] = @"Identify version-matched asset contents or an available per-frame character mask; this file inventory does not supply a live silhouette.";
     return report;
@@ -75,7 +110,7 @@ static NSDictionary *InspectGame(void) {
     UILabel *title = [UILabel new]; title.text = @"Core 模型检查";
     title.font = [UIFont boldSystemFontOfSize:26];
     self.status = [UILabel new]; self.status.numberOfLines = 0;
-    self.status.text = @"请先关闭和平精英。\n\n检查本机游戏版本和资源清单，为完整人物轮廓确认数据来源。完成后，请共享报告交给分析人员。";
+    self.status.text = @"请先关闭和平精英。\n\n检查游戏版本、人物资源清单及少量资源包头尾数据，确认完整人物轮廓的数据来源。完成后，请共享检查报告。";
     self.inspectButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.inspectButton setTitle:@"检查游戏资源" forState:UIControlStateNormal];
     [self.inspectButton addTarget:self action:@selector(inspect) forControlEvents:UIControlEventTouchUpInside];
@@ -97,7 +132,7 @@ static NSDictionary *InspectGame(void) {
         @autoreleasepool {
             NSDictionary *report;
             @try { report = InspectGame(); }
-            @catch (NSException *exception) { report = @{@"diagnostic_version":@1,
+            @catch (NSException *exception) { report = @{@"diagnostic_version":@2,
                 @"status":@"inspection-exception", @"exception":exception.name,
                 @"reason":exception.reason ?: @"", @"live_mesh_verified":@NO}; }
             NSError *error = nil;

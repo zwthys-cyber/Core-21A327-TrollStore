@@ -149,9 +149,49 @@ int main(void) {
         NSDictionary *limited = CSIInventory(FixtureRoot, 1000, 2, 30);
         assert([limited[@"stop_reason"] isEqual:@"resource-limit"] && [limited[@"resources"] count] == 2);
         assert([NSJSONSerialization dataWithJSONObject:inventory options:0 error:NULL]);
+
+        // Samples must be exact bounded ranges, including tiny and sparse files.
+        NSMutableData *payload = [NSMutableData dataWithLength:8193];
+        for (NSUInteger i = 0; i < payload.length; i++) ((uint8_t *)payload.mutableBytes)[i] = (uint8_t)(i % 251);
+        NSURL *pak = [FixtureRoot URLByAppendingPathComponent:@"sample.pak"];
+        assert([payload writeToURL:pak atomically:YES]);
+        NSDictionary *sample = CSIPakSample(FixtureRoot, @"sample.pak");
+        assert([sample[@"status"] isEqual:@"sampled"] && [sample[@"file_bytes"] isEqual:@8193]);
+        NSData *prefix = [[NSData alloc] initWithBase64EncodedString:sample[@"prefix_base64"] options:0];
+        NSData *tail = [[NSData alloc] initWithBase64EncodedString:sample[@"tail_base64"] options:0];
+        assert([prefix isEqual:[payload subdataWithRange:NSMakeRange(0, 64)]]);
+        assert([tail isEqual:[payload subdataWithRange:NSMakeRange(payload.length - 4096, 4096)]]);
+        assert([sample[@"tail_offset"] unsignedLongLongValue] == payload.length - 4096);
+        assert(![sample[@"asset_encryption_verified"] boolValue] && ![sample[@"resource_index_read"] boolValue]);
+        for (NSUInteger length = 1; length <= 65; length++) {
+            assert([[payload subdataWithRange:NSMakeRange(0, length)] writeToURL:pak atomically:YES]);
+            sample = CSIPakSample(FixtureRoot, @"sample.pak");
+            assert([sample[@"status"] isEqual:@"sampled"]);
+            assert([sample[@"prefix_bytes"] unsignedIntegerValue] == MIN(length, 64));
+            assert([sample[@"tail_bytes"] unsignedIntegerValue] == length && [sample[@"tail_offset"] isEqual:@0]);
+        }
+        assert([[NSData data] writeToURL:pak atomically:YES]);
+        assert([CSIPakSample(FixtureRoot, @"sample.pak")[@"status"] isEqual:@"unavailable"]);
+        int sparse = open(pak.fileSystemRepresentation, O_WRONLY | O_TRUNC);
+        assert(sparse >= 0 && !ftruncate(sparse, (off_t)UINT32_MAX + 124)); close(sparse);
+        sample = CSIPakSample(FixtureRoot, @"sample.pak");
+        assert([sample[@"file_bytes"] unsignedLongLongValue] == (uint64_t)UINT32_MAX + 124);
+        assert([sample[@"prefix_bytes"] isEqual:@64] && [sample[@"tail_bytes"] isEqual:@4096]);
+        assert([sample[@"tail_offset"] unsignedLongLongValue] == (uint64_t)UINT32_MAX + 124 - 4096);
+        for (NSString *name in @[@"../outside.pak", @"/absolute.pak", @"./sample.pak", @"Assets/../sample.pak",
+            @"Assets//sample.pak", @"Main", @"missing.pak", @"escape.pak", @"escape-directory/outside.pak"])
+            assert([CSIPakSample(FixtureRoot, name)[@"status"] isEqual:@"unavailable"]);
+        assert([CSIPakSample(nil, @"sample.pak")[@"status"] isEqual:@"unavailable"]);
+        NSURL *pakDirectory = [FixtureRoot URLByAppendingPathComponent:@"directory.pak"];
+        assert([NSFileManager.defaultManager createDirectoryAtURL:pakDirectory withIntermediateDirectories:NO attributes:nil error:NULL]);
+        assert([CSIPakSample(FixtureRoot, @"directory.pak")[@"status"] isEqual:@"unavailable"]);
+        NSURL *pakPipe = [FixtureRoot URLByAppendingPathComponent:@"pipe.pak"];
+        assert(!mkfifo(pakPipe.fileSystemRepresentation, 0600));
+        assert([CSIPakSample(FixtureRoot, @"pipe.pak")[@"status"] isEqual:@"unavailable"]);
+        assert([NSJSONSerialization dataWithJSONObject:sample options:0 error:NULL]);
         assert([NSFileManager.defaultManager removeItemAtURL:FixtureRoot error:NULL]);
         assert([NSFileManager.defaultManager removeItemAtURL:outside error:NULL]);
-        puts("PASS: thin and fat Mach-O byte orders, UUID/version/encryption, malformed bounds and tables, nonregular/symlink inputs, resource types, no content reads, path escape and scan limits");
+        puts("PASS: Mach-O formats and bounds, read-only resource inventory, scan limits, exact bounded pak samples including tiny/sparse files, symlinks/path escape/nonregular inputs rejected");
     }
     return 0;
 }

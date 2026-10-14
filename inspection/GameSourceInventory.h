@@ -211,3 +211,44 @@ static NSDictionary *CSIInventory(NSURL *root, NSUInteger entryLimit, NSUInteger
         @"truncated":@(limit != nil), @"stop_reason":limit ?: @"complete", @"errors":errors,
         @"resources":resources, @"resource_contents_read":@NO, @"live_mesh_verified":@NO};
 }
+
+// Read only bounded file edges, not a full archive or its resource index.
+// Keep raw samples so format analysis does not guess game-specific layouts
+// or treat an executable's cryptid as asset encryption.
+static NSDictionary *CSIPakSample(NSURL *root, NSString *relative) {
+    if (!root || !relative.length || [relative isAbsolutePath] ||
+        ![relative.pathExtension.lowercaseString isEqual:@"pak"]) return CSIError(@"invalid-relative-pak-path");
+    for (NSString *component in [relative componentsSeparatedByString:@"/"])
+        if (!component.length || [component isEqual:@"."] || [component isEqual:@".."]) return CSIError(@"invalid-relative-pak-path");
+    char rootPath[PATH_MAX], sourcePath[PATH_MAX];
+    NSURL *candidate = [root URLByAppendingPathComponent:relative];
+    struct stat linkStatus;
+    if (!realpath(root.fileSystemRepresentation, rootPath) ||
+        lstat(candidate.fileSystemRepresentation, &linkStatus) || !S_ISREG(linkStatus.st_mode) ||
+        !realpath(candidate.fileSystemRepresentation, sourcePath)) return CSIError(@"pak-unavailable-or-nonregular");
+    NSString *prefix = [@(rootPath) stringByAppendingString:@"/"];
+    if (![@(sourcePath) hasPrefix:prefix]) return CSIError(@"pak-path-outside-root");
+    int fd = open(candidate.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return CSIError(@"pak-unreadable");
+    struct stat before, after;
+    if (fstat(fd, &before) || !S_ISREG(before.st_mode) || before.st_size <= 0 ||
+        before.st_dev != linkStatus.st_dev || before.st_ino != linkStatus.st_ino) {
+        close(fd); return CSIError(@"pak-identity-unavailable");
+    }
+    uint64_t length = (uint64_t)before.st_size;
+    NSUInteger firstLength = (NSUInteger)MIN(length, 64), lastLength = (NSUInteger)MIN(length, 4096);
+    NSMutableData *first = [NSMutableData dataWithLength:firstLength], *last = [NSMutableData dataWithLength:lastLength];
+    BOOL read = CSIRead(fd, length, 0, first.mutableBytes, first.length) &&
+        CSIRead(fd, length, length - lastLength, last.mutableBytes, last.length);
+    BOOL stable = !fstat(fd, &after) && before.st_size == after.st_size &&
+        before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec && before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec &&
+        before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec && before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec;
+    close(fd);
+    if (!read) return CSIError(@"pak-edge-read-failed");
+    if (!stable) return CSIError(@"pak-changed-during-read");
+    return @{@"status":@"sampled", @"relative_path":relative, @"file_bytes":@(length),
+        @"prefix_bytes":@(first.length), @"prefix_base64":[first base64EncodedStringWithOptions:0],
+        @"tail_offset":@(length - last.length), @"tail_bytes":@(last.length),
+        @"tail_base64":[last base64EncodedStringWithOptions:0], @"resource_index_read":@NO,
+        @"asset_encryption_verified":@NO, @"live_mesh_verified":@NO};
+}

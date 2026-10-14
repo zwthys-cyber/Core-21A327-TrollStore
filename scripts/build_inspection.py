@@ -26,7 +26,7 @@ def main():
         ROOT / "inspection/main.m", "-o", binary)
     info = dict(CFBundleIdentifier="local.core.model-source-inspector", CFBundleExecutable=binary.name,
         CFBundleName="CoreModelInspector", CFBundleDisplayName="Core 模型检查", CFBundlePackageType="APPL",
-        CFBundleShortVersionString="1.0", CFBundleVersion="1", MinimumOSVersion="17.0",
+        CFBundleShortVersionString="1.1", CFBundleVersion="2", MinimumOSVersion="17.0",
         LSRequiresIPhoneOS=True, UIDeviceFamily=[1, 2], UIFileSharingEnabled=True,
         LSSupportsOpeningDocumentsInPlace=True, UILaunchScreen={},
         UISupportedInterfaceOrientations=["UIInterfaceOrientationPortrait"])
@@ -39,7 +39,7 @@ def main():
     assert signature(data) == plistlib.loads(entitlements.read_bytes())
     dist = ROOT / "dist/model-inspector"
     dist.mkdir(parents=True, exist_ok=True)
-    artifact = dist / "Core-Model-Source-Inspector-TrollStore-v1.ipa"
+    artifact = dist / "Core-Model-Source-Inspector-TrollStore-v2.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -52,10 +52,11 @@ def main():
         sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
         source_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         bundle_id=info["CFBundleIdentifier"], target_bundle_id="com.tencent.tmgp.pubgmhd",
-        version="1.0", build="1", minimum_os="17.0", diagnostic_version=1,
+        version="1.1", build="2", minimum_os="17.0", diagnostic_version=2,
         device_runtime_verified=False, live_mesh_verified=False, silhouette_implemented=False,
-        game_process_memory_read=False, game_started=False, resource_contents_read=False,
-        maximum_scan_entries_per_root=15000, maximum_resources_per_root=512, maximum_seconds_per_root=8,
+        game_process_memory_read=False, game_started=False, bounded_resource_edges_read=True,
+        resource_index_read=False, maximum_pak_edge_samples=11, maximum_bytes_per_pak_sample=4160,
+        maximum_scan_entries_per_root=15000, maximum_resources_per_root=2048, maximum_seconds_per_root=8,
         report_name="Core-model-source-report.json")
     (dist / "model-inspector-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
