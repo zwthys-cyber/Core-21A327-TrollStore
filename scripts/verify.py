@@ -161,7 +161,7 @@ def main(ipa):
             if name in original.namelist():
                 expected = original.read(name)
                 if name == app + "Core":
-                    expected = minimal_core(expected)
+                    expected = expected_main
                 if name == app + "CCCoreLicense.dylib":
                     expected = disable_license_startup(expected)
                 assert sections(binary) == sections(expected), f"Unexpected program section change: {name}"
