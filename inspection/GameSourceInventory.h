@@ -155,7 +155,9 @@ static NSDictionary *CSIInventory(NSURL *root, NSUInteger entryLimit, NSUInteger
     NSNumber *isDirectory;
     if (![directory getResourceValue:&isDirectory forKey:NSURLIsDirectoryKey error:NULL] || !isDirectory.boolValue)
         return CSIError(@"not-a-directory");
-    NSString *prefix = [directory.path stringByAppendingString:@"/"];
+    // Foundation may spell /var and /private/var differently. Compare and
+    // report paths using realpath on both sides, without a doubled slash.
+    NSString *prefix = [@(canonical) stringByAppendingString:@"/"];
     NSMutableArray *resources = [NSMutableArray new], *errors = [NSMutableArray new];
     NSArray *keys = @[NSURLIsDirectoryKey, NSURLIsSymbolicLinkKey, NSURLIsRegularFileKey, NSURLFileSizeKey];
     NSDirectoryEnumerator *enumerator = [NSFileManager.defaultManager enumeratorAtURL:directory
@@ -179,17 +181,21 @@ static NSDictionary *CSIInventory(NSURL *root, NSUInteger entryLimit, NSUInteger
             visited++;
             NSDictionary *values = [child resourceValuesForKeys:keys error:NULL];
             if (!values) continue;
-            if ([values[NSURLIsSymbolicLinkKey] boolValue]) { links++; [enumerator skipDescendants]; continue; }
+            if ([values[NSURLIsSymbolicLinkKey] boolValue]) {
+                links++;
+                if ([values[NSURLIsDirectoryKey] boolValue]) [enumerator skipDescendants];
+                continue;
+            }
             if (![values[NSURLIsRegularFileKey] boolValue]) continue;
             NSString *extension = child.pathExtension.lowercaseString, *kind = nil;
             if ([containers containsObject:extension]) kind = @"asset-container";
             else if ([assets containsObject:extension]) kind = @"unreal-asset";
             else if ([models containsObject:extension]) kind = @"model-file";
             else if ([extension isEqual:@"metallib"]) kind = @"shader-library";
-            if (!kind || ![child.path hasPrefix:prefix]) continue;
+            if (!kind) continue;
             char resolved[PATH_MAX];
             if (!realpath(child.fileSystemRepresentation, resolved) || ![@(resolved) hasPrefix:prefix]) continue;
-            NSString *relative = [child.path substringFromIndex:prefix.length];
+            NSString *relative = [@(resolved) substringFromIndex:prefix.length];
             NSString *lower = relative.lowercaseString;
             BOOL hint = NO;
             for (NSString *term in @[@"skeletal", @"character", @"avatar", @"body", @"hair", @"cloth", @"mesh"])

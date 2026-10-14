@@ -130,7 +130,12 @@ int main(void) {
         assert([inventory[@"status"] isEqual:@"inventoried"] && ![inventory[@"truncated"] boolValue]);
         assert(![inventory[@"live_mesh_verified"] boolValue] && ![inventory[@"resource_contents_read"] boolValue]);
         assert([inventory[@"symlinks_skipped"] unsignedIntegerValue] >= 3);
-        NSArray *resources = inventory[@"resources"]; assert(resources.count == 11);
+        NSArray *resources = inventory[@"resources"];
+        if (resources.count != 11) {
+            NSData *encoded = [NSJSONSerialization dataWithJSONObject:inventory options:NSJSONWritingPrettyPrinted error:NULL];
+            fprintf(stderr, "Unexpected fixture inventory: %s\n", [[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding].UTF8String);
+        }
+        assert(resources.count == 11);
         NSUInteger hints = 0;
         for (NSDictionary *resource in resources) {
             assert([resource[@"relative_path"] hasPrefix:@"Assets/"] && [resource[@"bytes"] isEqual:@7]);
