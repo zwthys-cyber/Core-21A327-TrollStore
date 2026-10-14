@@ -48,6 +48,14 @@ static bool ModelTestRead(uint64_t address, void *destination, size_t size) {
     CoreModelBzeroCapture(destination,size,0,address,TestBase+0xE1960);
     errno=EIO;
     if (FailRemote) return false;
+    if (address==0x300000000ULL && size==72) {
+        for (unsigned i=0;i<3;i++) { float p[3]={(float)i,2,3};memcpy((uint8_t *)destination+i*24+8,p,12); }return true;
+    }
+    if (address==0x300010000ULL && size==24) {
+        for (unsigned i=0;i<3;i++) ((uint8_t *)destination)[i*8+4]=255;return true;
+    }
+    if (address==0x300020000ULL && size==6) { uint16_t indices[]={0,1,2};memcpy(destination,indices,6);return true; }
+    if (address==0x300030000ULL && size==4) { uint16_t bones[]={0,1};memcpy(destination,bones,4);return true; }
     if (address==0x200001200ULL && size==44) {
         CMTransform t={{0,0,0,1,10,20,30,NAN,2,2,2}};memcpy(destination,&t,44);return true;
     }
@@ -89,6 +97,7 @@ static void Drain(void) { dispatch_sync(CMReportQueue, ^{}); }
 static void Reset(void) {
     Drain();memset(TestFrame,0,sizeof(TestFrame));memset(TestContext,0,sizeof(TestContext));memset(CMTargets,0,sizeof(CMTargets));
     memset(TestPose,0,sizeof(TestPose));ReadCalls=RayCalls=LockDepth=0;FailRemote=Ready=BadRay=FailView=false;TestClockStep=0;TestCount=63;TestStride=48;
+    memset(&CMGPUBudget,0,sizeof(CMGPUBudget));CMGPUCacheCount=0;
     atomic_store(&CMEnabled,true);atomic_store(&CMSkipReason,0);atomic_store(&CMReaderCalls,0);atomic_store(&CMComponentCalls,0);
     atomic_store(&CMForwardCalls,0);atomic_store(&CMUnmatchedCalls,0);atomic_store(&CMDisabledCalls,0);atomic_store(&CMRecursiveCalls,0);
     uintptr_t frame=ReaderFrame(),ret=TestBase+0xD8980,context=(uintptr_t)TestContext,component=0x200001000ULL,bones=0x200000000ULL;
@@ -96,7 +105,7 @@ static void Reset(void) {
     memcpy((void *)(frame+16+0x110),&bones,8);memcpy((void *)(frame+16+0x118),&TestCount,4);
     float dimensions[2]={2048,945};CMVec3 camera={0,0,0};memcpy(TestContext+4,dimensions,8);memcpy(TestContext+0x1F4,&camera,sizeof(camera));
     for (unsigned i=0;i<TestCount;i++) { CMTransform b={{0,0,0,1,(float)i,2,3,NAN,1,1,1}};memcpy(TestPose+i*TestStride,&b,44); }
-    dispatch_sync(CMReportQueue, ^{ [CMFrames removeAllObjects]; });
+    dispatch_sync(CMReportQueue, ^{ [CMFrames removeAllObjects];[CMGPUBufferCatalog removeAllObjects];CMGPUWriterStats=nil; });
 }
 static void Capture(void) {
     uintptr_t f=ReaderFrame();int saved=errno;
@@ -168,9 +177,41 @@ int main(void) {
 
         NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:CMReportURL] options:0 error:NULL];
         assert(report && ![report[@"full_render_mesh_verified"] boolValue] && ![report[@"pixel_depth_texture_available"] boolValue]);
-        assert([report[@"capture_version"] unsignedIntValue]==6 && report[@"entry_bzero_calls_observed"]);
+        assert([report[@"capture_version"] unsignedIntValue]==7 && report[@"entry_bzero_calls_observed"]);
+
+        // Real production collection/JSON path: capture once, keep failed reads
+        // unknown, retry them, and invalidate by asset identity after reuse.
+        Reset();CMGDescriptors *gpu=calloc(1,sizeof(*gpu));assert(gpu);gpu->count=1;
+        CMGDescriptor *d=&gpu->descriptors[0];d->asset_address=0x400000000ULL;d->name_index=200;d->internal_index=42;
+        d->vertex_address=0x300000000ULL;d->weight_address=0x300010000ULL;d->vertex_count=3;d->vertex_stride=24;d->weight_stride=8;
+        d->bounds_shape_valid=true;for (unsigned k=0;k<3;k++) d->bounds_extent[k]=10;
+        d->index_width=2;d->index_bytes=112;d->section_bytes=256;
+        uint64_t array=0x300020000ULL;int32_t n=3;memcpy(d->index+8,&array,8);memcpy(d->index+16,&n,4);memcpy(d->index+20,&n,4);
+        array=0x300030000ULL;n=2;memcpy(d->sections+32,&array,8);memcpy(d->sections+40,&n,4);memcpy(d->sections+44,&n,4);
+        CMEMeshEvidence *mesh=calloc(1,sizeof(*mesh));assert(mesh);mesh->resource_count=1;mesh->resources[0].count=2;mesh->resources[0].hierarchy_valid=true;
+        CMInside=true;NSDictionary *streams=CMGPUCollectStreams(gpu,mesh,123,TestClock);CMInside=false;
+        assert(CMGPUCacheCount==1 && [streams[@"new_buffers"] count]==1 && ReadCalls==4);
+        NSDictionary *sample=[streams[@"new_buffers"] firstObject];
+        assert([sample[@"vertices"] length]==72 && [sample[@"weights"] length]==24);
+        assert([sample[@"position_float3_at_offset8_within_asset_bounds"] boolValue] && [sample[@"four_uint8_weights_sum255"] boolValue]);
+        assert([sample[@"index_array_candidates"] count]==1 && [sample[@"section_bone_map_candidates"] count]==1);
+        dispatch_sync(CMReportQueue, ^{ CMGPUAppendBuffers(streams);CMWriteReport(@"test-gpu-streams"); });
+        report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:CMReportURL] options:0 error:NULL];
+        sample=[report[@"mesh_buffer_snapshots"] firstObject];
+        assert([sample[@"vertex_bytes"] unsignedIntValue]==72 && [sample[@"weight_bytes"] unsignedIntValue]==24);
+        assert([[[NSData alloc] initWithBase64EncodedString:sample[@"vertex_base64"] options:0] length]==72);
+        CMInside=true;streams=CMGPUCollectStreams(gpu,mesh,123,TestClock);CMInside=false;
+        assert(![streams[@"new_buffers"] count] && ReadCalls==4);
+        d->internal_index++;CMInside=true;streams=CMGPUCollectStreams(gpu,mesh,123,TestClock);CMInside=false;
+        assert([streams[@"new_buffers"] count]==1 && CMGPUCacheCount==2 && ReadCalls==8);
+        Reset();FailRemote=true;CMInside=true;streams=CMGPUCollectStreams(gpu,mesh,123,TestClock);CMInside=false;
+        assert(!CMGPUCacheCount && ![[streams[@"new_buffers"] firstObject][@"vertices"] length]);
+        FailRemote=false;CMInside=true;streams=CMGPUCollectStreams(gpu,mesh,123,TestClock);CMInside=false;assert(CMGPUCacheCount==1);
+        Reset();TestClockStep=200000000ULL;CMInside=true;streams=CMGPUCollectStreams(gpu,mesh,123,TestClock);CMInside=false;
+        assert(!ReadCalls && !CMGPUCacheCount && CMGPUBudget.truncated);
+        free(gpu);free(mesh);
         [[NSFileManager defaultManager] removeItemAtPath:directory error:NULL];
-        puts("PASS: exact bzero/errno forwarding; nested reads; full 63-transform snapshots; spacing and limits; pinned frame boundary; ray locks, miss/hit/malformed/budget; quaternion/scale world positions; honest report capabilities");
+        puts("PASS: exact forwarding; full poses; camera failure isolation; ray boundaries; GPU bytes and JSON; identity cache and failed-read retry; stream time budget; honest report capabilities");
     }
     return 0;
 }

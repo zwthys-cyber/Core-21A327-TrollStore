@@ -30,6 +30,9 @@ typedef struct {
     uint64_t address;uint32_t asset_index;
     int32_t master_index,master_serial;
     bool master_index_matches_primary,component_transform_valid;
+    bool master_index_matches_captured_component;
+    uint64_t resolved_master_address;
+    uint32_t resolved_master_asset_index;
     CMTransform component_transform;
     CMEMap maps[2];CMEPose poses[2];
 } CMEComponent;
@@ -95,6 +98,7 @@ static inline void CMENativeAdd(CMEMeshEvidence *out,CMRReader reader,uint64_t a
 static inline void CMECollect(uint64_t primary,const uint8_t *layout,size_t layoutLength,uint32_t poseCount,
                               const CMRReferences *refs,const CMBBinding *binding,const CMNNames *names,
                               CMRReader reader,CMEMeshEvidence *out) {
+    (void)poseCount; // A master's reference skeleton need not equal the primary pose count.
     memset(out,0,sizeof(*out));
     if (!refs || !binding || !names || !reader) return;
     const CMEResource *primaryResource=NULL;
@@ -135,23 +139,50 @@ static inline void CMECollect(uint64_t primary,const uint8_t *layout,size_t layo
         CMEComponent *component=&out->components[out->component_count++];component->address=link->component;component->asset_index=link->asset_index;
         memcpy(&component->master_index,child->prefix+0x830,4);memcpy(&component->master_serial,child->prefix+0x834,4);
         component->master_index_matches_primary=primaryHeaderValid && component->master_index==primaryHeader.internal_index && component->master_serial>0;
+        const CMEResource *masterResource=NULL;
+        component->resolved_master_asset_index=UINT32_MAX;
+        if (component->master_index_matches_primary) {
+            component->resolved_master_address=primary;component->resolved_master_asset_index=0;masterResource=primaryResource;
+        } else if (component->master_serial>0) {
+            for (uint32_t k=0;k<refs->count;k++) {
+                const CMRReference *candidate=&refs->references[k];
+                if (candidate->address==child->address || candidate->header.internal_index!=component->master_index) continue;
+                for (uint32_t m=0;m<binding->link_count;m++) if (binding->links[m].component==candidate->address && binding->links[m].asset_index!=UINT32_MAX) {
+                    component->resolved_master_address=candidate->address;component->resolved_master_asset_index=binding->links[m].asset_index;
+                    masterResource=CMEResourceAt(out,component->resolved_master_asset_index);
+                }
+            }
+        }
+        component->master_index_matches_captured_component=component->resolved_master_address!=0;
         memcpy(&component->component_transform,child->prefix+0x1F0,sizeof(CMTransform));
         component->component_transform_valid=CMValidTransform(&component->component_transform);
         const CMEResource *resource=CMEResourceAt(out,link->asset_index);
-        const uint32_t mapOffsets[]={0x958,0xCD0},poseOffsets[]={0x848,0xBD0};
+        // v6 disproved the old 0x958/0xCD0 int32 map hypotheses. The newly
+        // observed 0x8B8 array is tested against full bone identities; the
+        // second map is derived independently from those identities.
+        const uint32_t mapOffsets[]={0x8B8,UINT32_MAX},poseOffsets[]={0x848,0xBD0};
         for (uint32_t j=0;j<2;j++) {
             CMEMap *map=&component->maps[j];map->offset=mapOffsets[j];
-            if (component->master_index_matches_primary && CMEArray(child->prefix,child->prefix_bytes,map->offset,4,&map->address,&map->count) &&
+            if (j==0 && component->master_index_matches_captured_component && CMEArray(child->prefix,child->prefix_bytes,map->offset,4,&map->address,&map->count) &&
                 CMERead(out,reader,map->address,map->indices,map->count*4)) {
                 map->bytes=map->count*4;map->index_range_valid=true;
                 for (uint32_t k=0;k<map->count;k++) {
                     int32_t index=map->indices[k];
                     if (index==-1) map->unmapped++;
-                    else if (index<0 || (uint32_t)index>=poseCount) map->index_range_valid=false;
-                    else if (CMEBoneIdentity(resource,k,primaryResource,(uint32_t)index)) map->identity_matches++;
+                    else if (index<0 || !masterResource || (uint32_t)index>=masterResource->count) map->index_range_valid=false;
+                    else if (CMEBoneIdentity(resource,k,masterResource,(uint32_t)index)) map->identity_matches++;
                 }
                 map->full_identity_match=map->index_range_valid && !map->unmapped && resource &&
-                    resource->count==map->count && primaryResource && primaryResource->count==poseCount && map->identity_matches==map->count;
+                    resource->count==map->count && masterResource && map->identity_matches==map->count;
+            } else if (j==1 && component->master_index_matches_captured_component && resource && masterResource && resource->hierarchy_valid && masterResource->hierarchy_valid) {
+                map->count=resource->count;map->bytes=map->count*4;map->index_range_valid=true;
+                for (uint32_t k=0;k<map->count;k++) {
+                    int32_t match=-1;uint32_t matches=0;
+                    for (uint32_t m=0;m<masterResource->count;m++) if (CMEBoneIdentity(resource,k,masterResource,m)) { match=(int32_t)m;matches++; }
+                    map->indices[k]=matches==1 ? match : -1;
+                    if (matches==1) map->identity_matches++;else map->unmapped++;
+                }
+                map->full_identity_match=map->identity_matches==map->count;
             }
             CMEPose *pose=&component->poses[j];pose->offset=poseOffsets[j];
             if (CMEArray(child->prefix,child->prefix_bytes,pose->offset,48,&pose->address,&pose->count) && resource && pose->count==resource->count) {

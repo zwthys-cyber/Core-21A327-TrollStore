@@ -252,7 +252,7 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.model_capture:
-        info.update(CFBundleVersion="26", CoreModelCaptureVersion="6")
+        info.update(CFBundleVersion="27", CoreModelCaptureVersion="7")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -275,7 +275,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ("Core-17.0-21A327-TrollStore-model-capture-v6.ipa" if args.model_capture else ARTIFACT_NAME)
+    artifact = dist / ("Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -298,7 +298,7 @@ def main():
                                            retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
-    report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=6 if args.model_capture else 0,
+    report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=7 if args.model_capture else 0,
         acquisition="full located component transform array, component transform, native projection, bounded original geometry ray distances",
         report="Core-model-runtime-report.json", max_targets=3, snapshots_per_target=2,
         component_layout_sample_limit_bytes=4096,
@@ -313,6 +313,14 @@ def main():
             bone_record_stride=16, reference_transform_stride=48,
             bone_identity="name index and number", matrix_offset_0x260_hypothesis_rejected=True,
             render_buffers_verified=False, semantic_child_pose_space_verified=False),
+        gpu_buffer_evidence=dict(descriptors=36, lods_per_resource=3, descriptor_reads=192,
+            stream_session_reads=512, stream_session_attempted_bytes=3*1024*1024, read_chunk_bytes=16384,
+            stream_budget_ms_per_snapshot=100, successful_buffer_cache_entries=96, max_vertices_per_lod=16384,
+            index_descriptor_bytes=112, section_prefix_bytes=2048, section_stride_verified=False,
+            active_lod_verified=False, vertex_and_weight_semantics_verified=False),
+        master_maps=dict(native_array_candidate_offset=0x8B8, derived_identity="full FName index and number",
+            attachment_master_lookup=True, serial_identity_verified=False),
+        report_byte_limit=8*1024*1024,
         camera_view_evidence=dict(local_source_bytes=52, native_projection_source="Core-DA704",
             atomic_engine_frame_verified=False, layout_semantics_verified=False),
         minimum_sample_spacing_seconds=10,

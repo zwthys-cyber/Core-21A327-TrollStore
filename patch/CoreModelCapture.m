@@ -17,6 +17,7 @@
 #include "CoreModelBinding.h"
 #include "CoreModelNames.h"
 #include "CoreModelMeshEvidence.h"
+#include "CoreModelGPUStreams.h"
 
 #define CM_BONE_LIMIT 256
 #define CM_TARGET_LIMIT 3
@@ -51,6 +52,13 @@ static _Thread_local bool CMInside;
 static CMTarget CMTargets[CM_TARGET_LIMIT];
 static dispatch_queue_t CMReportQueue;
 static NSMutableArray *CMFrames;
+static NSMutableArray *CMGPUBufferCatalog;
+static NSDictionary *CMGPUWriterStats;
+// Sampler state is accessed only under CMBusy; writer state only on its queue.
+static CMGStreamBudget CMGPUBudget;
+static CMGKey CMGPUCache[CMG_CACHE_LIMIT];
+static uint32_t CMGPUCacheCount;
+static uint64_t CMGPUDeadline;
 static NSURL *CMReportURL;
 static dispatch_source_t CMStatusTimer;
 static atomic_uint CMReaderCalls, CMComponentCalls, CMSkipReason;
@@ -117,10 +125,12 @@ static NSDictionary *CMTransformJSON(const CMTransform *t) {
 
 // Called only on the serial writer queue; report contains at most six snapshots.
 static void CMWriteReport(NSString *status) {
-    NSDictionary *report = @{ @"capture_version":@6, @"status":status,
+    NSDictionary *report = @{ @"capture_version":@7, @"status":status,
         @"date":[NSDate.date description], @"core_uuid":@"4ED1FD29-A46A-36B3-8DFC-36F67EA929D1",
         @"snapshots":CMFrames ?: @[], @"max_targets":@(CM_TARGET_LIMIT),
         @"max_snapshots":@(CM_TARGET_LIMIT*CM_SAMPLES_PER_TARGET),
+        @"mesh_buffer_snapshots":CMGPUBufferCatalog ?: @[], @"gpu_stream_session":CMGPUWriterStats ?: @{},
+        @"report_byte_limit":@(8*1024*1024),
         @"full_render_mesh_verified":@NO, @"runtime_mesh_resource_binding_verified":@NO,
         @"pixel_depth_texture_available":@NO, @"silhouette_implemented":@NO,
         @"target_files_modified":@NO, @"game_process_started":@NO, @"network_requests":@0,
@@ -134,7 +144,15 @@ static void CMWriteReport(NSString *status) {
         @"skip_codes":@{@"1":@"frame-layout-or-local-read", @"2":@"transform-count-or-stride",
                        @"3":@"remote-read-or-camera-validation", @"4":@"sampling-limit-or-spacing"} };
     NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingSortedKeys error:NULL];
-    if (data.length && data.length<=2*1024*1024 && CMReportURL)
+    if (data.length>8*1024*1024) {
+        // Always replace the report with an explicit size-limit result instead
+        // of silently leaving an older successful capture on disk.
+        NSMutableDictionary *limited=[report mutableCopy];limited[@"mesh_buffer_snapshots"]=@[];
+        limited[@"status"]=@"report-size-limit-reached";limited[@"mesh_buffer_catalog_omitted_for_size"]=@YES;
+        limited[@"omitted_mesh_buffer_records"]=@(CMGPUBufferCatalog.count);limited[@"original_report_bytes"]=@(data.length);
+        data=[NSJSONSerialization dataWithJSONObject:limited options:NSJSONWritingSortedKeys error:NULL];
+    }
+    if (data.length && data.length<=8*1024*1024 && CMReportURL)
         [data writeToURL:CMReportURL options:NSDataWritingAtomic error:NULL];
 }
 
@@ -214,8 +232,9 @@ static NSDictionary *CMMeshEvidenceJSON(const CMEMeshEvidence *evidence) {
         const CMEComponent *c=&evidence->components[i];NSMutableArray *maps=[NSMutableArray array],*poses=[NSMutableArray array];
         for (uint32_t j=0;j<2;j++) {
             const CMEMap *map=&c->maps[j];const CMEPose *pose=&c->poses[j];
-            [maps addObject:@{ @"source_component_offset":@(map->offset), @"array_address":@(map->address), @"declared_count":@(map->count),
-                @"sample_bytes":@(map->bytes), @"indices_in_primary_pose_range":@(map->index_range_valid),
+            [maps addObject:@{ @"source_component_offset":map->offset==UINT32_MAX ? (id)NSNull.null : @(map->offset),
+                @"source":j==0 ? @"component-array-candidate" : @"derived-full-FName-identity", @"array_address":@(map->address), @"declared_count":@(map->count),
+                @"sample_bytes":@(map->bytes), @"indices_in_resolved_master_reference_range":@(map->index_range_valid),
                 @"name_and_number_identity_matches":@(map->identity_matches), @"unmapped_count":@(map->unmapped),
                 @"full_reference_bone_mapping_consistent":@(map->full_identity_match),
                 @"sample_base64":[[NSData dataWithBytes:map->indices length:map->bytes] base64EncodedStringWithOptions:0] }];
@@ -227,6 +246,10 @@ static NSDictionary *CMMeshEvidenceJSON(const CMEMeshEvidence *evidence) {
         [components addObject:@{ @"component_address":@(c->address), @"asset_candidate_index":@(c->asset_index),
             @"master_component_index_candidate":@(c->master_index), @"master_component_serial_candidate":@(c->master_serial),
             @"master_index_matches_primary_component":@(c->master_index_matches_primary),
+            @"master_index_matches_captured_component":@(c->master_index_matches_captured_component),
+            @"resolved_master_component_address":@(c->resolved_master_address),
+            @"resolved_master_asset_candidate_index":c->resolved_master_asset_index==UINT32_MAX ? (id)NSNull.null : @(c->resolved_master_asset_index),
+            @"master_serial_identity_verified":@NO,
             @"component_transform_valid":@(c->component_transform_valid), @"component_transform":CMTransformJSON(&c->component_transform),
             @"master_bone_map_candidates":maps, @"pose_array_candidates":poses }];
     }
@@ -249,13 +272,124 @@ static NSDictionary *CMMeshEvidenceJSON(const CMEMeshEvidence *evidence) {
         @"resource_limit":@(CME_RESOURCE_LIMIT), @"native_node_limit":@(CME_NATIVE_LIMIT), @"arbitrary_pointer_recursion":@NO };
 }
 
-static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData, NSData *meshData, NSData *cameraViewData,
+static NSDictionary *CMGPUDescriptorJSON(const CMGDescriptor *d) {
+    return @{ @"asset_address":@(d->asset_address), @"asset_candidate_index":@(d->asset_index),
+        @"asset_name_index":@(d->name_index), @"asset_name_number":@(d->name_number), @"asset_internal_index":@(d->internal_index),
+        @"render_data_address":@(d->render_address), @"source_asset_offset":@0x38, @"lod_address":@(d->lod_address),
+        @"lod_count":@(d->lod_count), @"lod_index":@(d->lod_index), @"current_rendered_lod_verified":@NO,
+        @"vertex_count":@(d->vertex_count), @"vertex_address":@(d->vertex_address), @"vertex_stride":@(d->vertex_stride),
+        @"weight_address":@(d->weight_address), @"weight_stride":@(d->weight_stride), @"stream_headers_consistent":@(d->stream_headers_consistent),
+        @"index_descriptor_address":@(d->index_address), @"index_width_low_byte":@(d->index_width),
+        @"section_address":@(d->section_address), @"section_count":@(d->section_count), @"section_record_stride_verified":@NO,
+        @"asset_bounds_origin":CMFloats(d->bounds_origin,3), @"asset_bounds_extent":CMFloats(d->bounds_extent,3), @"asset_bounds_shape_valid":@(d->bounds_shape_valid),
+        @"lod_prefix_base64":[[NSData dataWithBytes:d->lod length:sizeof(d->lod)] base64EncodedStringWithOptions:0],
+        @"index_descriptor_base64":[[NSData dataWithBytes:d->index length:d->index_bytes] base64EncodedStringWithOptions:0],
+        @"section_prefix_base64":[[NSData dataWithBytes:d->sections length:d->section_bytes] base64EncodedStringWithOptions:0],
+        @"vertex_layout_semantics_verified":@NO, @"weight_layout_semantics_verified":@NO,
+        @"cached_cpu_stream_immutability_verified":@NO };
+}
+
+static bool CMGPUReader(uint64_t address,void *out,size_t size) {
+    if (CMNow()>=CMGPUDeadline) { CMGPUBudget.truncated=true;return false; }
+    return CMReadRemote(address,out,size);
+}
+static NSData *CMGPUBytes(uint64_t address,size_t size) {
+    if (!CMGRange(address,size)) return nil;
+    NSMutableData *bytes=[NSMutableData dataWithLength:size];
+    return CMGStreamRead(&CMGPUBudget,CMGPUReader,address,bytes.mutableBytes,size) ? bytes : nil;
+}
+static NSArray *CMGPUArraySamples(const CMGDescriptor *d,bool indexArrays,uint32_t boneCount) {
+    NSMutableArray *result=[NSMutableArray array];
+    const uint8_t *prefix=indexArrays ? d->index : d->sections;
+    size_t size=indexArrays ? d->index_bytes : d->section_bytes;
+    uint32_t stride=indexArrays ? d->index_width : 2;
+    if ((indexArrays && stride!=2 && stride!=4) || (!indexArrays && !boneCount)) return result;
+    uint32_t limit=indexArrays ? 2 : 8;
+    for (uint32_t offset=0;offset+16<=size && result.count<limit;offset+=8) {
+        uint64_t address=0;uint32_t count=0;
+        if (!CMGArrayCandidate(prefix,size,offset,stride,indexArrays ? d->vertex_count*18 : boneCount,&address,&count) ||
+            (indexArrays && count%3) || address==d->vertex_address || address==d->weight_address) continue;
+        bool duplicate=false;for (NSDictionary *sample in result) if ([sample[@"array_address"] unsignedLongLongValue]==address) duplicate=true;
+        if (duplicate) continue;
+        NSData *bytes=CMGPUBytes(address,(size_t)count*stride);
+        if (!bytes) { if (CMGPUBudget.truncated) break;continue; }
+        bool shape=indexArrays ? CMGIndexHypothesis(bytes.bytes,bytes.length,stride,d->vertex_count) : true;
+        if (!indexArrays) for (uint32_t i=0;i<count;i++) {
+            uint16_t value=0;memcpy(&value,(const uint8_t *)bytes.bytes+i*2,2);if (value>=boneCount) shape=false;
+        }
+        [result addObject:@{ @"source_prefix_offset":@(offset), @"array_address":@(address), @"count":@(count),
+            @"stride_hypothesis":@(stride), @"index_range_shape_valid":@(shape), @"semantic_type_verified":@NO, @"bytes":bytes }];
+    }
+    return result;
+}
+static NSDictionary *CMGPUCollectStreams(const CMGDescriptors *descriptors,const CMEMeshEvidence *mesh,uint64_t component,uint64_t start) {
+    NSMutableArray *fresh=[NSMutableArray array],*references=[NSMutableArray array];
+    CMGPUDeadline=CMNow()+100000000ULL;
+    for (uint32_t i=0;i<descriptors->count;i++) {
+        const CMGDescriptor *d=&descriptors->descriptors[i];CMGKey key=CMGKeyFor(d);uint32_t cached=UINT32_MAX;
+        for (uint32_t k=0;k<CMGPUCacheCount;k++) if (CMGKeyEqual(&key,&CMGPUCache[k])) { cached=k;break; }
+        if (cached!=UINT32_MAX) {
+            [references addObject:@{ @"descriptor_index":@(i), @"buffer_catalog_id":@(cached), @"status":@"already-captured" }];continue;
+        }
+        if (CMGPUCacheCount>=CMG_CACHE_LIMIT || CMNow()>=CMGPUDeadline) {
+            CMGPUBudget.truncated=true;
+            [references addObject:@{ @"descriptor_index":@(i), @"buffer_catalog_id":NSNull.null, @"status":@"capture-budget" }];continue;
+        }
+        NSData *vertices=CMGPUBytes(d->vertex_address,(size_t)d->vertex_count*d->vertex_stride);
+        NSData *weights=CMGPUBytes(d->weight_address,(size_t)d->vertex_count*d->weight_stride);
+        const CMEResource *r=CMEResourceAt(mesh,d->asset_index);
+        NSArray *indices=CMGPUArraySamples(d,true,0),*boneMaps=CMGPUArraySamples(d,false,r && r->hierarchy_valid ? r->count : 0);
+        bool complete=vertices && weights;uint32_t catalogID=complete ? CMGPUCacheCount : UINT32_MAX;
+        if (complete) CMGPUCache[CMGPUCacheCount++]=key;
+        [references addObject:@{ @"descriptor_index":@(i), @"buffer_catalog_id":complete ? @(catalogID) : (id)NSNull.null,
+            @"status":complete ? @"vertex-and-weight-bytes-captured" : @"stream-read-incomplete" }];
+        [fresh addObject:@{ @"descriptor":[NSData dataWithBytes:d length:sizeof(*d)],
+            @"buffer_catalog_id":complete ? @(catalogID) : (id)NSNull.null, @"component_address":@(component), @"pose_sample_start_monotonic_ns":@(start),
+            @"stream_sample_end_monotonic_ns":@(CMNow()), @"vertices":vertices ?: (id)NSData.data, @"weights":weights ?: (id)NSData.data,
+            @"position_float3_at_offset8_within_asset_bounds":@(vertices && CMGPositionHypothesis(d,vertices.bytes,vertices.length)),
+            @"four_uint8_weights_sum255":@(weights && CMGWeightHypothesis(d,weights.bytes,weights.length)),
+            @"index_array_candidates":indices, @"section_bone_map_candidates":boneMaps }];
+    }
+    return @{ @"new_buffers":fresh, @"references":references,
+        @"budget":@{ @"read_attempts":@(CMGPUBudget.read_attempts), @"read_failures":@(CMGPUBudget.read_failures),
+            @"attempted_bytes":@(CMGPUBudget.attempted_bytes), @"completed_bytes":@(CMGPUBudget.completed_bytes),
+            @"truncated":@(CMGPUBudget.truncated), @"read_limit":@(CMG_STREAM_READ_LIMIT), @"byte_limit":@(CMG_STREAM_BYTE_LIMIT),
+            @"chunk_byte_limit":@16384, @"per_snapshot_stream_budget_ns":@100000000,
+            @"successful_buffer_sets":@(CMGPUCacheCount), @"cache_limit":@(CMG_CACHE_LIMIT) } };
+}
+static NSArray *CMGPUArrayJSON(NSArray *samples) {
+    NSMutableArray *result=[NSMutableArray array];
+    for (NSDictionary *sample in samples) {
+        NSMutableDictionary *json=[sample mutableCopy];NSData *bytes=json[@"bytes"];[json removeObjectForKey:@"bytes"];
+        json[@"sample_bytes"]=@(bytes.length);json[@"sample_base64"]=[bytes base64EncodedStringWithOptions:0];[result addObject:json];
+    }
+    return result;
+}
+static void CMGPUAppendBuffers(NSDictionary *streams) {
+    if (!CMGPUBufferCatalog) CMGPUBufferCatalog=[NSMutableArray array];
+    for (NSDictionary *sample in streams[@"new_buffers"]) {
+        NSMutableDictionary *json=[sample mutableCopy];NSData *descriptor=json[@"descriptor"],*vertices=json[@"vertices"],*weights=json[@"weights"];
+        json[@"descriptor"]=CMGPUDescriptorJSON(descriptor.bytes);
+        [json removeObjectForKey:@"vertices"];[json removeObjectForKey:@"weights"];
+        json[@"vertex_bytes"]=@(vertices.length);json[@"weight_bytes"]=@(weights.length);
+        json[@"vertex_base64"]=[vertices base64EncodedStringWithOptions:0];json[@"weight_base64"]=[weights base64EncodedStringWithOptions:0];
+        json[@"index_array_candidates"]=CMGPUArrayJSON(sample[@"index_array_candidates"]);
+        json[@"section_bone_map_candidates"]=CMGPUArrayJSON(sample[@"section_bone_map_candidates"]);
+        json[@"atomic_mesh_snapshot_verified"]=@NO;[CMGPUBufferCatalog addObject:json];
+    }
+    CMGPUWriterStats=streams[@"budget"];
+}
+
+static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData, NSData *meshData, NSData *cameraViewData, NSData *gpuData, NSDictionary *gpuStreams,
                             CMTransform componentTransform, CMVec3 camera, float width, float height,
                             uintptr_t component, uint64_t transformAddress, uint64_t componentTransformAddress, unsigned count, unsigned stride, uint64_t start,
                             uint64_t end, bool geometryReady, bool rayTruncated) {
     dispatch_async(CMReportQueue, ^{
         @autoreleasepool {
             if (CMFrames.count>=CM_TARGET_LIMIT*CM_SAMPLES_PER_TARGET) return;
+            CMGPUAppendBuffers(gpuStreams);
+            const CMGDescriptors *gpu=gpuData.bytes;NSMutableArray *gpuDescriptors=[NSMutableArray array];
+            for (uint32_t i=0;i<gpu->count;i++) [gpuDescriptors addObject:CMGPUDescriptorJSON(&gpu->descriptors[i])];
             const uint8_t *raw = transforms.bytes;
             const CMVec3 *worlds = worldData.bytes;
             const CMVec2 *screens = projectionData.bytes;
@@ -336,6 +470,10 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                 @"component_layout_type_interpretation_verified":@NO,
                 @"component_reference_candidates":references,
                 @"mesh_runtime_evidence":CMMeshEvidenceJSON(meshData.length==sizeof(CMEMeshEvidence) ? meshData.bytes : NULL),
+                @"gpu_stream_probe":@{ @"descriptors":gpuDescriptors, @"buffer_references":gpuStreams[@"references"],
+                    @"descriptor_read_attempts":@(gpu->read_attempts), @"descriptor_read_failures":@(gpu->read_failures),
+                    @"rejected_descriptors":@(gpu->rejected), @"truncated":@(gpu->truncated), @"descriptor_limit":@(CMG_DESCRIPTOR_LIMIT),
+                    @"descriptor_read_limit":@(CMG_READ_LIMIT), @"lod_limit_per_resource":@(CMG_LOD_LIMIT), @"session_budget":gpuStreams[@"budget"] },
                 @"resource_binding_evidence":@{ @"asset_candidates":assetCandidates, @"component_resource_links":links,
                     @"root_asset_array_candidates":buffers, @"extra_asset_read_attempts":@(binding ? binding->assets.read_attempts : 0),
                     @"extra_asset_read_failures":@(binding ? binding->assets.read_failures : 0), @"extra_asset_read_limit":@(CMR_READ_LIMIT),
@@ -395,6 +533,8 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         NSMutableData *nameData = nil;
         NSMutableData *meshData = nil;
         NSData *cameraViewData = nil;
+        NSMutableData *gpuData = nil;
+        NSDictionary *gpuStreams = nil;
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -463,10 +603,13 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         meshData=[NSMutableData dataWithLength:sizeof(CMEMeshEvidence)];
         CMECollect(component,componentLayout.bytes,componentLayout.length,count,referenceData.bytes,bindingData.bytes,nameData.bytes,CMReadRemote,meshData.mutableBytes);
         CMCollectMeshNames(meshData.bytes,nameData.mutableBytes);
+        gpuData=[NSMutableData dataWithLength:sizeof(CMGDescriptors)];
+        CMGCollect(bindingData.bytes,nameData.bytes,CMReadRemote,gpuData.mutableBytes);
+        gpuStreams=CMGPUCollectStreams(gpuData.bytes,meshData.bytes,component,start);
         CMQueueSnapshot([NSData dataWithBytes:raw length:count*stride],
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
             [NSData dataWithBytes:projections length:count*sizeof(*projections)],
-            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,meshData,cameraViewData,componentTransform,camera,size[0],size[1],
+            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,meshData,cameraViewData,gpuData,gpuStreams,componentTransform,camera,size[0],size[1],
             component,boneAddress,remoteAddress,count,stride,start,CMNow(),geometryReady,truncated);
     done: ;
     }
@@ -515,7 +658,7 @@ void CoreModelCaptureStartup(void) {
     CMReportURL=[documents URLByAppendingPathComponent:@"Core-model-runtime-report.json"];
     dispatch_async(CMReportQueue, ^{
         @autoreleasepool {
-            CMFrames=[NSMutableArray array]; CMWriteReport(@"waiting-for-eligible-component-read");
+            CMFrames=[NSMutableArray array];CMGPUBufferCatalog=[NSMutableArray array];CMWriteReport(@"waiting-for-eligible-component-read");
             CMStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);
             if (CMStatusTimer) {
                 __block unsigned ticks=0;

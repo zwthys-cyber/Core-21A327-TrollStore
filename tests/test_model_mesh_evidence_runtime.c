@@ -45,7 +45,8 @@ int main(void) {
     refs.count=1;CMRReference *child=&refs.references[0];child->address=Child;child->source_offset=0x170;child->prefix_bytes=4096;
     int32_t master=42,serial=8;memcpy(child->prefix+0x830,&master,4);memcpy(child->prefix+0x834,&serial,4);
     CMTransform transform={{0,0,0,1,10,20,30,0,1,1,1}};memcpy(child->prefix+0x1F0,&transform,sizeof(transform));
-    Array(child->prefix,0xCD0,Map,2);Array(child->prefix,0x848,OwnPose,2);
+    child->header=Header(201,43);
+    Array(child->prefix,0x8B8,Map,2);Array(child->prefix,0x848,OwnPose,2);
     CMBBinding binding={0};binding.assets.count=2;binding.link_count=2;
     binding.links[0]=(CMBLink){Primary,0x500000000ULL,0};binding.links[1]=(CMBLink){Child,0x500010000ULL,1};
     for (unsigned i=0;i<2;i++) {
@@ -62,20 +63,33 @@ int main(void) {
     assert(evidence.reference_bytes==256 && evidence.pose_bytes==96);
     assert(evidence.resources[0].hierarchy_valid && evidence.resources[1].reference_pose_valid);
     assert(evidence.components[0].master_index_matches_primary && evidence.components[0].component_transform_valid);
+    assert(evidence.components[0].maps[0].full_identity_match && evidence.components[0].maps[0].offset==0x8B8);
     assert(evidence.components[0].maps[1].full_identity_match && evidence.components[0].maps[1].identity_matches==2);
     assert(evidence.components[0].poses[0].transform_shape_valid && evidence.native[1].parent_node==0);
 
     WrongNumber=true;CMECollect(Primary,layout,sizeof(layout),2,&refs,&binding,&names,Reader,&evidence);
     assert(evidence.components[0].maps[1].index_range_valid && evidence.components[0].maps[1].identity_matches==1 && !evidence.components[0].maps[1].full_identity_match);
     WrongNumber=false;BadIndex=true;CMECollect(Primary,layout,sizeof(layout),2,&refs,&binding,&names,Reader,&evidence);
-    assert(!evidence.components[0].maps[1].index_range_valid);
+    assert(!evidence.components[0].maps[0].index_range_valid && evidence.components[0].maps[1].full_identity_match);
     BadIndex=false;Unmapped=true;CMECollect(Primary,layout,sizeof(layout),2,&refs,&binding,&names,Reader,&evidence);
-    assert(evidence.components[0].maps[1].unmapped==1 && !evidence.components[0].maps[1].full_identity_match);
+    assert(evidence.components[0].maps[0].unmapped==1 && !evidence.components[0].maps[0].full_identity_match);
     Unmapped=false;FailInfo=true;CMECollect(Primary,layout,sizeof(layout),2,&refs,&binding,&names,Reader,&evidence);
     assert(evidence.read_failures==1 && !evidence.resources[0].hierarchy_valid && !evidence.components[0].maps[1].full_identity_match);
     FailInfo=false;master=43;memcpy(child->prefix+0x830,&master,4);
     CMECollect(Primary,layout,sizeof(layout),2,&refs,&binding,&names,Reader,&evidence);
     assert(!evidence.components[0].master_index_matches_primary && !evidence.components[0].maps[1].bytes);
+
+    // Hair follows the jacket component, which itself follows the primary.
+    master=42;memcpy(child->prefix+0x830,&master,4);refs.count=2;
+    refs.references[1]=*child;refs.references[1].address=Child+0x10000;
+    refs.references[1].header=Header(202,44);master=43;memcpy(refs.references[1].prefix+0x830,&master,4);
+    binding.assets.count=3;binding.assets.references[2]=binding.assets.references[1];binding.link_count=3;
+    binding.links[2]=(CMBLink){Child+0x10000,0x500020000ULL,2};
+    CMECollect(Primary,layout,sizeof(layout),2,&refs,&binding,&names,Reader,&evidence);
+    assert(evidence.component_count==2 && !evidence.components[1].master_index_matches_primary);
+    assert(evidence.components[1].master_index_matches_captured_component && evidence.components[1].resolved_master_address==Child);
+    assert(evidence.components[1].resolved_master_asset_index==1 && evidence.components[1].maps[0].full_identity_match);
+    assert(evidence.components[1].maps[1].full_identity_match);
 
     binding.assets.count=CMR_REFERENCE_LIMIT;
     for (unsigned i=2;i<CMR_REFERENCE_LIMIT;i++) binding.assets.references[i]=binding.assets.references[1];
@@ -87,6 +101,6 @@ int main(void) {
     assert(!CMERead(&evidence,Reader,(1ULL<<39)-8,data,16));
     CMTransform bone={{0,0,0,1,1,2,3,0,1,1,1}};CMVec3 world;
     assert(CMWorldPosition(&transform,&bone,&world) && world.x==11 && world.y==22 && world.z==33);
-    puts("PASS: per-resource reference skeletons; full FName identities; master-index guards; matching, missing and invalid bone maps; bounded child poses and native array edges; failed reads and exact budgets");
+    puts("PASS: per-resource reference skeletons; full FName identities; primary and attachment master resolution; native and derived maps; matching, missing and invalid bones; bounded child poses and native array edges; failed reads and exact budgets");
     return 0;
 }
