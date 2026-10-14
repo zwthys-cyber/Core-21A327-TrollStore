@@ -175,6 +175,7 @@ def extract(ipa, destination):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model-capture", action="store_true", help="Build the optional bounded runtime-data capture variant")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -191,9 +192,12 @@ def main():
     extract(args.input, work)
     app = work / "Payload/Core.app"
     binary = app / "Core"
-    from remote_imports import redirect_remote_imports
+    from remote_imports import redirect_remote_imports, redirect_model_capture_import
     from minimal_features import PROFILE, minimal_core, manifest
-    binary.write_bytes(redirect_remote_imports(inject(minimal_core(binary.read_bytes()))))
+    main_payload = redirect_remote_imports(inject(minimal_core(binary.read_bytes())))
+    if args.model_capture:
+        main_payload = redirect_model_capture_import(main_payload)
+    binary.write_bytes(main_payload)
     license_library = app / "CCCoreLicense.dylib"
     license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
     dylib = app / "CoreBootCache.dylib"
@@ -201,14 +205,17 @@ def main():
     source = ROOT / "patch/CoreBootCache.m"
     trace_source = ROOT / "patch/CoreRemoteTrace.c"
     probe_source = ROOT / "patch/CoreBootProbe.m"
+    capture_sources = [ROOT / "patch/CoreModelCapture.m"] if args.model_capture else []
     common = ["-arch", "arm64e", "-miphoneos-version-min=17.0", "-O2", "-Wall", "-Wextra",
               "-Werror", "-Wno-unused-parameter", "-fobjc-arc", "-fblocks"]
+    if args.model_capture:
+        common.append("-DCORE_MODEL_CAPTURE=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
             "-Wl,-install_name,@executable_path/CoreBootCache.dylib", "-framework", "Foundation",
             "-Wl,-current_version,1.0.0,-compatibility_version,1.0.0",
-            "-framework", "UIKit", "-framework", "IOKit", "-framework", "Security", source, trace_source, "-o", dylib)
+            "-framework", "UIKit", "-framework", "IOKit", "-framework", "Security", source, trace_source, *capture_sources, "-o", dylib)
         run("xcrun", "--sdk", "iphoneos", "clang", "-arch", "arm64", *common[2:],
             "-isysroot", sdk, "-framework", "Foundation", "-framework", "IOKit", probe_source, "-o", probe)
     else:
@@ -220,11 +227,17 @@ def main():
         trace_obj = work / "CoreRemoteTrace.o"
         run(args.clang, "-target", "arm64e-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
             "-c", trace_source, "-o", trace_obj)
+        capture_objects = []
+        for capture_source in capture_sources:
+            capture_obj = work / "CoreModelCapture.o"
+            run(args.clang, "-target", "arm64e-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
+                "-c", capture_source, "-o", capture_obj)
+            capture_objects.append(capture_obj)
         run(args.linker, "-dylib", "-arch", "arm64e", "-platform_version", "ios", "17.0", "16.5",
             "-syslibroot", args.sdk, "-lSystem", "-lobjc", "-framework", "Foundation", "-framework",
             "UIKit", "-framework", "IOKit", "-framework", "Security", "-install_name", "@executable_path/CoreBootCache.dylib",
             "-current_version", "1.0.0", "-compatibility_version", "1.0.0",
-            "-adhoc_codesign", obj, trace_obj, "-o", dylib)
+            "-adhoc_codesign", obj, trace_obj, *capture_objects, "-o", dylib)
         probe_obj = work / "CoreBootProbe.o"
         run(args.clang, "-target", "arm64-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
             "-c", probe_source, "-o", probe_obj)
@@ -238,6 +251,8 @@ def main():
                 CoreBootCachePatchVersion=str(PATCH_VERSION), CoreBootCacheSupportedBuild="21A327",
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
+    if args.model_capture:
+        info.update(CFBundleVersion="21", CoreModelCaptureVersion="1")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -260,7 +275,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ARTIFACT_NAME
+    artifact = dist / ("Core-17.0-21A327-TrollStore-model-capture-v1.ipa" if args.model_capture else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -283,6 +298,11 @@ def main():
                                            retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
+    report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=1 if args.model_capture else 0,
+        acquisition="full located component transform array, component transform, native projection, bounded original geometry ray distances",
+        report="Core-model-runtime-report.json", max_targets=3, snapshots_per_target=2,
+        capture_window_seconds=180, ray_budget_ms_per_snapshot=10,
+        live_mesh_binding_verified=False, full_render_mesh_verified=False, silhouette_implemented=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 

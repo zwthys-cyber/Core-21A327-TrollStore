@@ -8,7 +8,7 @@ import struct
 import sys
 import zipfile
 from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup, inject, PATCH_VERSION, BUNDLE_BUILD
-from remote_imports import ALIASES, redirect_remote_imports, records
+from remote_imports import ALIASES, MODEL_CAPTURE_ALIASES, redirect_remote_imports, redirect_model_capture_import, records
 from minimal_features import PROFILE, minimal_core
 
 
@@ -64,6 +64,8 @@ def main(ipa):
     with zipfile.ZipFile(ipa) as archive, zipfile.ZipFile(ROOT / "input/Core.ipa") as original:
         app = "Payload/Core.app/"
         main = archive.read(app + "Core")
+        info = plistlib.loads(archive.read(app + "Info.plist"))
+        model_capture = info.get("CoreModelCaptureVersion") == "1"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -77,6 +79,9 @@ def main(ipa):
         assert uuid == CORE_UUID
         validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
         expected_main = redirect_remote_imports(inject(minimal_core(original.read(app + "Core"))))
+        if model_capture:
+            expected_main = redirect_model_capture_import(expected_main)
+        expected_aliases = {**ALIASES, **MODEL_CAPTURE_ALIASES} if model_capture else ALIASES
         # codesign may only resize __LINKEDIT and replace the signature. Check
         # every other byte, including bind records, import names, and header stubs.
         signature_offset = None
@@ -98,7 +103,7 @@ def main(ipa):
         payload_start = 32 + struct.unpack_from("<I", expected_main, 20)[0]
         assert main[payload_start:signature_offset] == expected_main[payload_start:signature_offset], "Unexpected unsigned program or import-table change"
         _, chained_imports, symbol_imports = records(main)
-        for alias in ALIASES.values():
+        for alias in expected_aliases.values():
             for table in (chained_imports, symbol_imports):
                 entries = [r for r in table if r["name"] == alias]
                 assert len(entries) == 1 and entries[0]["ordinal"] == 52
@@ -111,7 +116,9 @@ def main(ipa):
             if typ == 0xF:
                 start = stroff + string
                 exported.add(patch_library[start:patch_library.index(b"\0", start, stroff + strsize)])
-        assert set(ALIASES.values()) <= exported, "Missing forwarding exports"
+        assert set(expected_aliases.values()) <= exported, "Missing forwarding exports"
+        if model_capture:
+            assert b"_CoreModelCaptureStartup" in exported and b"_CoreModelBzeroCapture" in exported
         assert b"_CoreRemoteTraceTestScope" not in exported, "Test scope override leaked into device build"
         entitlements = signature(main)
         expected_entitlements = plistlib.loads((ROOT / "patch/TrollStore.entitlements.plist").read_bytes())
@@ -151,13 +158,13 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == BUNDLE_BUILD and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
+        assert info["CFBundleVersion"] == ("21" if model_capture else BUNDLE_BUILD) and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         assert info["CoreFeatureProfile"] == PROFILE
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
         assert info["UIFileSharingEnabled"] is True
         assert info["CFBundleIdentifier"] == plistlib.loads(original.read(app + "Info.plist"))["CFBundleIdentifier"]
-    print("PASS: exact minimal-profile payload and three trace imports; forwarding exports; all other Core/offline sections and cache/kernel instructions; license startup changes; ABI, dependencies, permissions, resources and signatures verified")
+    print("PASS: exact minimal-profile payload and selected trace/capture imports; forwarding exports; all other Core/offline sections and cache/kernel instructions; license startup changes; ABI, dependencies, permissions, resources and signatures verified")
 
 
 if __name__ == "__main__":

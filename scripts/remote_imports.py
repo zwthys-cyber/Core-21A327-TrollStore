@@ -7,6 +7,7 @@ ALIASES = {
     b"_thread_set_exception_ports": b"_cbr_set_exception_ports___",
     b"_thread_resume": b"_cbr_th_resume",
 }
+MODEL_CAPTURE_ALIASES = {b"_bzero": b"_cmbzr"}
 
 
 def records(data):
@@ -65,12 +66,12 @@ def records(data):
     return libraries, chain_records, symbol_records
 
 
-def redirect_remote_imports(data):
+def _redirect_imports(data, aliases):
     libraries, chains, symbols = records(data)
     if len(libraries) != 52 or libraries[-1] != LOAD_PATH[:-1] or libraries[27] != b"/usr/lib/libSystem.B.dylib":
         raise ValueError("Unexpected trace library ordinal")
     result = bytearray(data)
-    for old, alias in ALIASES.items():
+    for old, alias in aliases.items():
         if len(alias) != len(old) or any(r["name"] == alias for r in chains + symbols):
             raise ValueError("Import alias collision")
         for table, is_chain in [(chains, True), (symbols, False)]:
@@ -95,3 +96,11 @@ def redirect_remote_imports(data):
                 desc = struct.unpack_from("<H", data, entry["pos"] + 6)[0]
                 struct.pack_into("<H", result, entry["pos"] + 6, (desc & 255) | (52 << 8))
     return bytes(result)
+
+
+def redirect_remote_imports(data):
+    return _redirect_imports(data, ALIASES)
+
+
+def redirect_model_capture_import(data):
+    return _redirect_imports(data, MODEL_CAPTURE_ALIASES)

@@ -23,6 +23,9 @@
 #import "CorePreparedCache.h"
 #ifndef CBC_HOST_TEST
 extern void CoreRemoteTraceStartup(void);
+#ifdef CORE_MODEL_CAPTURE
+extern void CoreModelCaptureStartup(void);
+#endif
 #endif
 
 // Core 1.6, UUID 4ED1FD29-A46A-36B3-8DFC-36F67EA929D1.
@@ -397,6 +400,9 @@ __attribute__((constructor)) static void InstallBootCachePatch(void) {
     StartupRecord("constructor entered");
 #ifndef CBC_HOST_TEST
     CoreRemoteTraceStartup();
+#ifdef CORE_MODEL_CAPTURE
+    CoreModelCaptureStartup();
+#endif
 #endif
     Class cls = objc_getClass("QXA107");
     SEL selector = sel_registerName("qm509:metadataURL:matchesProduct:build:board:");
