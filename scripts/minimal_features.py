@@ -9,7 +9,7 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-300m-count-tags"
+PROFILE = "enemy-markers-300m-identity-colors"
 RANGE_METRES = 300
 
 
@@ -157,27 +157,6 @@ def changes():
     add(0xDBD98, "27d5a27e", word(0x1E20C027), "horizontal edge magnitude from bearing vector")
     add(0xDBD9C, "65d5aa7e", word(0x1E20C005), "vertical edge magnitude from bearing vector")
 
-    # Append a category suffix to the original local string copy. Native append
-    # handles short/long growth; the existing cleanup frees that copy. The name
-    # cache is unchanged and classification uses the original bot flag, not text.
-    tag = b"".join([
-        word(0xBD00EFEB),  # replay original save of actor vertical coordinate
-        word(0x39400000 | (0x240 << 10) | (19 << 5) | 8),
-        adrp(0xDB798, 0x743000, 1),
-        word(0x91000000 | (0xF71 << 10) | (1 << 5) | 1),
-        adrp(0xDB7A0, 0x744000, 9),
-        word(0x91000000 | (0x8C9 << 10) | (9 << 5) | 9),
-        word(0x7100011F),  # cmp w8, #0
-        word(0x9A890021),  # csel x1, x1, x9, eq
-        word(0x910C03E0),  # add x0, sp, #0x300 (local std::string)
-        word(0x52800182),  # mov w2, #12 (UTF-8 suffix bytes)
-        call(0xDB7B8, 0x724E50),
-        branch(0xDB7BC, 0xDBF64),
-    ])
-    add(0xDB790, "e3ff41bd4128211e0028231ee11302bde01702bd9f020071e83f083215019f5ae1430891e00316aae07740bde20315aa", tag, "append original bot/human category in disabled radar block")
-    add(0xDBF60, "ebef00bd", branch(0xDBF60, 0xDB790), "tag name copy before font measurement")
-    add(0x743F71, "显示骨骼".encode(), "【真人】".encode(), "human suffix stored in unreachable old checkbox label")
-
     # Original counters reset every frame and increment after enemy-team and
     # finite 300-metre checks, before projection. Display their combined total,
     # including offscreen actors, as one centered red number with native outline.
@@ -206,15 +185,16 @@ def changes():
 
     # Enter only the original compact name path, independently of old panel
     # preferences. Keep the validated name lookup, native string copy, empty
-    # human/bot fallback and cleanup. Skip team numbers and all health drawing.
+    # neutral fallback and cleanup. Skip team numbers and all health drawing.
     add(0xDB5EC, "08014039", word(0x39400000 | (0x23 << 10) | (27 << 5) | 8), "shared name toggle")
     add(0xDB604, "686b68b8", word(0x52800028), "fixed compact name path")
+    add(0xDBF54, "2111889a", word(0xAA0803E1), "neutral unknown-player fallback for either category")
     add(0xDBF84, "fa0300f9", word(0x2F00E40C), "no team-number width")
     add(0xDBF88, "e0430891", branch(0xDBF88, 0xDBFC0), "skip team-number formatting")
     add(0xDC014, "82292d1e", word(0x2F00E402), "center name using its measured width")
     add(0xDC050, "487fba0a", branch(0xDC050, 0xDC088), "skip team-number drawing")
     add(0xDC08C, "a029201e", word(0xD503201F), "remove team-prefix padding")
-    add(0xDC09C, "e6040194", word(0x12800000), "white name text")
+    add(0xDC09C, "e6040194", branch(0xDC09C, 0xDC15C), "name color from original bot flag")
     add(0xDBF7C, "01d0241e", word(0x1E259001), "name font 14 drawing units times native scale")
     add(0xDC0E0, "527e0194", call(0xDC0E0, 0xDC0FC), "outlined name text through native text helper")
     restore = b"".join([
@@ -258,6 +238,18 @@ def changes():
         branch(0xDC158, 0xDC78C),
     ])
     add(0xDC140, "e24302bde04702bd2808231ee1630991e2030991e00316aa63648452", ray_alpha, "dim rays beyond 100 metres in bypassed health block")
+    # The original cached bot flag selects name color without category labels.
+    # This health-only block is bypassed; keep the offscreen path at DC1B4 intact.
+    name_color = b"".join([
+        word(0x39400000 | (0x240 << 10) | (19 << 5) | 8),
+        word(0x52801FE0),  # mov w0, #0xff
+        word(0x72A00000 | (0xFF00 << 5)),  # opaque red, ABGR 0xff0000ff
+        word(0x12800009),  # bot: opaque white
+        word(0x7100011F),  # cmp w8, #0 (zero means human)
+        word(0x1A890000),  # csel w0, w0, w9, eq
+        branch(0xDC174, 0xDC0A0),
+    ])
+    add(0xDC15C, "63c4b7720041201e04008052497c0194ede340bd683e00b000894abd", name_color, "red human / white bot names in bypassed health block")
     add(0xDC76C, "0824a852", branch(0xDC76C, 0xDC120), "ray begins ten drawing units above screen bottom")
 
     # The native collector has separate human/bot skeleton gates. Updating

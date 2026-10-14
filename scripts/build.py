@@ -17,9 +17,9 @@ INPUT_SHA256 = "04d5f9763f5c4dcd19d40fcd52d152cebaa7c18ec68dedb0e90c972fb1c2153c
 CORE_UUID = bytes.fromhex("4ed1fd29a46a36b38dfc36f67ea929d1")
 LOAD_PATH = b"@executable_path/CoreBootCache.dylib\0"
 DYLIB_VERSION = 0x10000
-PATCH_VERSION = 16
-BUNDLE_BUILD = "17"
-ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v16-300m.ipa"
+PATCH_VERSION = 17
+BUNDLE_BUILD = "18"
+ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v17-300m.ipa"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -269,7 +269,7 @@ def main():
                   sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
                   core_uuid=CORE_UUID.hex(), target_build="21A327", patch_version=PATCH_VERSION,
                   feature_profile=PROFILE, minimal_changes=manifest(),
-                  marker_names="original validated lookup, native string copy/fallback/append; suffix identifies human or bot from original flag; centered white outlined name, font 14 times native scale",
+                  marker_names="original validated lookup and native string copy/cleanup; original bot flag selects name color: human opaque red 0xff0000ff, bot opaque white 0xffffffff; no category suffix; neutral unknown-player fallback; centered name with native black outline, font 14 times native scale",
                   marker_count="sum original per-frame human and bot counters after enemy-team and finite inclusive 300-metre checks, before projection; centered red outlined digits at y=64*scale, font=24*scale; shared nearby-enemy checkbox",
                   marker_rays="bottom center, 10 drawing units above screen bottom; opaque white through 100 metres, white alpha 0x70 beyond 100 through 300 metres",
                   marker_directions="offscreen only, inclusive 300 metres; native yellow seven-point arrow with black outline and outlined distance; original cached world X/Y relative to camera yaw; validated finite bearing and current screen bounds",

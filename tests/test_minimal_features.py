@@ -65,15 +65,15 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDCAA8, 0xDCBD8, 0xDCD78,
                        0xD88C0, 0xD88D0, 0xD88DC, 0xD88E0,
                        0xDB604, 0xDBF84, 0xDBF88, 0xDC014, 0xDC050,
-                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C, 0xDBF60]:
+                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C, 0xDBF54]:
             allowed.update(range(offset, offset + 4))
         for offset in [0xDBD00, 0xDBD18, 0xDBD28, 0xDBD48, 0xDBD90, 0xDBD98, 0xDBD9C, 0xDC244, 0xDC2AC]:
             allowed.update(range(offset, offset + 4))
         for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24),
-                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDB6A8, 232),
-                               (0xDB790, 48), (0xDED8C, 240)]:
+                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDC15C, 28), (0xDB6A8, 232),
+                               (0xDED8C, 240)]:
             allowed.update(range(offset, offset + length))
-        for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6), (0x743F71, 12)]:
+        for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
             allowed.update(range(offset, offset + length))
         changed = {i for i, (a, b) in enumerate(zip(self.original, self.binary)) if a != b}
         self.assertTrue(changed <= allowed)
@@ -84,6 +84,9 @@ class MinimalFeatureTests(unittest.TestCase):
         # Native geometry acquisition, readiness management and query routines.
         self.assertEqual(self.original[0xD33F4:0xD88C0], self.binary[0xD33F4:0xD88C0])
         self.assertEqual(self.original[0xD88E4:0xDB144], self.binary[0xD88E4:0xDB144])
+        # Former category append helper, entry and literal are no longer patched.
+        for offset, length in [(0xDB790, 48), (0xDBF60, 4), (0x743F71, 12)]:
+            self.assertEqual(self.original[offset:offset + length], self.binary[offset:offset + length])
 
     def test_rejects_unknown_input_and_reapplication(self):
         modified = bytearray(self.original)
@@ -170,8 +173,8 @@ class MinimalFeatureTests(unittest.TestCase):
         # Native lookup and graphics use synthetic results; execute original
         # short/long string selection, empty fallback, positioning and cleanup.
         for enabled in [0, 1]:
-            for bot in [0, 1]:
-                for name in ['Enemy', '测试玩家', 'LongEnemy_' * 5, '', '0123456789', '01234567890']:
+            for bot in [0, 1, 255]:
+                for name in ['Enemy', '测试玩家', 'LongEnemy_' * 5, '', 'x' * 22, 'x' * 23]:
                     with self.subTest(enabled=enabled, bot=bot, name=name):
                         mu = self.emulator()
                         context, actor, name_object = STACK + 0x1000, STACK + 0x2000, STACK + 0x3000
@@ -204,7 +207,7 @@ class MinimalFeatureTests(unittest.TestCase):
                         mu.emu_start(BASE + 0xDB5DC, BASE + 0xDB618, count=30)
                         mu.reg_write(registers.UC_ARM64_REG_S13, struct.unpack('<I', struct.pack('<f', 250))[0])
                         mu.reg_write(registers.UC_ARM64_REG_S15, struct.unpack('<I', struct.pack('<f', 8))[0])
-                        draws, frees, lookups, suffixes = [], [], [], []
+                        draws, frees, lookups = [], [], []
 
                         def external_call(uc, address, size, _):
                             ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
@@ -234,20 +237,6 @@ class MinimalFeatureTests(unittest.TestCase):
                                 while uc.mem_read(pointer + len(value), 1) != b'\0':
                                     value.extend(uc.mem_read(pointer + len(value), 1))
                                 put_string(uc.reg_read(UC_ARM64_REG_X0), bytes(value), copy_heap)
-                            elif target == 0x724E50:
-                                obj = uc.reg_read(UC_ARM64_REG_X0)
-                                self.assertEqual(obj, STACK + 0x8300)
-                                data = bytes(uc.mem_read(obj, 24))
-                                if data[23] & 0x80:
-                                    pointer, length = struct.unpack('<2Q', data[:16])
-                                    value = bytes(uc.mem_read(pointer, length))
-                                else:
-                                    value = data[:data[23]]
-                                suffix = bytes(uc.mem_read(uc.reg_read(UC_ARM64_REG_X1), uc.reg_read(registers.UC_ARM64_REG_X2)))
-                                self.assertEqual(suffix.decode(), '【人机】' if bot else '【真人】')
-                                self.assertEqual(len(suffix), 12)
-                                suffixes.append(suffix.decode())
-                                put_string(obj, value + suffix, copy_heap)
                             elif target == 0x143400:
                                 pointer, end = uc.reg_read(UC_ARM64_REG_X1), uc.reg_read(registers.UC_ARM64_REG_X2)
                                 value = bytes(uc.mem_read(pointer, end - pointer)).decode()
@@ -265,7 +254,8 @@ class MinimalFeatureTests(unittest.TestCase):
                                 pointer, end = uc.reg_read(registers.UC_ARM64_REG_X5), uc.reg_read(registers.UC_ARM64_REG_X6)
                                 value = bytes(uc.mem_read(pointer, end - pointer)).decode()
                                 point = struct.unpack('<2f', uc.mem_read(uc.reg_read(registers.UC_ARM64_REG_X2), 8))
-                                self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), 0xFFFFFFFF)
+                                self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3),
+                                                 0xFFFFFFFF if bot else 0xFF0000FF)
                                 self.assertEqual(uc.reg_read(UC_ARM64_REG_X0), 0x789)
                                 self.assertEqual(uc.reg_read(UC_ARM64_REG_X1), 0x1234)
                                 self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S0), 0x41600000)
@@ -286,13 +276,12 @@ class MinimalFeatureTests(unittest.TestCase):
                         if len(raw) > 22:
                             self.assertEqual(bytes(mu.mem_read(source_heap, len(raw))), raw)
                         if enabled:
-                            shown = (name or ('人机' if bot else '未知玩家')) + ('【人机】' if bot else '【真人】')
+                            shown = name or '未知玩家'
                             self.assertEqual(lookups, [0x123123])
-                            self.assertEqual(suffixes, ['【人机】' if bot else '【真人】'])
                             self.assertEqual(draws, [(shown, (400 - len(shown) * 3, 176))])
                             self.assertEqual(frees, [copy_heap] if len(shown.encode()) > 22 else [])
                         else:
-                            self.assertEqual((lookups, draws, frees, suffixes), ([], [], [], []))
+                            self.assertEqual((lookups, draws, frees), ([], [], []))
                         for reg, expected in [(registers.UC_ARM64_REG_S9, 700), (registers.UC_ARM64_REG_S10, 600),
                                               (registers.UC_ARM64_REG_S11, 200), (registers.UC_ARM64_REG_S13, 250),
                                               (registers.UC_ARM64_REG_S14, 400), (registers.UC_ARM64_REG_S15, 8)]:
