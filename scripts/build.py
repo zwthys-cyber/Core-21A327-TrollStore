@@ -176,12 +176,15 @@ def extract(ipa, destination):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-capture", action="store_true", help="Build the optional bounded runtime-data capture variant")
+    parser.add_argument("--model-render", action="store_true", help="Build continuous real mesh fill and per-pixel geometric occlusion")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
     parser.add_argument("--linker", default="ld64.lld-21")
     parser.add_argument("--ldid", type=Path)
     args = parser.parse_args()
+    if args.model_render:
+        args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
     if original_hash != INPUT_SHA256:
         raise ValueError("Input IPA hash does not match analyzed version")
@@ -197,6 +200,9 @@ def main():
     main_payload = redirect_remote_imports(inject(minimal_core(binary.read_bytes())))
     if args.model_capture:
         main_payload = redirect_model_capture_import(main_payload)
+    if args.model_render:
+        from model_render_patch import redirect_model_render
+        main_payload=redirect_model_render(main_payload)
     binary.write_bytes(main_payload)
     license_library = app / "CCCoreLicense.dylib"
     license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
@@ -210,6 +216,8 @@ def main():
               "-Werror", "-Wno-unused-parameter", "-fobjc-arc", "-fblocks"]
     if args.model_capture:
         common.append("-DCORE_MODEL_CAPTURE=1")
+    if args.model_render:
+        common.append("-DCORE_MODEL_RENDER=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -253,6 +261,8 @@ def main():
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.model_capture:
         info.update(CFBundleVersion="27", CoreModelCaptureVersion="7")
+    if args.model_render:
+        info.update(CFBundleVersion="28",CoreModelRenderVersion="1")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -275,7 +285,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ("Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
+    artifact = dist / ("Core-17.0-21A327-TrollStore-model-render-v1.ipa" if args.model_render else "Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -328,6 +338,14 @@ def main():
         entry_return="ARM64 veneer passes original LR in x4 before the C prologue",
         entry_diagnostics="all forwarding entries, unmatched callers, expected reader calls, disabled and recursive reader calls",
         live_mesh_binding_verified=False, full_render_mesh_verified=False, silhouette_implemented=False)
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=1 if args.model_render else 0,
+        draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
+        continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
+        target_limit=24,mesh_cache_bytes=24*1024*1024,pixel_limit=4*1024*1024,span_limit=4096,
+        pose_spacing_ms=50,maximum_pose_age_ms=250,metadata_refresh_ms=1000,pixel_query_budget_ms=12,
+        incomplete_frame_policy="skip complete fill if pixel classification or span budget is incomplete",
+        scene_gpu_depth=False,material_alpha_clip_verified=False,cloth_morph_verified=False,
+        default_master_reference_pose_fallback_verified_for_game=False,full_requested_effect_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 

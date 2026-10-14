@@ -499,10 +499,19 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
     });
 }
 
+#ifdef CORE_MODEL_RENDER
+#include "CoreModelLiveRenderer.inc"
+#endif
+static bool CMObserverEnabled(void) {
+#ifdef CORE_MODEL_RENDER
+    if(atomic_load_explicit(&CMLReady,memory_order_acquire))return true;
+#endif
+    return atomic_load_explicit(&CMEnabled,memory_order_acquire);
+}
 // Keep the large scratch arrays out of the forwarding function. Its prologue
 // must not probe a large stack frame for every unrelated Core bzero call.
 __attribute__((noinline)) static void CMTryCapture(void *destination, size_t length, uintptr_t readerFrame, uint64_t remoteAddress, uintptr_t caller) {
-    if (!atomic_load_explicit(&CMEnabled,memory_order_acquire) || CMInside || caller!=CMBase+0xE1960) return;
+    if (!CMObserverEnabled() || CMInside || caller!=CMBase+0xE1960) return;
     if (length!=44 ||
         !readerFrame || readerFrame>UINTPTR_MAX-0x200 || readerFrame<0x50 ||
         (uintptr_t)destination!=readerFrame+16+0xD0 || !CMRemoteRange(remoteAddress,44)) return;
@@ -535,6 +544,13 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         NSData *cameraViewData = nil;
         NSMutableData *gpuData = nil;
         NSDictionary *gpuStreams = nil;
+#ifdef CORE_MODEL_RENDER
+        uintptr_t actorRecord=0;uint64_t actor=0;
+        // E1908 saves D7A88's x22 (the 24-byte source actor record) at FP-0x20.
+        if(CMSelfRead(readerFrame-0x20,&actorRecord,8)&&CMSelfRead(actorRecord,&actor,8))
+            CMLObserve(component,actor,remoteAddress,boneAddress,count,stride);
+        if(!atomic_load_explicit(&CMEnabled,memory_order_acquire))goto done;
+#endif
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -634,7 +650,7 @@ __attribute__((noinline)) void CoreModelBzeroCapture(void *destination, size_t l
         atomic_fetch_add_explicit(&CMUnmatchedCalls,1,memory_order_relaxed);
     } else {
         atomic_fetch_add_explicit(&CMReaderCalls,1,memory_order_relaxed);
-        if (!atomic_load_explicit(&CMEnabled,memory_order_acquire))
+        if (!CMObserverEnabled())
             atomic_fetch_add_explicit(&CMDisabledCalls,1,memory_order_relaxed);
         else if (CMInside)
             atomic_fetch_add_explicit(&CMRecursiveCalls,1,memory_order_relaxed);
@@ -656,6 +672,9 @@ void CoreModelCaptureStartup(void) {
     CMReportQueue=dispatch_queue_create("local.core.model-capture.writer",DISPATCH_QUEUE_SERIAL);
     NSURL *documents=[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
     CMReportURL=[documents URLByAppendingPathComponent:@"Core-model-runtime-report.json"];
+#ifdef CORE_MODEL_RENDER
+    CMLStartup();
+#endif
     dispatch_async(CMReportQueue, ^{
         @autoreleasepool {
             CMFrames=[NSMutableArray array];CMGPUBufferCatalog=[NSMutableArray array];CMWriteReport(@"waiting-for-eligible-component-read");

@@ -81,9 +81,29 @@ def check(ipa):
         elif word in (0xD73F0A11, 0xD63F0200):  # prologue BLRAA x16,x17 / BLR x16
             raise AssertionError("Unexpected indirect stack-probing call in forwarding prologue")
 
-    mu.hook_add(UC_HOOK_CODE, step)
+    entry_hook=mu.hook_add(UC_HOOK_CODE, step)
     mu.emu_start(slide + entry, slide + extent, count=96)
     assert visited_forwarding and stopped_at_call, "Compiled forwarding did not reach its first call"
+    if "_cmdraw" in symbols:
+        assert "_CoreModelRenderDispatch" in symbols and "_CMLDraw" in symbols
+        mu.hook_del(entry_hook)
+        passed=False
+        mu.reg_write(r.UC_ARM64_REG_SP,sp)
+        mu.reg_write(r.UC_ARM64_REG_X0,0x100C54270)
+        mu.reg_write(r.UC_ARM64_REG_X1,0xBAD)
+        mu.reg_write(r.UC_ARM64_REG_X30,0x100021BC4)
+        def render_step(uc,address,size,_):
+            nonlocal passed
+            if address==slide+symbols['_CoreModelRenderDispatch']:
+                assert uc.reg_read(r.UC_ARM64_REG_X0)==0x100C54270
+                assert uc.reg_read(r.UC_ARM64_REG_X1)==0x100021BC4
+                assert uc.reg_read(r.UC_ARM64_REG_X30)==0x100021BC4
+                assert uc.reg_read(r.UC_ARM64_REG_SP)==sp
+                passed=True;uc.emu_stop()
+        mu.hook_add(UC_HOOK_CODE,render_step)
+        mu.emu_start(slide+symbols['_cmdraw'],slide+extent,count=24)
+        assert passed,'Renderer import lost the native context or LR'
+        print('PASS: compiled render veneer passes native context and caller LR before any prologue; live draw body remains separate')
     print("PASS: compiled ARM64 entry retains caller LR, FP, remote address, arguments and SP; forwarding stack <=512 bytes; large sampler remains separate")
 
 

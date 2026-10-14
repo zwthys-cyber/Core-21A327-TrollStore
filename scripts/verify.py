@@ -68,6 +68,10 @@ def main(ipa):
         capture_version = info.get("CoreModelCaptureVersion")
         assert capture_version in (None, "1", "2", "3", "4", "5", "6", "7"), "Unknown capture protocol"
         model_capture = capture_version is not None
+        render_version=info.get("CoreModelRenderVersion")
+        assert render_version in (None,"1"), "Unknown renderer protocol"
+        model_render=render_version is not None
+        assert not model_render or capture_version=="7"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -83,7 +87,12 @@ def main(ipa):
         expected_main = redirect_remote_imports(inject(minimal_core(original.read(app + "Core"))))
         if model_capture:
             expected_main = redirect_model_capture_import(expected_main)
+        if model_render:
+            from model_render_patch import redirect_model_render,MODEL_RENDER_ALIASES
+            expected_main=redirect_model_render(expected_main)
         expected_aliases = {**ALIASES, **MODEL_CAPTURE_ALIASES} if model_capture else ALIASES
+        if model_render:
+            expected_aliases={**expected_aliases,**MODEL_RENDER_ALIASES}
         # codesign may only resize __LINKEDIT and replace the signature. Check
         # every other byte, including bind records, import names, and header stubs.
         signature_offset = None
@@ -121,6 +130,8 @@ def main(ipa):
         assert set(expected_aliases.values()) <= exported, "Missing forwarding exports"
         if model_capture:
             assert b"_CoreModelCaptureStartup" in exported and b"_CoreModelBzeroCapture" in exported
+        if model_render:
+            assert b"_CoreModelRenderDispatch" in exported and b"_cmdraw" in exported
         assert b"_CoreRemoteTraceTestScope" not in exported, "Test scope override leaked into device build"
         entitlements = signature(main)
         expected_entitlements = plistlib.loads((ROOT / "patch/TrollStore.entitlements.plist").read_bytes())
@@ -161,6 +172,8 @@ def main(ipa):
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
         expected_build = {"1":"21", "2":"22", "3":"23", "4":"24", "5":"25", "6":"26", "7":"27"}.get(capture_version, BUNDLE_BUILD)
+        if model_render:
+            expected_build="28"
         assert info["CFBundleVersion"] == expected_build and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         assert info["CoreFeatureProfile"] == PROFILE
         assert info["CoreRemoteTraceVersion"] == "1"
