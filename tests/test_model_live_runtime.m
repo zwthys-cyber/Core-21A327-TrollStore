@@ -5,8 +5,8 @@
 #include <assert.h>
 #include <errno.h>
 static const uintptr_t TestBase=0x100000000ULL;
-static const uint64_t GameComponent=0x200001000ULL,GamePose=0x200010000ULL,GameActor=0x200020000ULL,Asset=0x300000000ULL,Class=0x400000000ULL;
-static uint8_t Context[2048],Component[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256];
+static const uint64_t GameComponent=0x200001000ULL,GamePose=0x200010000ULL,GameActor=0x200020000ULL,Asset=0x300000000ULL,GameClass=0x400000000ULL;
+static uint8_t Context[2048],ComponentData[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256];
 static uint64_t TestTime=10000000000ULL;
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads;
 static bool BadRay,WrongProjection,FailQueryBudget;
@@ -29,7 +29,7 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
 #undef vm_read_overwrite
 #undef clock_gettime
 static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzeroCapture(out,size,0,address,TestBase+0xE1960);
-    if(address>=GameComponent&&size<=sizeof(Component)&&address-GameComponent<=sizeof(Component)-size){memcpy(out,Component+address-GameComponent,size);return true;}
+    if(address>=GameComponent&&size<=sizeof(ComponentData)&&address-GameComponent<=sizeof(ComponentData)-size){memcpy(out,ComponentData+address-GameComponent,size);return true;}
     if(address==GamePose&&size==48){CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};memcpy(out,&t,sizeof(t));return true;}return false;
 }
 static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){assert(camera==Context+0x1F4);CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(WrongProjection)p.xy.x+=10;return p.xy;}
@@ -40,17 +40,17 @@ static void Original(void *p){assert(p==Context);OriginalCalls++;}
 static void *List(void){return DrawList;}
 static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y==points[1].y+1);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
-    memset(Context,0,sizeof(Context));memset(Component,0,sizeof(Component));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
+    memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
     TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=0;BadRay=WrongProjection=FailQueryBudget=false;
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
     CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];
     CMBase=TestBase;CMReadRemote=Reader;CMProject=Project;CMLock=Lock;CMUnlock=Unlock;for(unsigned i=0;i<3;i++)CMRayFunctions[i]=Ray;
     CMLExpectedContext=(uintptr_t)Context;CMLOriginalDraw=Original;CMLGetDrawList=List;CMLPolygon=Polygon;
-    CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=Class;h.internal_index=7;h.name_index=100;memcpy(Component,&h,40);
-    memcpy(Component+0x1F0,&identity,44);memcpy(Component+0x828,&Asset,8);Component[0x100]=1;
+    CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=7;h.name_index=100;memcpy(ComponentData,&h,40);
+    memcpy(ComponentData+0x1F0,&identity,44);memcpy(ComponentData+0x828,&Asset,8);ComponentData[0x100]=1;
     Context[0x23]=1;float screen[2]={8,8},fov=90;memcpy(Context+4,screen,8);memcpy(Context+0x1F4+48,&fov,4);
     uintptr_t begin=(uintptr_t)ActorRecord,end=begin+sizeof(ActorRecord);memcpy(Context+0x3F0,&begin,8);memcpy(Context+0x3F8,&end,8);uint32_t localTeam=1,team=2;float distance=10;memcpy(Context+0x3A8,&localTeam,4);memcpy(ActorRecord,&GameActor,8);memcpy(ActorRecord+8,&team,4);memcpy(ActorRecord+0x40,&distance,4);memcpy(SourceRecord,&GameActor,8);DrawList[0x30]=4;
-    CMFSchema schema={0};schema.visible=(CMFBool){0x100,1,true};schema.hidden=(CMFBool){0x101,1,true};schema.predicted_found=true;schema.predicted_lod=0x900;CMLSchemas[@(Class)]=[NSData dataWithBytes:&schema length:sizeof(schema)];
+    CMFSchema schema={0};schema.visible=(CMFBool){0x100,1,true};schema.hidden=(CMFBool){0x101,1,true};schema.predicted_found=true;schema.predicted_lod=0x900;CMLSchemas[@(GameClass)]=[NSData dataWithBytes:&schema length:sizeof(schema)];
     CMLMesh *mesh=[CMLMesh new];mesh.key=(CMGKey){.asset=Asset};mesh.vertices=3;mesh.bones=1;mesh.sectionCount=1;mesh.indexCount=3;mesh.indexWidth=2;
     uint8_t vertices[72]={0},weights[24]={0};const CMVec3 positions[3]={{10,-7.5f,7.5f},{10,7.5f,7.5f},{10,-7.5f,-7.5f}};for(unsigned i=0;i<3;i++){memcpy(vertices+i*24+8,&positions[i],12);weights[i*8+4]=255;}
     uint16_t indices[]={0,1,2},palettes[256]={0};CMSSection section={.triangle_count=1,.vertex_count=3,.bone_count=1};CMSMatrix inverse=CMSIdentity();uint32_t info[4]={100,0,UINT32_MAX,0};
@@ -66,14 +66,14 @@ static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x2
 int main(void){@autoreleasepool {
     Setup();Draw();assert(OriginalCalls==1&&Fills==9&&WhiteFills>0&&RedFills>0);
     Setup();Context[0x23]=0;Draw();assert(OriginalCalls==1&&!Fills);
-    Setup();Component[0x101]=1;Draw();assert(!Fills);
+    Setup();ComponentData[0x101]=1;Draw();assert(!Fills);
     Setup();uint32_t team=1;memcpy(ActorRecord+8,&team,4);Draw();assert(!Fills);
     Setup();TestTime+=250000001ULL;Draw();assert(!Fills);
     Setup();WrongProjection=true;Draw();assert(!Fills);
     Setup();BadRay=true;Draw();assert(!Fills);
     Setup();FailQueryBudget=true;Draw();assert(!Fills);
-    Setup();uint32_t lod=1;memcpy(Component+0x900,&lod,4);Draw();assert(!Fills);
-    Setup();uint64_t wrong=Asset+0x10000;memcpy(Component+0x828,&wrong,8);Draw();assert(!Fills);
+    Setup();uint32_t lod=1;memcpy(ComponentData+0x900,&lod,4);Draw();assert(!Fills);
+    Setup();uint64_t wrong=Asset+0x10000;memcpy(ComponentData+0x828,&wrong,8);Draw();assert(!Fills);
     Setup();CMLTarget *target=CMLTargets.firstObject;target.poseTime=0;
     uintptr_t f=(uintptr_t)(Frame+256),ret=TestBase+0xD8980,ctx=(uintptr_t)Context,record=(uintptr_t)SourceRecord;uint32_t count=1;
     memcpy((void *)(f+8),&ret,8);memcpy((void *)(f-8),&ctx,8);memcpy((void *)(f-0x48),&GameComponent,8);memcpy((void *)(f-0x20),&record,8);memcpy((void *)(f+16+0x110),&GamePose,8);memcpy((void *)(f+16+0x118),&count,4);
