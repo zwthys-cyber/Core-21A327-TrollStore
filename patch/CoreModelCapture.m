@@ -239,6 +239,7 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
     CMInside=true;
     @autoreleasepool {
         NSData *componentLayout = nil;
+        NSMutableData *referenceData = nil;
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -294,7 +295,7 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         uint8_t layout[CM_COMPONENT_LAYOUT_BYTES];
         componentLayout = CMRemoteRange(component,sizeof(layout)) && CMReadRemote(component,layout,sizeof(layout)) ?
             [NSData dataWithBytes:layout length:sizeof(layout)] : nil;
-        NSMutableData *referenceData=[NSMutableData dataWithLength:sizeof(CMRReferences)];
+        referenceData=[NSMutableData dataWithLength:sizeof(CMRReferences)];
         if (componentLayout) CMRCollect(componentLayout.bytes,componentLayout.length,CMReadRemote,referenceData.mutableBytes);
         CMQueueSnapshot([NSData dataWithBytes:raw length:count*stride],
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
