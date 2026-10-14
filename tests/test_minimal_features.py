@@ -69,8 +69,11 @@ class MinimalFeatureTests(unittest.TestCase):
             allowed.update(range(offset, offset + 4))
         for offset in [0xDBD00, 0xDBD18, 0xDBD28, 0xDBD48, 0xDBD90, 0xDBD98, 0xDBD9C, 0xDC244, 0xDC2AC]:
             allowed.update(range(offset, offset + 4))
+        for offset in [0xDB174, 0xDB18C, 0xDEF2C, 0xDC754]:
+            allowed.update(range(offset, offset + 4))
         for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24),
-                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDC15C, 28), (0xDB6A8, 232),
+                               (0xDC0FC, 28), (0xDC120, 20), (0xDC15C, 28), (0xDB6A8, 232),
+                               (0xDB790, 12), (0xDB7A0, 60),
                                (0xDED8C, 240)]:
             allowed.update(range(offset, offset + length))
         for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
@@ -85,7 +88,7 @@ class MinimalFeatureTests(unittest.TestCase):
         self.assertEqual(self.original[0xD33F4:0xD88C0], self.binary[0xD33F4:0xD88C0])
         self.assertEqual(self.original[0xD88E4:0xDB144], self.binary[0xD88E4:0xDB144])
         # Former category append helper, entry and literal are no longer patched.
-        for offset, length in [(0xDB790, 48), (0xDBF60, 4), (0x743F71, 12)]:
+        for offset, length in [(0xDBF60, 4), (0x743F71, 12)]:
             self.assertEqual(self.original[offset:offset + length], self.binary[offset:offset + length])
 
     def test_rejects_unknown_input_and_reapplication(self):
@@ -454,7 +457,7 @@ class MinimalFeatureTests(unittest.TestCase):
                                  BASE + (0xDBB54 if accepted else 0xDBDC0))
 
     def test_native_line_and_box_draw_only_when_enabled_with_fixed_style(self):
-        for enabled, distance, (width, height) in product([0, 1], [0, 100, 100.01, 250, 300],
+        for enabled, distance, (width, height) in product([0, 1], [0, 100, 100.01, 250, 300, -1, float('nan'), float('inf')],
                                                         [(800, 600), (1280, 720)]):
             with self.subTest(enabled=enabled, distance=distance, width=width, height=height):
                 mu = self.emulator()
@@ -464,6 +467,7 @@ class MinimalFeatureTests(unittest.TestCase):
                 mu.reg_write(registers.UC_ARM64_REG_X19, context)
                 mu.reg_write(registers.UC_ARM64_REG_X22, 0x1234)
                 mu.reg_write(UC_ARM64_REG_X27, CONFIG)
+                mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=12)
                 for reg, value in [(registers.UC_ARM64_REG_S14, 100),
                                    (registers.UC_ARM64_REG_S10, 100),
                                    (registers.UC_ARM64_REG_S11, 100),
@@ -486,17 +490,95 @@ class MinimalFeatureTests(unittest.TestCase):
                     points = [struct.unpack("<2f", uc.mem_read(uc.reg_read(reg), 8))
                               for reg in [registers.UC_ARM64_REG_X1, registers.UC_ARM64_REG_X2]]
                     calls.append((target, points))
-                    color = 0x70FFFFFF if target == 0x13AD48 and distance > 100 else 0xFFFFFFFF
+                    color = 0xA0FFFFFF if target == 0x13AD48 else 0xFFFFFFFF
                     self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3), color)
                     self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_S0), 0x3F800000)
                     uc.reg_write(UC_ARM64_REG_PC, address + 4)
 
                 mu.hook_add(UC_HOOK_CODE, mock_draw)
-                mu.emu_start(BASE + 0xDC754, BASE + 0xDC804, count=100)
-                self.assertEqual([c[0] for c in calls], [0x13AD48, 0x13B1C0] if enabled else [])
-                if enabled:
+                mu.emu_start(BASE + 0xDC754, BASE + 0xDC804, count=120)
+                has_ray = enabled and math.isfinite(distance) and 0 <= distance <= 100
+                self.assertEqual([c[0] for c in calls],
+                                 ([0x13AD48] if has_ray else []) + ([0x13B1C0] if enabled else []))
+                if has_ray:
                     self.assertEqual(calls[0][1], [(width / 2, height - 10), (100.0, 70.0)])
-                    self.assertEqual(calls[1][1], [(150.0, 100.0), (50.0, 300.0)])
+                if enabled:
+                    self.assertEqual(calls[-1][1], [(150.0, 100.0), (50.0, 300.0)])
+                self.assertEqual(struct.unpack('<I', mu.mem_read(STACK + 0x83A0, 4))[0], int(has_ray))
+
+    def test_ray_limit_resets_each_frame_and_preserves_native_return_frame(self):
+        # Execute the actual renderer prologue, private-counter initialization,
+        # per-actor ray/box path and common authenticated return. Only graphics
+        # calls and emulator-only PAC operations are intercepted.
+        mu = self.emulator()
+        context = STACK + 0x1000
+        mu.mem_write(context, struct.pack('<3f', 1, 800, 600))
+        mu.mem_write(CONFIG, b'\xff' * 0x500)
+        saved = {}
+        for index in range(19, 30):
+            reg = getattr(registers, f'UC_ARM64_REG_X{index}')
+            saved[reg] = 0x8000000000 + index
+        for index in range(8, 16):
+            reg = getattr(registers, f'UC_ARM64_REG_D{index}')
+            saved[reg] = 0x1234567800000000 + index
+        for reg, value in saved.items():
+            mu.reg_write(reg, value)
+        draws = []
+
+        def calls(uc, address, size, _):
+            ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
+            if ins == 0xD503237F:
+                uc.reg_write(UC_ARM64_REG_PC, address + 4)
+                return
+            if ins == 0xD65F0FFF:
+                uc.reg_write(UC_ARM64_REG_PC, uc.reg_read(UC_ARM64_REG_X30))
+                return
+            if ins & 0xFC000000 != 0x94000000:
+                return
+            delta = ins & 0x3FFFFFF
+            if delta & 0x2000000:
+                delta -= 0x4000000
+            target = address + delta * 4 - BASE
+            if target == 0x123E30:
+                uc.reg_write(UC_ARM64_REG_X0, 0x1234)
+            elif target in [0x13AD48, 0x13B1C0]:
+                distance = struct.unpack('<f', struct.pack('<I', uc.reg_read(registers.UC_ARM64_REG_S13)))[0]
+                draws.append((target, distance))
+                self.assertEqual(uc.reg_read(registers.UC_ARM64_REG_W3),
+                                 0xA0FFFFFF if target == 0x13AD48 else 0xFFFFFFFF)
+            else:
+                self.fail(f'Unexpected renderer-frame call {target:#x}')
+            uc.reg_write(UC_ARM64_REG_PC, address + 4)
+
+        mu.hook_add(UC_HOOK_CODE, calls)
+        for distances, expected in [([10, 200, 20, 300, 30, 50, 100], [10, 20, 30]),
+                                    ([], []), ([50], [50])]:
+            draws.clear()
+            mu.reg_write(UC_ARM64_REG_X0, context)
+            mu.reg_write(UC_ARM64_REG_X30, RETURN)
+            mu.emu_start(BASE + 0xDB144, BASE + 0xDB1A0, count=40)
+            frame = STACK + 0x8000 - 0xA0 - 0x3B0
+            self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), frame)
+            self.assertEqual(struct.unpack('<I', mu.mem_read(frame + 0x3A0, 4))[0], 0)
+            self.assertEqual(struct.unpack('<Q', mu.mem_read(frame + 0x398, 8))[0], 0xABCD1234)
+            mu.reg_write(registers.UC_ARM64_REG_X22, 0x1234)
+            mu.reg_write(UC_ARM64_REG_X27, CONFIG)
+            for distance in distances:
+                for reg, value in [(registers.UC_ARM64_REG_S14, 100), (registers.UC_ARM64_REG_S10, 100),
+                                   (registers.UC_ARM64_REG_S11, 100), (registers.UC_ARM64_REG_S9, 300),
+                                   (registers.UC_ARM64_REG_S13, distance)]:
+                    mu.reg_write(reg, struct.unpack('<I', struct.pack('<f', value))[0])
+                for offset in [0x150, 0x160]:
+                    mu.mem_write(frame + offset, struct.pack('<I', 1))
+                mu.emu_start(BASE + 0xDC754, BASE + 0xDC804, count=120)
+            self.assertEqual([d for target, d in draws if target == 0x13AD48], expected)
+            self.assertEqual([d for target, d in draws if target == 0x13B1C0], distances)
+            self.assertEqual(struct.unpack('<I', mu.mem_read(frame + 0x3A0, 4))[0], len(expected))
+            mu.emu_start(BASE + 0xDEF14, RETURN, count=30)
+            self.assertEqual(mu.reg_read(UC_ARM64_REG_PC), RETURN)
+            self.assertEqual(mu.reg_read(UC_ARM64_REG_SP), STACK + 0x8000)
+            for reg, value in saved.items():
+                self.assertEqual(mu.reg_read(reg), value)
 
     def test_offscreen_arrows_keep_correct_bearing_and_distance(self):
         # Run original actor/team/range checks, native edge placement, the native
@@ -706,7 +788,7 @@ class MinimalFeatureTests(unittest.TestCase):
         counters = BASE + 0xC548B0
         mu.mem_write(counters, struct.pack('<2I', 91, 92))
         # Execute the original per-frame clear, rather than resetting in the fixture.
-        mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=4)
+        mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=12)
         self.assertEqual(struct.unpack('<2I', mu.mem_read(counters, 8)), (0, 0))
         destinations = {BASE + 0xDBBC4, BASE + 0xDBDC8}
         mu.hook_add(UC_HOOK_CODE, lambda uc, address, size, _: uc.emu_stop()
@@ -730,7 +812,7 @@ class MinimalFeatureTests(unittest.TestCase):
                 totals[bot] += int(accepted)
                 self.assertEqual(struct.unpack('<2I', mu.mem_read(counters, 8)), tuple(totals))
         self.assertEqual(totals, [3, 2])
-        mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=4)
+        mu.emu_start(BASE + 0xDB18C, BASE + 0xDB19C, count=12)
         self.assertEqual(struct.unpack('<2I', mu.mem_read(counters, 8)), (0, 0))
 
     def test_top_count_draws_one_centered_red_number_with_native_outline(self):

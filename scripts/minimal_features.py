@@ -9,8 +9,10 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-300m-identity-colors"
+PROFILE = "enemy-markers-300m-low-clutter"
 RANGE_METRES = 300
+RAY_LIMIT = 3
+RAY_RANGE_METRES = 100
 
 
 def word(value):
@@ -228,16 +230,38 @@ def changes():
         branch(0xDC130, 0xDC774),
     ])
     add(0xDC120, "0008031f03102c1eee41201e22bd031fe25b02bd", ray_origin, "bottom-center ray origin in bypassed health block")
-    ray_alpha = b"".join([
-        word(0x52A85908),  # mov w8, #100.0f bits
-        word(0x1E270100),  # fmov s0, w8
-        word(0x1E2021A0),  # fcmp s13, s0 (original finite actor distance)
-        word(0x12800000),  # near: opaque white
-        word(0x12B1E008),  # far: white with alpha 0x70
-        word(0x1A88D000),  # csel w0, w0, w8, le
-        branch(0xDC158, 0xDC78C),
+    # Reserve a private counter above the original SP-relative locals. The
+    # frame pointer, saved registers, stack guard and PAC frame remain intact.
+    add(0xDB174, "ff830ed1", word(0xD1000000 | (0x3B0 << 10) | (31 << 5) | 31), "reserve sixteen private renderer stack bytes")
+    add(0xDEF2C, "ff830e91", word(0x91000000 | (0x3B0 << 10) | (31 << 5) | 31), "release private renderer stack bytes on original common exit")
+    reset = b"".join([
+        word(0xB9000000 | ((0x3A0 // 4) << 10) | (31 << 5) | 31),
+        adrp(0xDB794, 0xC54000, 23),  # replay original enemy-counter page load
+        branch(0xDB798, 0xDB190),
     ])
-    add(0xDC140, "e24302bde04702bd2808231ee1630991e2030991e00316aa63648452", ray_alpha, "dim rays beyond 100 metres in bypassed health block")
+    add(0xDB790, "e3ff41bd4128211e0028231e", reset, "reset private ray count each frame in disabled radar block")
+    add(0xDB18C, "d75b00b0", branch(0xDB18C, 0xDB790), "initialize ray limit before original human/bot counters")
+    # Native team/range/projection filtering still runs first. Limit only rays;
+    # skipped targets continue into the original box/name/skeleton drawing.
+    ray_gate = b"".join([
+        word(0xB9400000 | ((0x160 // 4) << 10) | (31 << 5) | 8),
+        word(0x7200011F),  # tst w8, #1 (original ray checkbox semantics)
+        branch(0xDB7A8, 0xDC7A8, 0),
+        word(0xB9400000 | ((0x3A0 // 4) << 10) | (31 << 5) | 9),
+        word(0x71000000 | (RAY_LIMIT << 10) | (9 << 5) | 31),
+        branch(0xDB7B4, 0xDC7A8, 2),  # unsigned count >= limit
+        word(0x52A0000A | ((struct.unpack('<I', struct.pack('<f', RAY_RANGE_METRES))[0] >> 16) << 5)),
+        word(0x1E270140),  # fmov s0, w10
+        word(0x1E2021A0),  # fcmp s13, s0
+        branch(0xDB7C4, 0xDC7A8, 8),  # too far or unordered NaN
+        word(0x1E2021A8),  # fcmp s13, #0
+        branch(0xDB7CC, 0xDC7A8, 4),  # negative distance
+        word(0x11000529),  # add w9, w9, #1
+        word(0xB9000000 | ((0x3A0 // 4) << 10) | (31 << 5) | 9),
+        branch(0xDB7D8, 0xDC75C),
+    ])
+    add(0xDB7A0, "e01702bd9f020071e83f083215019f5ae1430891e00316aae07740bde20315aa0302805269800194681b41b9c8040034600240bd0190231e0008211e", ray_gate, "at most three on-screen rays within one hundred metres per frame")
+    add(0xDC754, "e86341b9", branch(0xDC754, 0xDB7A0), "apply local ray limit before preparing line endpoints")
     # The original cached bot flag selects name color without category labels.
     # This health-only block is bypassed; keep the offscreen path at DC1B4 intact.
     name_color = b"".join([
@@ -317,7 +341,7 @@ def changes():
     add(0xDB27C, "488fa852", word(0x1E270100), "range clamp input 300.0f")
     add(0xDCAA4, "004140bd", word(0x52800008 | (RANGE_METRES << 5)), "skeleton range 300 metres")
     add(0xDCAA8, "00d8215e", word(0x1E220100), "convert fixed skeleton range to float")
-    add(0xDC788, "2b030194", branch(0xDC788, 0xDC140), "distance-based ray opacity")
+    add(0xDC788, "2b030194", word(0x12ABE000), "soft white ray with alpha 0xa0")
     for offset, expected in [(0xDC7DC, "16030194"),
                               (0xDCA3C, "7e020194")]:
         add(offset, expected, word(0x12800000), "white line/box/distance independent of old colors")
