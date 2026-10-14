@@ -6,7 +6,7 @@
 
 v19 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v19-600m.ipa`，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库私有，浏览器需登录有访问权限的 GitHub 账号。600 米实机效果仍待确认，显示依赖原采集流程能获取的目标。
 
-为用户要求的衣服、头发完整轮廓及可见白色／遮挡红色效果，已独立发布 [Core 模型检查 v3](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-inspector-v3)。v2 实机采样 11 个包成功，资源清单完整，并找到衣服动画及配饰模型名称线索。v3 新增“导出资源样本”，最多复制两个小型候选资源包及完整 SHA-256 清单，供后续验证模型结构。用 TrollStore 覆盖安装，关闭游戏，先检查再导出，将共享的 `.pak` 和 `Core-model-samples-manifest.json` 放到 `/root/core`。云端复制边界回归和签名核验通过；真实人物轮廓及遮挡分色尚未实现，实时网格和场景深度接口仍未确认。详见[数据检查说明](docs/model-source-inspector.md)。
+为用户要求的衣服、头发完整轮廓及可见白色／遮挡红色效果，已独立发布 [Core 模型检查 v3](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-inspector-v3)。v3 已在实机成功导出两个小型候选资源包及校验清单；文件大小、完整 SHA-256 和 205 个载荷的 SHA-1 均已核对。静态资源头的导出类型确认了 21 个 SkeletalMesh、4 个 StaticMesh，包含具体衣服、头发、帽子和配饰。当前未提取完整可渲染网格，运行时人物与资源绑定、完整姿态及遮挡路径仍未确认；真实人物轮廓和红白填色尚未实现。Core 主包仍为 v19。详见[数据检查说明](docs/model-source-inspector.md)。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。历史版本见 [v18](docs/releases/v18-300m.md)、[v17](docs/releases/v17-300m.md)、[v16](docs/releases/v16-300m.md)、[v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
