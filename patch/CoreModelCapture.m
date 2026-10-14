@@ -49,6 +49,7 @@ static NSMutableArray *CMFrames;
 static NSURL *CMReportURL;
 static dispatch_source_t CMStatusTimer;
 static atomic_uint CMReaderCalls, CMComponentCalls, CMSkipReason;
+static atomic_uint CMForwardCalls, CMUnmatchedCalls, CMDisabledCalls, CMRecursiveCalls;
 
 static uint64_t CMNow(void) {
     struct timespec t = {0};
@@ -111,7 +112,7 @@ static NSDictionary *CMTransformJSON(const CMTransform *t) {
 
 // Called only on the serial writer queue; report contains at most six snapshots.
 static void CMWriteReport(NSString *status) {
-    NSDictionary *report = @{ @"capture_version":@1, @"status":status,
+    NSDictionary *report = @{ @"capture_version":@2, @"status":status,
         @"date":[NSDate.date description], @"core_uuid":@"4ED1FD29-A46A-36B3-8DFC-36F67EA929D1",
         @"snapshots":CMFrames ?: @[], @"max_targets":@(CM_TARGET_LIMIT),
         @"max_snapshots":@(CM_TARGET_LIMIT*CM_SAMPLES_PER_TARGET),
@@ -119,6 +120,10 @@ static void CMWriteReport(NSString *status) {
         @"pixel_depth_texture_available":@NO, @"silhouette_implemented":@NO,
         @"target_files_modified":@NO, @"game_process_started":@NO, @"network_requests":@0,
         @"reader_bzero_calls_observed":@(atomic_load_explicit(&CMReaderCalls,memory_order_relaxed)),
+        @"entry_bzero_calls_observed":@(atomic_load_explicit(&CMForwardCalls,memory_order_relaxed)),
+        @"unmatched_caller_calls_observed":@(atomic_load_explicit(&CMUnmatchedCalls,memory_order_relaxed)),
+        @"disabled_reader_calls_observed":@(atomic_load_explicit(&CMDisabledCalls,memory_order_relaxed)),
+        @"recursive_reader_calls_observed":@(atomic_load_explicit(&CMRecursiveCalls,memory_order_relaxed)),
         @"component_read_calls_observed":@(atomic_load_explicit(&CMComponentCalls,memory_order_relaxed)),
         @"last_skip_code":@(atomic_load_explicit(&CMSkipReason,memory_order_relaxed)),
         @"skip_codes":@{@"1":@"frame-layout-or-local-read", @"2":@"transform-count-or-stride",
@@ -176,9 +181,10 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
     });
 }
 
-static void CMTryCapture(void *destination, size_t length, uintptr_t readerFrame, uint64_t remoteAddress, uintptr_t caller) {
+// Keep the large scratch arrays out of the forwarding function. Its prologue
+// must not probe a large stack frame for every unrelated Core bzero call.
+__attribute__((noinline)) static void CMTryCapture(void *destination, size_t length, uintptr_t readerFrame, uint64_t remoteAddress, uintptr_t caller) {
     if (!atomic_load_explicit(&CMEnabled,memory_order_acquire) || CMInside || caller!=CMBase+0xE1960) return;
-    atomic_fetch_add_explicit(&CMReaderCalls,1,memory_order_relaxed);
     if (length!=44 ||
         !readerFrame || readerFrame>UINTPTR_MAX-0x200 || readerFrame<0x50 ||
         (uintptr_t)destination!=readerFrame+16+0xD0 || !CMRemoteRange(remoteAddress,44)) return;
@@ -270,19 +276,29 @@ static void CMTryCapture(void *destination, size_t length, uintptr_t readerFrame
     atomic_flag_clear_explicit(&CMBusy,memory_order_release);
 }
 
-// ARM64 veneer passes the unmodified reader's FP and remote-address register.
+// Capture LR before a C prologue can call the Darwin stack-probing helper.
 // A tail branch leaves the original return address and stack intact.
 #if defined(__arm64__) && !defined(CORE_MODEL_CAPTURE_TESTING)
 __attribute__((naked)) void cmbzr(void *destination, size_t length) {
-    __asm__ volatile("mov x2, x29\nmov x3, x23\nb _CoreModelBzeroCapture\n");
+    __asm__ volatile("mov x2, x29\nmov x3, x23\nmov x4, x30\nb _CoreModelBzeroCapture\n");
 }
 #endif
 
-void CoreModelBzeroCapture(void *destination, size_t length, uintptr_t readerFrame, uint64_t remoteAddress) {
+__attribute__((noinline)) void CoreModelBzeroCapture(void *destination, size_t length, uintptr_t readerFrame, uint64_t remoteAddress, uintptr_t entryReturn) {
     bzero(destination,length);
     int saved=errno;
-    uintptr_t caller=CMStripReturn(__builtin_return_address(0));
-    CMTryCapture(destination,length,readerFrame,remoteAddress,caller);
+    uintptr_t caller=CMStripReturn((void *)entryReturn);
+    atomic_fetch_add_explicit(&CMForwardCalls,1,memory_order_relaxed);
+    if (caller!=CMBase+0xE1960) {
+        atomic_fetch_add_explicit(&CMUnmatchedCalls,1,memory_order_relaxed);
+    } else {
+        atomic_fetch_add_explicit(&CMReaderCalls,1,memory_order_relaxed);
+        if (!atomic_load_explicit(&CMEnabled,memory_order_acquire))
+            atomic_fetch_add_explicit(&CMDisabledCalls,1,memory_order_relaxed);
+        else if (CMInside)
+            atomic_fetch_add_explicit(&CMRecursiveCalls,1,memory_order_relaxed);
+        else CMTryCapture(destination,length,readerFrame,remoteAddress,caller);
+    }
     errno=saved;
 }
 

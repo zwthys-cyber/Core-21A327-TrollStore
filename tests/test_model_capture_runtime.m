@@ -44,7 +44,7 @@ static kern_return_t ModelTestSelfRead(vm_map_t task, vm_address_t address, vm_s
 static bool ModelTestRead(uint64_t address, void *destination, size_t size) {
     ReadCalls++;
     // Emulate the nested Core bzero while the observer's remote read is active.
-    CoreModelBzeroCapture(destination,size,0,address);
+    CoreModelBzeroCapture(destination,size,0,address,TestBase+0xE1960);
     errno=EIO;
     if (FailRemote) return false;
     if (address==0x200001200ULL && size==44) {
@@ -80,6 +80,7 @@ static void Reset(void) {
     Drain();memset(TestFrame,0,sizeof(TestFrame));memset(TestContext,0,sizeof(TestContext));memset(CMTargets,0,sizeof(CMTargets));
     memset(TestPose,0,sizeof(TestPose));ReadCalls=RayCalls=LockDepth=0;FailRemote=Ready=BadRay=false;TestClockStep=0;TestCount=63;TestStride=48;
     atomic_store(&CMEnabled,true);atomic_store(&CMSkipReason,0);atomic_store(&CMReaderCalls,0);atomic_store(&CMComponentCalls,0);
+    atomic_store(&CMForwardCalls,0);atomic_store(&CMUnmatchedCalls,0);atomic_store(&CMDisabledCalls,0);atomic_store(&CMRecursiveCalls,0);
     uintptr_t frame=ReaderFrame(),ret=TestBase+0xD8980,context=(uintptr_t)TestContext,component=0x200001000ULL,bones=0x200000000ULL;
     memcpy((void *)(frame+8),&ret,8);memcpy((void *)(frame-8),&context,8);memcpy((void *)(frame-0x48),&component,8);
     memcpy((void *)(frame+16+0x110),&bones,8);memcpy((void *)(frame+16+0x118),&TestCount,4);
@@ -88,7 +89,9 @@ static void Reset(void) {
     dispatch_sync(CMReportQueue, ^{ [CMFrames removeAllObjects]; });
 }
 static void Capture(void) {
-    uintptr_t f=ReaderFrame();CMTryCapture((void *)(f+16+0xD0),44,f,0x200001200ULL,TestBase+0xE1960);Drain();
+    uintptr_t f=ReaderFrame();int saved=errno;
+    CoreModelBzeroCapture((void *)(f+16+0xD0),44,f,0x200001200ULL,TestBase+0xE1960);
+    assert(errno==saved);Drain();
 }
 
 int main(void) {
@@ -101,10 +104,20 @@ int main(void) {
         CMReportURL=[NSURL fileURLWithPath:[directory stringByAppendingPathComponent:@"report.json"]];
 
         Reset();unsigned char buffer[64];memset(buffer,0x7F,64);errno=ERANGE;
-        CoreModelBzeroCapture(buffer,64,0,0);assert(errno==ERANGE && !ReadCalls);
+        CoreModelBzeroCapture(buffer,64,0,0,TestBase+0x1234);assert(errno==ERANGE && !ReadCalls);
         for (unsigned i=0;i<64;i++) assert(buffer[i]==0);
+        assert(atomic_load(&CMForwardCalls)==1 && atomic_load(&CMUnmatchedCalls)==1 && !atomic_load(&CMReaderCalls));
 
+        Reset();atomic_store(&CMEnabled,false);Capture();
+        assert(!ReadCalls && !CMFrames.count && atomic_load(&CMReaderCalls)==1 && atomic_load(&CMDisabledCalls)==1);
+        Reset();uintptr_t f=ReaderFrame();errno=ERANGE;
+        CoreModelBzeroCapture((void *)(f+16+0xD0),44,f,0x200001200ULL,TestBase+0xE1994);Drain();
+        assert(errno==ERANGE && !ReadCalls && !CMFrames.count && atomic_load(&CMUnmatchedCalls)==1);
+
+        Reset();errno=ERANGE;
         Capture();assert(CMFrames.count==1 && ReadCalls==3 && RayCalls==0 && !CMInside);
+        assert(atomic_load(&CMForwardCalls)==4 && atomic_load(&CMReaderCalls)==4);
+        assert(atomic_load(&CMRecursiveCalls)==3 && atomic_load(&CMComponentCalls)==1);
         NSDictionary *frame=CMFrames.firstObject;assert([frame[@"captured_transform_count"] unsignedIntValue]==63);
         assert([frame[@"valid_transform_count"] unsignedIntValue]==63 && [frame[@"bones"] count]==63);
         NSArray *xyz=frame[@"bones"][5][@"calculated_world_position"];
@@ -137,6 +150,7 @@ int main(void) {
 
         NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:CMReportURL] options:0 error:NULL];
         assert(report && ![report[@"full_render_mesh_verified"] boolValue] && ![report[@"pixel_depth_texture_available"] boolValue]);
+        assert([report[@"capture_version"] unsignedIntValue]==2 && report[@"entry_bzero_calls_observed"]);
         [[NSFileManager defaultManager] removeItemAtPath:directory error:NULL];
         puts("PASS: exact bzero/errno forwarding; nested reads; full 63-transform snapshots; spacing and limits; pinned frame boundary; ray locks, miss/hit/malformed/budget; quaternion/scale world positions; honest report capabilities");
     }

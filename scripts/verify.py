@@ -65,7 +65,9 @@ def main(ipa):
         app = "Payload/Core.app/"
         main = archive.read(app + "Core")
         info = plistlib.loads(archive.read(app + "Info.plist"))
-        model_capture = info.get("CoreModelCaptureVersion") == "1"
+        capture_version = info.get("CoreModelCaptureVersion")
+        assert capture_version in (None, "1", "2"), "Unknown capture protocol"
+        model_capture = capture_version is not None
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -158,7 +160,8 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == ("21" if model_capture else BUNDLE_BUILD) and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
+        expected_build = {"1":"21", "2":"22"}.get(capture_version, BUNDLE_BUILD)
+        assert info["CFBundleVersion"] == expected_build and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         assert info["CoreFeatureProfile"] == PROFILE
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
