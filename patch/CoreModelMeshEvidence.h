@@ -9,7 +9,7 @@
 #define CME_NATIVE_LIMIT 12
 #define CME_READ_LIMIT 96
 #define CME_REFERENCE_BYTE_LIMIT 32768
-#define CME_POSE_BYTE_LIMIT 16384
+#define CME_POSE_BYTE_LIMIT 24576
 #define CME_NATIVE_BYTES 1024
 typedef struct {
     uint32_t asset_index,count,info_bytes,pose_bytes;

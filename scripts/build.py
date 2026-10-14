@@ -309,7 +309,7 @@ def main():
             names=256, name_reads=640, name_text_bytes=256, native_name_source="Core-D6794-live-profile",
             semantic_types_verified=False),
         mesh_evidence=dict(resources=12, components=16, reads=96, reference_bytes=32768,
-            child_pose_bytes=16384, native_nodes=12, native_prefix_bytes=1024,
+            child_pose_bytes=24576, native_nodes=12, native_prefix_bytes=1024,
             bone_record_stride=16, reference_transform_stride=48,
             bone_identity="name index and number", matrix_offset_0x260_hypothesis_rejected=True,
             render_buffers_verified=False, semantic_child_pose_space_verified=False),
