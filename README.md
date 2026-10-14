@@ -2,9 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前版本为 **v17 真人红名／人机白名测试版（1.6 / build 18 / patch 17）**：真人姓名显示红色，人机姓名显示白色，不显示“【真人】”“【人机】”分类文字，两类保留黑色描边，按原人机标志分类。沿用 300 米范围、顶部红色总数、方框、射线、距离、红白骨骼和屏幕外黄色方向提示。详见 [v17 说明](docs/releases/v17-300m.md)。
+当前版本为 [**v17 真人红名／人机白名测试版（1.6 / build 18 / patch 17）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v17-300m)：真人姓名显示红色，人机姓名显示白色，不显示“【真人】”“【人机】”分类文字，两类保留黑色描边，按原人机标志分类。沿用 300 米范围、顶部红色总数、方框、射线、距离、红白骨骼和屏幕外黄色方向提示。详见 [v17 说明](docs/releases/v17-300m.md)。
 
-主安装包为 `Core-17.0-21A327-TrollStore-v17-300m.ipa`，构建及发布结果将在完成后记录。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。姓名颜色实机效果仍待确认。
+v17 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v17-300m.ipa` 主安装包，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库为私有仓库，浏览器需登录有访问权限的 GitHub 账号。姓名颜色实机效果仍待确认。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。历史版本见 [v16](docs/releases/v16-300m.md)、[v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
