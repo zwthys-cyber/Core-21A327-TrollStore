@@ -54,7 +54,16 @@ static bool ModelTestRead(uint64_t address, void *destination, size_t size) {
         memcpy(destination,TestPose,size);return true;
     }
     if (address==0x200001000ULL && size==CM_COMPONENT_LAYOUT_BYTES) {
-        memset(destination,0x3A,size);return true;
+        memset(destination,0,size);
+        const unsigned offsets[]={0x848,0x858,0x958,0xBD0,0xCD0};
+        for (unsigned i=0;i<5;i++) {
+            uint64_t pointer=i==3 ? 0x200008000ULL : 0x200000000ULL;
+            uint32_t count=i==1 ? TestCount-1 : TestCount,capacity=i==4 ? 257 : TestCount;
+            memcpy((uint8_t *)destination+offsets[i],&pointer,8);
+            memcpy((uint8_t *)destination+offsets[i]+8,&count,4);
+            memcpy((uint8_t *)destination+offsets[i]+12,&capacity,4);
+        }
+        return true;
     }
     return false;
 }
@@ -124,6 +133,9 @@ int main(void) {
         assert([xyz[0] floatValue]==20 && [xyz[1] floatValue]==24 && [xyz[2] floatValue]==36);
         assert(![frame[@"geometry_ready"] boolValue]);
         assert([frame[@"component_layout_sample_bytes"] unsignedIntValue]==CM_COMPONENT_LAYOUT_BYTES);
+        assert([frame[@"captured_transform_array_address"] unsignedLongLongValue]==0x200000000ULL);
+        assert([frame[@"component_transform_source_offset"] unsignedIntValue]==0x200);
+        assert([frame[@"matching_transform_array_offsets"] isEqualToArray:@[@0x848,@0x958]]);
         Capture();assert(CMFrames.count==1 && ReadCalls==3); // spacing prevents duplicate work
         TestClock+=9999999999ULL;Capture();assert(CMFrames.count==1);
         TestClock+=1;Capture();assert(CMFrames.count==2);
@@ -151,7 +163,7 @@ int main(void) {
 
         NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:CMReportURL] options:0 error:NULL];
         assert(report && ![report[@"full_render_mesh_verified"] boolValue] && ![report[@"pixel_depth_texture_available"] boolValue]);
-        assert([report[@"capture_version"] unsignedIntValue]==3 && report[@"entry_bzero_calls_observed"]);
+        assert([report[@"capture_version"] unsignedIntValue]==4 && report[@"entry_bzero_calls_observed"]);
         [[NSFileManager defaultManager] removeItemAtPath:directory error:NULL];
         puts("PASS: exact bzero/errno forwarding; nested reads; full 63-transform snapshots; spacing and limits; pinned frame boundary; ray locks, miss/hit/malformed/budget; quaternion/scale world positions; honest report capabilities");
     }

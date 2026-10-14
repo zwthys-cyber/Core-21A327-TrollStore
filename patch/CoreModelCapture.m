@@ -114,7 +114,7 @@ static NSDictionary *CMTransformJSON(const CMTransform *t) {
 
 // Called only on the serial writer queue; report contains at most six snapshots.
 static void CMWriteReport(NSString *status) {
-    NSDictionary *report = @{ @"capture_version":@3, @"status":status,
+    NSDictionary *report = @{ @"capture_version":@4, @"status":status,
         @"date":[NSDate.date description], @"core_uuid":@"4ED1FD29-A46A-36B3-8DFC-36F67EA929D1",
         @"snapshots":CMFrames ?: @[], @"max_targets":@(CM_TARGET_LIMIT),
         @"max_snapshots":@(CM_TARGET_LIMIT*CM_SAMPLES_PER_TARGET),
@@ -143,7 +143,7 @@ static NSDictionary *CMHeaderJSON(const CMRHeader *h) {
 
 static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData,
                             CMTransform componentTransform, CMVec3 camera, float width, float height,
-                            uintptr_t component, unsigned count, unsigned stride, uint64_t start,
+                            uintptr_t component, uint64_t transformAddress, uint64_t componentTransformAddress, unsigned count, unsigned stride, uint64_t start,
                             uint64_t end, bool geometryReady, bool rayTruncated) {
     dispatch_async(CMReportQueue, ^{
         @autoreleasepool {
@@ -162,11 +162,21 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                     @"candidate_address":@(ref->address), @"header_candidate":CMHeaderJSON(&ref->header),
                     @"class_header_candidate_valid":@(ref->class_header_valid),
                     @"class_header_candidate":ref->class_header_valid ? CMHeaderJSON(&ref->class_header) : (id)NSNull.null,
-                    @"prefix_sample_bytes":@(CMR_PREFIX_BYTES),
-                    @"prefix_sample_base64":[[NSData dataWithBytes:ref->prefix length:CMR_PREFIX_BYTES] base64EncodedStringWithOptions:0],
+                    @"prefix_sample_bytes":@(ref->prefix_bytes),
+                    @"prefix_sample_base64":[[NSData dataWithBytes:ref->prefix length:ref->prefix_bytes] base64EncodedStringWithOptions:0],
+                    @"class_size_hint_valid":@(ref->class_size_hint_valid),
+                    @"class_size_hint":@(ref->class_size_hint), @"class_alignment_hint":@(ref->class_alignment_hint),
                     @"semantic_class_verified":@NO, @"mesh_resource_identity_verified":@NO }];
             }
             unsigned valid = 0, queries = 0;
+            NSMutableArray *arrayOffsets=[NSMutableArray array];
+            const uint8_t *layoutBytes=componentLayout.bytes;
+            for (size_t offset=0;offset+16<=componentLayout.length;offset+=8) {
+                uint64_t address=0;uint32_t n=0,capacity=0;
+                memcpy(&address,layoutBytes+offset,8);memcpy(&n,layoutBytes+offset+8,4);memcpy(&capacity,layoutBytes+offset+12,4);
+                if (address==transformAddress && n==count && capacity>=count && capacity<=CM_BONE_LIMIT)
+                    [arrayOffsets addObject:@(offset)];
+            }
             for (unsigned i=0; i<count; i++) {
                 CMTransform bone; memcpy(&bone,raw+i*stride,sizeof(bone));
                 bool boneValid = CMValidTransform(&bone) && isfinite(worlds[i].x);
@@ -187,6 +197,9 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
             NSDictionary *frame = @{ @"sample_start_monotonic_ns":@(start), @"sample_end_monotonic_ns":@(end),
                 @"component_id":[NSString stringWithFormat:@"0x%llx",(unsigned long long)component],
                 @"declared_transform_count":@(count), @"captured_transform_count":@(count),
+                @"captured_transform_array_address":@(transformAddress),
+                @"component_transform_source_offset":@(componentTransformAddress-component),
+                @"matching_transform_array_offsets":arrayOffsets,
                 @"captured_all_declared_component_transforms":@YES, @"valid_transform_count":@(valid),
                 @"transform_stride":@(stride), @"component_transform":CMTransformJSON(&componentTransform),
                 @"camera_world_position":CMFloats((const float *)&camera,3), @"screen_size":@[@(width),@(height)],
@@ -201,7 +214,7 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                     @"rejected_arrays":@(evidence ? evidence->rejected_arrays : 0),
                     @"truncated":@(evidence ? evidence->truncated : NO),
                     @"reference_limit":@(CMR_REFERENCE_LIMIT), @"read_limit":@(CMR_READ_LIMIT),
-                    @"object_prefix_bytes":@(CMR_PREFIX_BYTES), @"recursive_reference_scan":@NO },
+                    @"object_prefix_bytes_max":@(CMR_PREFIX_BYTES), @"recursive_reference_scan":@NO },
                 @"geometry_ready":@(geometryReady), @"occlusion_source":@"Core-local-geometry-ray-intersection",
                 @"queried_ray_count":@(queries), @"ray_queries_truncated":@(rayTruncated), @"bones":bones };
             [CMFrames addObject:frame];
@@ -301,7 +314,7 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
             [NSData dataWithBytes:projections length:count*sizeof(*projections)],
             [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,componentTransform,camera,size[0],size[1],
-            component,count,stride,start,CMNow(),geometryReady,truncated);
+            component,boneAddress,remoteAddress,count,stride,start,CMNow(),geometryReady,truncated);
     done: ;
     }
     CMInside=false;
