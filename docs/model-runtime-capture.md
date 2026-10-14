@@ -4,6 +4,10 @@
 
 基于已发布 Core v19，保留其 600 米显示和初始化路径。可选构建命令为 `python3 scripts/build.py --model-capture`，只在 GitHub Actions 执行。普通构建不启用采集；采集版的 bundle build 为 21，`CoreModelCaptureVersion=1`。
 
+已发布 [model-runtime-capture-v1](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-runtime-capture-v1)，预发布且不替换正式最新版 v19。IPA 7,208,679 字节，SHA-256 为 `aecfeabb46fe6ce8014033cc97cb485f7682dafb7ae144787c373f447a6ac93c`。发布的五个附件、四项校验及根目录 IPA 已核对一致。
+
+[云端检查和设备构建 38556662721](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38556662721) 全部通过，源码和发布标签指向 `db6341c8208f189c72afe4079cf226f00991350e`。检查覆盖 37 项原回归及可选导入改动、原生清零/errno 转发、递归读取隔离、完整数组采样、间隔/限额、帧布局与非法步长拒绝、射线锁/命中/未命中/损坏/预算、变换计算和本地报告。设备签名、依赖、导入和精确字节核验通过。此为云端验证，实机采集尚未得到报告确认。[普通 Core 构建 38555937751](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38555937751) 也通过。
+
 ## 手机操作
 
 1. 用 TrollStore 覆盖安装 `Core-17.0-21A327-TrollStore-model-capture-v1.ipa`。
