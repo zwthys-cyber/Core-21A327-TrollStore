@@ -2,9 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前版本为 **v19 · 0fe975f 基础 / 600 米测试版（1.6 / build 20 / patch 19）**：恢复用户指定提交 `0fe975fc6053a0af8cac90c4a860696d08dec8c2` 的显示逻辑，将姓名、方框、射线、骨骼、屏幕外方向提示和顶部敌人数的范围统一提高到 600 米；射线起点改为屏幕上方中央，向下连接目标。真人红名、人机白名，不显示身份文字。射线使用原数量和透明度规则：100 米内不透明白色，超过 100 米采用透明度 112 的白色。详见 [v19 说明](docs/releases/v19-600m.md)。
+当前版本为 [**v19 · 0fe975f 基础 / 600 米测试版（1.6 / build 20 / patch 19）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v19-600m)：恢复用户指定提交 `0fe975fc6053a0af8cac90c4a860696d08dec8c2` 的显示逻辑，将姓名、方框、射线、骨骼、屏幕外方向提示和顶部敌人数的范围统一提高到 600 米；射线起点改为屏幕上方中央，向下连接目标。真人红名、人机白名，不显示身份文字。射线使用原数量和透明度规则：100 米内不透明白色，超过 100 米采用透明度 112 的白色。详见 [v19 说明](docs/releases/v19-600m.md)。
 
-主安装包为 `Core-17.0-21A327-TrollStore-v19-600m.ipa`，构建及发布结果将在完成后记录。仓库私有，浏览器需登录有访问权限的 GitHub 账号。600 米实机效果仍待确认，显示依赖原采集流程能获取的目标。
+v19 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v19-600m.ipa`，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库私有，浏览器需登录有访问权限的 GitHub 账号。600 米实机效果仍待确认，显示依赖原采集流程能获取的目标。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。历史版本见 [v18](docs/releases/v18-300m.md)、[v17](docs/releases/v17-300m.md)、[v16](docs/releases/v16-300m.md)、[v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
