@@ -1,0 +1,29 @@
+name: Build model source inspector
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - inspection/**
+      - scripts/build_inspection.py
+      - tests/test_game_source_inventory.m
+      - .github/workflows/model-inspection.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test executable headers and bounded read-only resource scanning
+        run: |
+          xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation tests/test_game_source_inventory.m -o /tmp/core-model-source-test
+          /tmp/core-model-source-test
+      - name: Build and verify independent inspector IPA
+        run: python3 scripts/build_inspection.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-Model-Source-Inspector-TrollStore-v1
+          path: dist/model-inspector/*
+          retention-days: 14
