@@ -2,7 +2,7 @@
 #define CORE_MODEL_BINDING_H
 #include "CoreModelReferences.h"
 
-#define CMB_LINK_LIMIT 9
+#define CMB_LINK_LIMIT 16
 #define CMB_BUFFER_LIMIT 5
 #define CMB_BUFFER_BYTES 16384
 #define CMB_BUFFER_READ_LIMIT 8

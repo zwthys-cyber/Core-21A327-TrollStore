@@ -7,8 +7,8 @@
 
 // Bounded, untyped evidence for identifying references in the located component.
 // Matching this header shape is not proof of a UObject class or mesh binding.
-#define CMR_REFERENCE_LIMIT 12
-#define CMR_READ_LIMIT 40
+#define CMR_REFERENCE_LIMIT 16
+#define CMR_READ_LIMIT 56
 #define CMR_PREFIX_BYTES 4096
 typedef bool (*CMRReader)(uint64_t, void *, size_t);
 typedef struct {
@@ -105,7 +105,7 @@ static void CMRCollect(const uint8_t *layout, size_t length, CMRReader reader, C
         if (count<1 || count>32 || capacity<count || capacity>128 || !CMRPointer(address,(size_t)count*8)) {
             out->rejected_arrays++; continue;
         }
-        uint64_t entries[8]={0};size_t limit=arrays[i]==0x170?8:4;
+        uint64_t entries[16]={0};size_t limit=arrays[i]==0x170?16:4;
         size_t take=(size_t)count<limit?(size_t)count:limit;
         if ((size_t)count>take) out->truncated=true;
         if (!CMRRead(out,reader,address,entries,take*8)) continue;

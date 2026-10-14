@@ -54,14 +54,14 @@ int main(void) {
     Pointer(layout,0x828,0x20000E000ULL);CMRCollect(layout,sizeof(layout),Reader,&result);
     assert(Calls==1 && result.read_failures==1 && !result.count);
 
-    memset(&result,0,sizeof(result));result.read_attempts=39;Calls=0;
+    memset(&result,0,sizeof(result));result.read_attempts=CMR_READ_LIMIT-1;Calls=0;
     CMRAdd(&result,Reader,ObjectA,0x828,UINT32_MAX);
-    assert(Calls==1 && result.read_attempts==40 && result.truncated && result.count==1 && !result.references[0].class_header_valid && result.references[0].prefix_bytes==40);
+    assert(Calls==1 && result.read_attempts==CMR_READ_LIMIT && result.truncated && result.count==1 && !result.references[0].class_header_valid && result.references[0].prefix_bytes==40);
     CMRAdd(&result,Reader,ObjectB,0x90,UINT32_MAX);assert(Calls==1 && result.count==1);
 
     memset(&result,0,sizeof(result));Calls=0;GenerateAny=true;
     for (unsigned i=0;i<20;i++) CMRAdd(&result,Reader,0x300000000ULL+(uint64_t)i*4096,0x828,UINT32_MAX);
-    assert(result.count==12 && Calls==36 && result.truncated);
+    assert(result.count==CMR_REFERENCE_LIMIT && Calls==CMR_REFERENCE_LIMIT*3 && result.truncated);
 
     GenerateAny=false;memset(layout,0,sizeof(layout));Pointer(layout,0x828,ObjectA);
     ClassSize=8192;Calls=0;CMRCollect(layout,sizeof(layout),Reader,&result);
