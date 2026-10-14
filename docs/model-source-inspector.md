@@ -39,7 +39,7 @@ v2 实机报告的 11 个头尾采样全部成功；安装包资源 18 项、下
 
 [构建与检查 38515678591](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38515678591) 已通过，源码为 `bfae94c0a815ae55150227a434b00ab9afd407e4`，发布标签指向该实际构建提交。检查覆盖大小端 thin/fat Mach-O、UUID/版本/加密声明、损坏或超限加载命令、非法切片、非普通文件和符号链接拒绝、资源类型清单、目录别名、路径越界及扫描上限。扫描修正后，[原 Core 的云端回归 38515678590](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38515678590) 也通过；Core 显示、范围及主包构建代码与发布 v19 的源码相同。
 
-v2 的[构建与检查 38542283342](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38542283342) 已通过，源码及发布标签指向 `6ca0d16bd1a6be2e65f9a6f82a358a90d65afd74`。新增检查覆盖准确的头尾字节、1..65 字节小文件、大于 4 GiB 的稀疏文件、空文件/管道/目录拒绝及相对路径和链接越界；设备 IPA 构建及签名核验通过。[原 Core 的云端回归 38542283227](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38542283227) 同样通过。v2 实机采样结果仍待新报告确认。
+v2 的[构建与检查 38542283342](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38542283342) 已通过，源码及发布标签指向 `6ca0d16bd1a6be2e65f9a6f82a358a90d65afd74`。新增检查覆盖准确的头尾字节、1..65 字节小文件、大于 4 GiB 的稀疏文件、空文件/管道/目录拒绝及相对路径和链接越界；设备 IPA 构建及签名核验通过。[原 Core 的云端回归 38542283227](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38542283227) 同样通过。后续实机报告已确认 v2 的采样可读性；实际模型结构尚未验证。
 
 v3 的[构建与检查 38545680275](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38545680275) 已通过，源码及发布标签指向 `421b976fc10efe3e04cf6cd214ac7a68dd447779`。新增检查验证完整字节复制、跨 64 KiB 块复制、独立已知 SHA-256、旧采样拒绝、已有输出保护、大文件限额及源/输出链接路径拒绝。v3 在手机上的样本导出尚待确认。[原 Core 的云端回归 38545680270](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38545680270) 也通过；Core 主包显示代码与已发布 v19 相同。
 
