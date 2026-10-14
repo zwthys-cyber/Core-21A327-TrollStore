@@ -4,6 +4,8 @@
 
 Apple 的公开查询将和平精英 App Store ID `1321803705` 对应到 `com.tencent.tmgp.pubgmhd`。工具只通过该身份查找本机已安装应用，报告中的版本来自其实际 Info.plist，不把公开商店版本作为手机版本。
 
+已发布到 [Releases：model-inspector-v1](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-inspector-v1)，作为独立测试工具，Core 主包最新版本仍为 v19。IPA 为 22,384 字节，SHA-256 为 `547c72082ea1e0a185d46c57564114fabd6a0c824a9f46df7a073029e007b322`。发布的 5 个附件、4 项摘要及 `/root/Core-Model-Source-Inspector-TrollStore-v1.ipa` 已核对一致。
+
 ## 使用
 
 1. 用 TrollStore 安装独立的 `Core-Model-Source-Inspector-TrollStore-v1.ipa`。Core v19 可继续保留。
@@ -20,6 +22,8 @@ Apple 的公开查询将和平精英 App Store ID `1321803705` 对应到 `com.te
 只读取主程序头及最多 1 MiB 的加载命令。扫描每个根目录最多 15,000 项、512 个资源、8 秒，并跳过符号链接。只列资源文件名和大小，不读取资源内容、账号或设置文件内容。报告保存在检查工具自己的 Documents，用户手动共享；应用没有网络请求，也不启动游戏、读取游戏进程内存或修改游戏文件。
 
 编译、原生文件解析/扫描回归及 IPA 签名核验均在 GitHub Actions 的 **Build model source inspector** 工作流运行。真实设备上的安装应用查询、权限和资源可读性尚需报告确认。
+
+[构建与检查 38515678591](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38515678591) 已通过，源码为 `bfae94c0a815ae55150227a434b00ab9afd407e4`，发布标签指向该实际构建提交。检查覆盖大小端 thin/fat Mach-O、UUID/版本/加密声明、损坏或超限加载命令、非法切片、非普通文件和符号链接拒绝、资源类型清单、目录别名、路径越界及扫描上限。扫描修正后，[原 Core 的云端回归 38515678590](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38515678590) 也通过；Core 显示、范围及主包构建代码与发布 v19 的源码相同。
 
 ## 参考
 
