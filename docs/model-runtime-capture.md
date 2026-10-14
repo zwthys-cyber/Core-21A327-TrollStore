@@ -14,6 +14,10 @@ v2 在 ARM64 入口用 x4 显式传递原 LR；将大数组采集函数设为不
 
 v2 尚未完成实机验证。初始化成功、入口次数非零、读取次数非零、实际快照非空分别表示不同阶段，不能相互替代。已有网格绑定和逐像素深度字段为明确的未验证声明，并非动态检测结果；`game_process_started=false` 表示采集工具不主动启动游戏，不能解释为用户没有打开游戏。
 
+v2 排查构建源码为 `872f141c2e1805de2e8732e1c3a87a73612e2bf1`，隔离分支为 `fix/model-capture-entry-v2`。[采集构建 38566467709](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38566467709) 全部通过，包括 37 项 Python 回归、实际转发入口的原生采样/递归/errno 检查、设备包签名及编译后的 ARM64 入口检查；[普通构建 38566471442](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38566471442) 也全部通过。下载的 v2 包为 7,208,937 字节，SHA-256 `73cc0a58ce650f67718594bec52bcbd050b8bde39caddd68e9fe4cd123d9b9f6`，与云端元数据一致。有限指令复核确认转发函数栈为 64 字节，且原 LR 在首次 C 调用前已通过 x4 保存。正式最新 Release 仍为 v19，v2 未作实机成功声明。
+
+新报告的 `capture_version` 应为 2。入口总次数为零需继续检查转发是否执行；入口非零而读取次数为零需检查调用点是否匹配；读取次数非零但快照为空时，结合窗口关闭次数、组件次数和跳过码区分后续条件。入口次数、未匹配次数及读取次数在窗口关闭后仍可能增长，但最终文件仅保存窗口结束时的读数；各项计数独立读取，不是原子的同一帧状态。
+
 已发布 [model-runtime-capture-v1](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-runtime-capture-v1)，预发布且不替换正式最新版 v19。IPA 7,208,679 字节，SHA-256 为 `aecfeabb46fe6ce8014033cc97cb485f7682dafb7ae144787c373f447a6ac93c`。发布的五个附件、四项校验及根目录 IPA 已核对一致。
 
 [云端检查和设备构建 38556662721](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38556662721) 全部通过，源码和发布标签指向 `db6341c8208f189c72afe4079cf226f00991350e`。检查覆盖 37 项原回归及可选导入改动、原生清零/errno 转发、递归读取隔离、完整数组采样、间隔/限额、帧布局与非法步长拒绝、射线锁/命中/未命中/损坏/预算、变换计算和本地报告。设备签名、依赖、导入和精确字节核验通过。此为云端验证，实机采集尚未得到报告确认。[普通 Core 构建 38555937751](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38555937751) 也通过。
