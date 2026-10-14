@@ -7,14 +7,14 @@
 static const uint64_t TableSlot=0x300000000ULL,Table=0x300010000ULL,Chunk=0x300020000ULL,Entry=0x300040000ULL;
 static const uint64_t Asset=0x200000000ULL,ChildAsset=0x200010000ULL,Class=0x200020000ULL;
 static unsigned Calls;
-static bool BadText,FailText,Stride16,FailWide;
+static bool BadText,FailText,Stride16=true,FailWide;
 static CMRHeader Header(uint32_t name) {
     CMRHeader h={0};h.vtable=0x100010000ULL;h.internal_index=5;h.class_address=Class;h.name_index=name;return h;
 }
 static bool Reader(uint64_t address,void *out,size_t size) {
     Calls++;memset(out,0,size);
     if (address==TableSlot && size==8) { memcpy(out,&Table,8);return true; }
-    if (address>=Table && address<Table+64*8 && size==8) { memcpy(out,&Chunk,8);return true; }
+    if (address>=Table && address<Table+CMN_CHUNK_LIMIT*8 && size==8) { memcpy(out,&Chunk,8);return true; }
     if (address>=Chunk && address<Chunk+16384*8 && size==8) { memcpy(out,&Entry,8);return true; }
     if (address==Entry+12 && size==CMN_TEXT_BYTES) {
         if (FailText) return false;
@@ -57,42 +57,42 @@ int main(void) {
     BadText=false;FailText=true;CMNAdd(&names,Reader,80278);assert(!names.names[4].valid && names.read_failures==1);
     FailText=false;unsigned before=Calls;CMNAdd(&names,Reader,1U<<27);assert(Calls==before);
     CMNBegin(&names,Reader,TableSlot,513);assert(!names.available && !names.read_attempts);
-    CMNBegin(&names,Reader,TableSlot,12);names.read_attempts=319;
-    CMNAdd(&names,Reader,100);assert(names.read_attempts==320 && names.truncated && !names.names[0].valid);
+    CMNBegin(&names,Reader,TableSlot,12);names.read_attempts=CMN_READ_LIMIT-1;
+    CMNAdd(&names,Reader,100);assert(names.read_attempts==CMN_READ_LIMIT && names.truncated && !names.names[0].valid);
     CMNBegin(&names,Reader,TableSlot,12);
-    for (unsigned i=0;i<130;i++) CMNAdd(&names,Reader,i+100);
-    assert(names.count==128 && names.truncated && names.read_attempts<=320);
+    for (unsigned i=0;i<CMN_NAME_LIMIT+2;i++) CMNAdd(&names,Reader,i+100);
+    assert(names.count==CMN_NAME_LIMIT && names.truncated && names.read_attempts<=CMN_READ_LIMIT);
     CMNBegin(&names,Reader,TableSlot,12);
-    for (unsigned i=0;i<33;i++) CMNAdd(&names,Reader,(i<<14)+100);
-    assert(names.chunk_count==32 && names.truncated);
+    for (unsigned i=0;i<CMN_CHUNK_LIMIT+1;i++) CMNAdd(&names,Reader,(i<<14)+100);
+    assert(names.chunk_count==CMN_CHUNK_LIMIT && names.truncated);
 
     // Use the production bounded collector once, then provide independent root
     // and child evidence to verify the additional fixed 0x828 pointer edge.
     CMRReferences refs;uint8_t layout[4096]={0};CMRCollect(layout,sizeof(layout),Reader,&refs);
     refs.count=3;CMRReference *root=&refs.references[0];root->address=Asset;root->source_offset=0x828;root->prefix_bytes=1048;
     root->header=Header(548897);root->class_header=Header(80275);root->class_header_valid=true;
-    const uint32_t offsets[]={0x220,0x230,0x240,0x250,0x260};
-    for (unsigned i=0;i<5;i++) Array(root->prefix,offsets[i],0x400000000ULL+i*0x2000,3,3);
+    const uint32_t offsets[]={0x220,0x230,0x240,0x250};
+    for (unsigned i=0;i<4;i++) Array(root->prefix,offsets[i],0x400000000ULL+i*0x2000,3,3);
     refs.references[1].address=0x500000000ULL;refs.references[1].source_offset=0x170;refs.references[1].prefix_bytes=4096;
     memcpy(refs.references[1].prefix+0x828,&ChildAsset,8);
     refs.references[2]=refs.references[1];refs.references[2].address+=0x2000;
     CMBBinding binding;Calls=0;CMBCollect(0x500010000ULL,&refs,Reader,&binding);
     assert(binding.assets.count==2 && binding.link_count==3 && binding.assets.read_attempts==3);
     assert(binding.links[1].asset_index==1 && binding.links[2].asset_index==1);
-    assert(binding.buffer_count==5 && binding.read_attempts==5 && Calls==8);
+    assert(binding.buffer_count==4 && binding.read_attempts==4 && Calls==7);
     assert(binding.buffers[0].hierarchy_shape_valid && binding.buffers[2].hierarchy_shape_valid);
-    assert(binding.buffers[0].bytes==36 && binding.buffers[1].bytes==144 && binding.buffers[4].bytes==192);
+    assert(binding.buffers[0].bytes==48 && binding.buffers[1].bytes==144);
 
-    Stride16=true;CMBCollect(0x500010000ULL,&refs,Reader,&binding);
-    assert(binding.read_attempts==7 && binding.buffers[0].stride_hint==16 && binding.buffers[0].hierarchy_shape_valid);
+    Stride16=false;CMBCollect(0x500010000ULL,&refs,Reader,&binding);
+    assert(binding.read_attempts==4 && !binding.buffers[0].hierarchy_shape_valid);
     FailWide=true;CMBCollect(0x500010000ULL,&refs,Reader,&binding);
-    assert(binding.read_failures==2 && binding.buffers[0].bytes==0 && !binding.buffers[0].hierarchy_shape_valid);
-    Stride16=FailWide=false;Array(root->prefix,0x220,0x400000000ULL,257,257);
-    CMBCollect(0x500010000ULL,&refs,Reader,&binding);assert(binding.rejected_arrays==1 && binding.buffer_count==4);
+    assert(binding.read_failures==2 && binding.buffer_count==2 && binding.buffers[0].offset==0x230);
+    Stride16=true;FailWide=false;Array(root->prefix,0x220,0x400000000ULL,257,257);
+    CMBCollect(0x500010000ULL,&refs,Reader,&binding);assert(binding.rejected_arrays==1 && binding.buffer_count==3);
     Array(root->prefix,0x220,0x400000000ULL,3,2);
     CMBCollect(0x500010000ULL,&refs,Reader,&binding);assert(binding.rejected_arrays==1);
     uint8_t invalid[36]={0};assert(!CMBHierarchy(invalid,3,12));
     assert(!CMBRange((1ULL<<39)-8,16) && !CMNRange((1ULL<<39)-8,16));
-    puts("PASS: pinned chunked names, caches, ASCII/termination, failed reads and exact budgets; fixed component/resource edges, deduplication, reference array bounds, hierarchy strides and failed reread isolation");
+    puts("PASS: pinned chunked names, caches, ASCII/termination, failed reads and exact budgets; fixed resource links, deduplication, reference array bounds, confirmed 16-byte records and rejection of the old stride hypothesis");
     return 0;
 }

@@ -3,7 +3,7 @@
 #include "CoreModelReferences.h"
 
 #define CMB_LINK_LIMIT 16
-#define CMB_BUFFER_LIMIT 5
+#define CMB_BUFFER_LIMIT 4
 #define CMB_BUFFER_BYTES 16384
 #define CMB_BUFFER_READ_LIMIT 8
 typedef struct { uint64_t component,address;uint32_t asset_index; } CMBLink;
@@ -62,10 +62,10 @@ static inline void CMBCollect(uint64_t component,const CMRReferences *refs,CMRRe
         for (uint32_t j=0;j<out->assets.count;j++) if (out->assets.references[j].address==address) assetIndex=j;
         out->links[out->link_count++]=(CMBLink){child->address,address,assetIndex};
     }
-    // These paired array shapes were present in all three v4 resource prefixes.
-    // They are hypotheses until names, hierarchy and reference poses agree.
-    const uint32_t offsets[]={0x220,0x230,0x240,0x250,0x260};
-    const uint32_t strides[]={12,48,12,48,64};
+    // v5 confirmed 16-byte bone records and 48-byte reference transforms.
+    // The old 0x260 matrix hypothesis was disproved by its integer/name data.
+    const uint32_t offsets[]={0x220,0x230,0x240,0x250};
+    const uint32_t strides[]={16,48,16,48};
     for (uint32_t i=0;i<CMB_BUFFER_LIMIT;i++) {
         if (root->prefix_bytes<offsets[i]+16) continue;
         uint64_t address=0;int32_t count=0,capacity=0;
@@ -80,14 +80,7 @@ static inline void CMBCollect(uint64_t component,const CMRReferences *refs,CMRRe
         if (!CMBRead(out,reader,address,buffer->data,(size_t)count*strides[i])) continue;
         buffer->bytes=(uint32_t)count*strides[i];
         if (i==0 || i==2) {
-            buffer->hierarchy_shape_valid=CMBHierarchy(buffer->data,buffer->count,12);
-            if (!buffer->hierarchy_shape_valid && CMBRead(out,reader,address,buffer->data,(size_t)count*16)) {
-                buffer->bytes=(uint32_t)count*16;buffer->stride_hint=16;
-                buffer->hierarchy_shape_valid=CMBHierarchy(buffer->data,buffer->count,16);
-            } else if (!buffer->hierarchy_shape_valid) {
-                // A failed second read may clear/partially replace the data.
-                buffer->bytes=0;
-            }
+            buffer->hierarchy_shape_valid=CMBHierarchy(buffer->data,buffer->count,16);
         }
         out->buffer_count++;
     }

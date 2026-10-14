@@ -8,9 +8,9 @@
 // Mirrors the pinned Core D6794 name lookup without calling its mutable cache.
 // The table slot and entry text offset come from Core's live profile, not a
 // guessed game offset. Text is accepted only when terminated and ASCII.
-#define CMN_NAME_LIMIT 128
-#define CMN_CHUNK_LIMIT 32
-#define CMN_READ_LIMIT 320
+#define CMN_NAME_LIMIT 256
+#define CMN_CHUNK_LIMIT 64
+#define CMN_READ_LIMIT 640
 #define CMN_TEXT_BYTES 256
 typedef bool (*CMNReader)(uint64_t,void *,size_t);
 typedef struct {
@@ -26,6 +26,10 @@ typedef struct {
     struct { uint32_t index;uint64_t address; } chunks[CMN_CHUNK_LIMIT];
     CMNName names[CMN_NAME_LIMIT];
 } CMNNames;
+static inline const char *CMNText(const CMNNames *out,uint32_t index) {
+    for (uint32_t i=0;i<out->count;i++) if (out->names[i].index==index && out->names[i].valid) return out->names[i].text;
+    return NULL;
+}
 static inline bool CMNRange(uint64_t address,size_t size) {
     return address>=0x100000000ULL && address<(1ULL<<39) && size &&
         size<=CMN_TEXT_BYTES && size<=(1ULL<<39)-address;

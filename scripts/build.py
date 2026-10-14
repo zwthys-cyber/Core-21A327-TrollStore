@@ -252,7 +252,7 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.model_capture:
-        info.update(CFBundleVersion="25", CoreModelCaptureVersion="5")
+        info.update(CFBundleVersion="26", CoreModelCaptureVersion="6")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -275,7 +275,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ("Core-17.0-21A327-TrollStore-model-capture-v5.ipa" if args.model_capture else ARTIFACT_NAME)
+    artifact = dist / ("Core-17.0-21A327-TrollStore-model-capture-v6.ipa" if args.model_capture else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -298,16 +298,21 @@ def main():
                                            retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
-    report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=5 if args.model_capture else 0,
+    report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=6 if args.model_capture else 0,
         acquisition="full located component transform array, component transform, native projection, bounded original geometry ray distances",
         report="Core-model-runtime-report.json", max_targets=3, snapshots_per_target=2,
         component_layout_sample_limit_bytes=4096,
         reference_candidates=dict(limit=16, reads_per_snapshot=56, prefix_bytes_max=4096, class_header_bytes=80,
             array_entries_per_slot=16, asset_candidate_offset=0x828, recursive_scan=False, semantic_types_verified=False),
         binding_evidence=dict(fixed_child_resource_offset=0x828, component_resource_links=16,
-            extra_asset_reads=56, root_asset_array_reads=8, root_asset_arrays=5, array_count_limit=256,
-            names=128, name_reads=320, name_text_bytes=256, native_name_source="Core-D6794-live-profile",
+            extra_asset_reads=56, root_asset_array_reads=8, root_asset_arrays=4, array_count_limit=256,
+            names=256, name_reads=640, name_text_bytes=256, native_name_source="Core-D6794-live-profile",
             semantic_types_verified=False),
+        mesh_evidence=dict(resources=12, components=16, reads=96, reference_bytes=32768,
+            child_pose_bytes=16384, native_nodes=12, native_prefix_bytes=1024,
+            bone_record_stride=16, reference_transform_stride=48,
+            bone_identity="name index and number", matrix_offset_0x260_hypothesis_rejected=True,
+            render_buffers_verified=False, semantic_child_pose_space_verified=False),
         minimum_sample_spacing_seconds=10,
         capture_window_seconds=180, ray_budget_ms_per_snapshot=10,
         entry_return="ARM64 veneer passes original LR in x4 before the C prologue",

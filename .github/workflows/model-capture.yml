@@ -29,12 +29,16 @@ jobs:
         run: |
           xcrun clang -O2 -Wall -Wextra -Werror tests/test_model_binding_runtime.c -o /tmp/core-model-binding-test
           /tmp/core-model-binding-test
+      - name: Test mesh reference skeletons, master maps and native source bounds
+        run: |
+          xcrun clang -O2 -Wall -Wextra -Werror tests/test_model_mesh_evidence_runtime.c -o /tmp/core-model-mesh-evidence-test
+          /tmp/core-model-mesh-evidence-test
       - name: Verify exact payload, optional forwarding exports and signatures
-        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-model-capture-v5.ipa
+        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-model-capture-v6.ipa
       - name: Check the compiled ARM64 entry and forwarding stack
-        run: python3 scripts/check_model_capture_entry.py dist/Core-17.0-21A327-TrollStore-model-capture-v5.ipa
+        run: python3 scripts/check_model_capture_entry.py dist/Core-17.0-21A327-TrollStore-model-capture-v6.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: Core-model-runtime-capture-v5
+          name: Core-model-runtime-capture-v6
           path: dist/*
           retention-days: 14

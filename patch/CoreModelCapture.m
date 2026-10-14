@@ -16,6 +16,7 @@
 #include "CoreModelReferences.h"
 #include "CoreModelBinding.h"
 #include "CoreModelNames.h"
+#include "CoreModelMeshEvidence.h"
 
 #define CM_BONE_LIMIT 256
 #define CM_TARGET_LIMIT 3
@@ -116,7 +117,7 @@ static NSDictionary *CMTransformJSON(const CMTransform *t) {
 
 // Called only on the serial writer queue; report contains at most six snapshots.
 static void CMWriteReport(NSString *status) {
-    NSDictionary *report = @{ @"capture_version":@5, @"status":status,
+    NSDictionary *report = @{ @"capture_version":@6, @"status":status,
         @"date":[NSDate.date description], @"core_uuid":@"4ED1FD29-A46A-36B3-8DFC-36F67EA929D1",
         @"snapshots":CMFrames ?: @[], @"max_targets":@(CM_TARGET_LIMIT),
         @"max_snapshots":@(CM_TARGET_LIMIT*CM_SAMPLES_PER_TARGET),
@@ -182,7 +183,73 @@ static void CMCollectNames(const CMRReferences *refs,const CMBBinding *binding,C
     }
 }
 
-static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData,
+static void CMCollectMeshNames(const CMEMeshEvidence *evidence,CMNNames *names) {
+    for (uint32_t i=0;i<evidence->resource_count;i++) {
+        const CMEResource *resource=&evidence->resources[i];
+        if (!resource->hierarchy_valid) continue;
+        for (uint32_t j=0;j<resource->count;j++) {
+            uint32_t index=0;memcpy(&index,resource->info+j*16,4);CMNAdd(names,CMReadRemote,index);
+        }
+    }
+    for (uint32_t i=0;i<evidence->native_count;i++) {
+        const CMENative *node=&evidence->native[i];
+        if (node->header_shape_valid) CMNAdd(names,CMReadRemote,node->header.name_index);
+        if (node->class_header_shape_valid) CMNAdd(names,CMReadRemote,node->class_header.name_index);
+    }
+}
+
+static NSDictionary *CMMeshEvidenceJSON(const CMEMeshEvidence *evidence) {
+    if (!evidence) return @{};
+    NSMutableArray *resources=[NSMutableArray array],*components=[NSMutableArray array],*native=[NSMutableArray array];
+    for (uint32_t i=0;i<evidence->resource_count;i++) {
+        const CMEResource *r=&evidence->resources[i];
+        [resources addObject:@{ @"asset_candidate_index":@(r->asset_index), @"decoded_class_is_skeletal_mesh":@(r->skeletal_class_named),
+            @"declared_bone_count":@(r->count), @"bone_info_bytes":@(r->info_bytes), @"reference_pose_bytes":@(r->pose_bytes),
+            @"bone_record_stride":@16, @"reference_transform_stride":@48, @"hierarchy_shape_valid":@(r->hierarchy_valid),
+            @"reference_pose_transform_shape_valid":@(r->reference_pose_valid), @"bone_identity_uses_name_index_and_number":@YES,
+            @"bone_info_base64":[[NSData dataWithBytes:r->info length:r->info_bytes] base64EncodedStringWithOptions:0],
+            @"reference_pose_base64":[[NSData dataWithBytes:r->pose length:r->pose_bytes] base64EncodedStringWithOptions:0] }];
+    }
+    for (uint32_t i=0;i<evidence->component_count;i++) {
+        const CMEComponent *c=&evidence->components[i];NSMutableArray *maps=[NSMutableArray array],*poses=[NSMutableArray array];
+        for (uint32_t j=0;j<2;j++) {
+            const CMEMap *map=&c->maps[j];const CMEPose *pose=&c->poses[j];
+            [maps addObject:@{ @"source_component_offset":@(map->offset), @"array_address":@(map->address), @"declared_count":@(map->count),
+                @"sample_bytes":@(map->bytes), @"indices_in_primary_pose_range":@(map->index_range_valid),
+                @"name_and_number_identity_matches":@(map->identity_matches), @"unmapped_count":@(map->unmapped),
+                @"full_reference_bone_mapping_consistent":@(map->full_identity_match),
+                @"sample_base64":[[NSData dataWithBytes:map->indices length:map->bytes] base64EncodedStringWithOptions:0] }];
+            [poses addObject:@{ @"source_component_offset":@(pose->offset), @"array_address":@(pose->address), @"declared_count":@(pose->count),
+                @"sample_bytes":@(pose->bytes), @"transform_stride_hypothesis":@48, @"transform_shape_valid":@(pose->transform_shape_valid),
+                @"semantic_pose_space_verified":@NO,
+                @"sample_base64":[[NSData dataWithBytes:pose->data length:pose->bytes] base64EncodedStringWithOptions:0] }];
+        }
+        [components addObject:@{ @"component_address":@(c->address), @"asset_candidate_index":@(c->asset_index),
+            @"master_component_index_candidate":@(c->master_index), @"master_component_serial_candidate":@(c->master_serial),
+            @"master_index_matches_primary_component":@(c->master_index_matches_primary),
+            @"component_transform_valid":@(c->component_transform_valid), @"component_transform":CMTransformJSON(&c->component_transform),
+            @"master_bone_map_candidates":maps, @"pose_array_candidates":poses }];
+    }
+    for (uint32_t i=0;i<evidence->native_count;i++) {
+        const CMENative *node=&evidence->native[i];
+        [native addObject:@{ @"candidate_address":@(node->address), @"source_offset":@(node->source_asset_offset),
+            @"parent_native_node":node->parent_node==UINT32_MAX ? (id)NSNull.null : @(node->parent_node),
+            @"source_array_index":node->array_slot==UINT32_MAX ? (id)NSNull.null : @(node->array_slot),
+            @"prefix_sample_bytes":@(node->bytes), @"header_shape_valid":@(node->header_shape_valid),
+            @"header_candidate":node->header_shape_valid ? (id)CMHeaderJSON(&node->header) : NSNull.null,
+            @"class_header_candidate":node->class_header_shape_valid ? (id)CMHeaderJSON(&node->class_header) : NSNull.null,
+            @"prefix_sample_base64":[[NSData dataWithBytes:node->data length:node->bytes] base64EncodedStringWithOptions:0],
+            @"render_data_identity_verified":@NO }];
+    }
+    return @{ @"resource_reference_skeletons":resources, @"component_pose_bindings":components, @"native_render_source_candidates":native,
+        @"read_attempts":@(evidence->read_attempts), @"read_failures":@(evidence->read_failures), @"read_limit":@(CME_READ_LIMIT),
+        @"reference_sample_bytes":@(evidence->reference_bytes), @"reference_byte_limit":@(CME_REFERENCE_BYTE_LIMIT),
+        @"pose_sample_bytes":@(evidence->pose_bytes), @"pose_byte_limit":@(CME_POSE_BYTE_LIMIT),
+        @"rejected_arrays":@(evidence->rejected_arrays), @"truncated":@(evidence->truncated),
+        @"resource_limit":@(CME_RESOURCE_LIMIT), @"native_node_limit":@(CME_NATIVE_LIMIT), @"arbitrary_pointer_recursion":@NO };
+}
+
+static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData, NSData *meshData,
                             CMTransform componentTransform, CMVec3 camera, float width, float height,
                             uintptr_t component, uint64_t transformAddress, uint64_t componentTransformAddress, unsigned count, unsigned stride, uint64_t start,
                             uint64_t end, bool geometryReady, bool rayTruncated) {
@@ -264,6 +331,7 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                 @"component_layout_sample_base64":[componentLayout base64EncodedStringWithOptions:0] ?: (id)NSNull.null,
                 @"component_layout_type_interpretation_verified":@NO,
                 @"component_reference_candidates":references,
+                @"mesh_runtime_evidence":CMMeshEvidenceJSON(meshData.length==sizeof(CMEMeshEvidence) ? meshData.bytes : NULL),
                 @"resource_binding_evidence":@{ @"asset_candidates":assetCandidates, @"component_resource_links":links,
                     @"root_asset_array_candidates":buffers, @"extra_asset_read_attempts":@(binding ? binding->assets.read_attempts : 0),
                     @"extra_asset_read_failures":@(binding ? binding->assets.read_failures : 0), @"extra_asset_read_limit":@(CMR_READ_LIMIT),
@@ -321,6 +389,7 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         NSMutableData *referenceData = nil;
         NSMutableData *bindingData = nil;
         NSMutableData *nameData = nil;
+        NSMutableData *meshData = nil;
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -382,10 +451,13 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         nameData=[NSMutableData dataWithLength:sizeof(CMNNames)];
         CMBCollect(component,referenceData.bytes,CMReadRemote,bindingData.mutableBytes);
         CMCollectNames(referenceData.bytes,bindingData.bytes,nameData.mutableBytes);
+        meshData=[NSMutableData dataWithLength:sizeof(CMEMeshEvidence)];
+        CMECollect(component,componentLayout.bytes,componentLayout.length,count,referenceData.bytes,bindingData.bytes,nameData.bytes,CMReadRemote,meshData.mutableBytes);
+        CMCollectMeshNames(meshData.bytes,nameData.mutableBytes);
         CMQueueSnapshot([NSData dataWithBytes:raw length:count*stride],
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
             [NSData dataWithBytes:projections length:count*sizeof(*projections)],
-            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,componentTransform,camera,size[0],size[1],
+            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,meshData,componentTransform,camera,size[0],size[1],
             component,boneAddress,remoteAddress,count,stride,start,CMNow(),geometryReady,truncated);
     done: ;
     }
