@@ -163,7 +163,7 @@ int main(void) {
 
         NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:CMReportURL] options:0 error:NULL];
         assert(report && ![report[@"full_render_mesh_verified"] boolValue] && ![report[@"pixel_depth_texture_available"] boolValue]);
-        assert([report[@"capture_version"] unsignedIntValue]==4 && report[@"entry_bzero_calls_observed"]);
+        assert([report[@"capture_version"] unsignedIntValue]==5 && report[@"entry_bzero_calls_observed"]);
         [[NSFileManager defaultManager] removeItemAtPath:directory error:NULL];
         puts("PASS: exact bzero/errno forwarding; nested reads; full 63-transform snapshots; spacing and limits; pinned frame boundary; ray locks, miss/hit/malformed/budget; quaternion/scale world positions; honest report capabilities");
     }

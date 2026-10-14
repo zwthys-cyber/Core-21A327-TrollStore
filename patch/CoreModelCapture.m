@@ -14,6 +14,8 @@
 #endif
 #include "CoreModelCaptureMath.h"
 #include "CoreModelReferences.h"
+#include "CoreModelBinding.h"
+#include "CoreModelNames.h"
 
 #define CM_BONE_LIMIT 256
 #define CM_TARGET_LIMIT 3
@@ -114,7 +116,7 @@ static NSDictionary *CMTransformJSON(const CMTransform *t) {
 
 // Called only on the serial writer queue; report contains at most six snapshots.
 static void CMWriteReport(NSString *status) {
-    NSDictionary *report = @{ @"capture_version":@4, @"status":status,
+    NSDictionary *report = @{ @"capture_version":@5, @"status":status,
         @"date":[NSDate.date description], @"core_uuid":@"4ED1FD29-A46A-36B3-8DFC-36F67EA929D1",
         @"snapshots":CMFrames ?: @[], @"max_targets":@(CM_TARGET_LIMIT),
         @"max_snapshots":@(CM_TARGET_LIMIT*CM_SAMPLES_PER_TARGET),
@@ -141,7 +143,46 @@ static NSDictionary *CMHeaderJSON(const CMRHeader *h) {
         @"outer_address":@(h->outer_address) };
 }
 
-static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData,
+static NSDictionary *CMReferenceJSON(const CMRReference *ref) {
+    return @{ @"source_component_offset":@(ref->source_offset),
+        @"source_array_index":ref->array_index==UINT32_MAX ? (id)NSNull.null : @(ref->array_index),
+        @"candidate_address":@(ref->address), @"header_candidate":CMHeaderJSON(&ref->header),
+        @"class_header_candidate_valid":@(ref->class_header_valid),
+        @"class_header_candidate":ref->class_header_valid ? CMHeaderJSON(&ref->class_header) : (id)NSNull.null,
+        @"prefix_sample_bytes":@(ref->prefix_bytes),
+        @"prefix_sample_base64":[[NSData dataWithBytes:ref->prefix length:ref->prefix_bytes] base64EncodedStringWithOptions:0],
+        @"class_size_hint_valid":@(ref->class_size_hint_valid),
+        @"class_size_hint":@(ref->class_size_hint), @"class_alignment_hint":@(ref->class_alignment_hint),
+        @"semantic_class_verified":@NO, @"mesh_resource_identity_verified":@NO };
+}
+
+static void CMCollectNames(const CMRReferences *refs,const CMBBinding *binding,CMNNames *out) {
+    uint64_t image=0,poolKey=0,poolValue=0,textKey=0,textValue=0;
+    if (!CMSelfRead(CMBase+0xC54288,&image,8) ||
+        !CMSelfRead(CMBase+0xBD4660,&poolKey,8) || !CMSelfRead(CMBase+0xBD48B8,&poolValue,8) ||
+        !CMSelfRead(CMBase+0xBD4668,&textKey,8) || !CMSelfRead(CMBase+0xBD48C0,&textValue,8) ||
+        !CMRemoteRange(image,8) || (poolKey^poolValue)>=(1ULL<<39)-image) return;
+    CMNBegin(out,CMReadRemote,image+(poolKey^poolValue),textKey^textValue);
+    if (!out->available) return;
+    for (uint32_t group=0;group<2;group++) {
+        const CMRReferences *source=group ? &binding->assets : refs;
+        for (uint32_t i=0;i<source->count;i++) {
+            const CMRReference *ref=&source->references[i];
+            if (ref->class_header_valid) CMNAdd(out,CMReadRemote,ref->class_header.name_index);
+            CMNAdd(out,CMReadRemote,ref->header.name_index);
+        }
+    }
+    for (uint32_t i=0;i<binding->buffer_count;i++) {
+        const CMBBuffer *buffer=&binding->buffers[i];
+        if (!buffer->hierarchy_shape_valid) continue;
+        for (uint32_t j=0;j<buffer->count;j++) {
+            uint32_t index=0;memcpy(&index,buffer->data+j*buffer->stride_hint,4);
+            CMNAdd(out,CMReadRemote,index);
+        }
+    }
+}
+
+static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData,
                             CMTransform componentTransform, CMVec3 camera, float width, float height,
                             uintptr_t component, uint64_t transformAddress, uint64_t componentTransformAddress, unsigned count, unsigned stride, uint64_t start,
                             uint64_t end, bool geometryReady, bool rayTruncated) {
@@ -157,16 +198,31 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
             const CMRReferences *evidence=referenceData.length==sizeof(CMRReferences) ? referenceData.bytes : NULL;
             if (evidence) for (uint32_t i=0;i<evidence->count;i++) {
                 const CMRReference *ref=&evidence->references[i];
-                [references addObject:@{ @"source_component_offset":@(ref->source_offset),
-                    @"source_array_index":ref->array_index==UINT32_MAX ? (id)NSNull.null : @(ref->array_index),
-                    @"candidate_address":@(ref->address), @"header_candidate":CMHeaderJSON(&ref->header),
-                    @"class_header_candidate_valid":@(ref->class_header_valid),
-                    @"class_header_candidate":ref->class_header_valid ? CMHeaderJSON(&ref->class_header) : (id)NSNull.null,
-                    @"prefix_sample_bytes":@(ref->prefix_bytes),
-                    @"prefix_sample_base64":[[NSData dataWithBytes:ref->prefix length:ref->prefix_bytes] base64EncodedStringWithOptions:0],
-                    @"class_size_hint_valid":@(ref->class_size_hint_valid),
-                    @"class_size_hint":@(ref->class_size_hint), @"class_alignment_hint":@(ref->class_alignment_hint),
-                    @"semantic_class_verified":@NO, @"mesh_resource_identity_verified":@NO }];
+                [references addObject:CMReferenceJSON(ref)];
+            }
+            NSMutableArray *assetCandidates=[NSMutableArray array],*links=[NSMutableArray array],*buffers=[NSMutableArray array],*names=[NSMutableArray array];
+            const CMBBinding *binding=bindingData.length==sizeof(CMBBinding) ? bindingData.bytes : NULL;
+            if (binding) {
+                for (uint32_t i=0;i<binding->assets.count;i++) [assetCandidates addObject:CMReferenceJSON(&binding->assets.references[i])];
+                for (uint32_t i=0;i<binding->link_count;i++) {
+                    const CMBLink *link=&binding->links[i];
+                    [links addObject:@{ @"component_address":@(link->component), @"resource_candidate_address":@(link->address),
+                        @"source_offset":@0x828, @"asset_candidate_index":link->asset_index==UINT32_MAX ? (id)NSNull.null : @(link->asset_index) }];
+                }
+                for (uint32_t i=0;i<binding->buffer_count;i++) {
+                    const CMBBuffer *buffer=&binding->buffers[i];
+                    [buffers addObject:@{ @"source_asset_offset":@(buffer->offset), @"array_address":@(buffer->address),
+                        @"declared_count":@(buffer->count), @"capacity":@(buffer->capacity), @"sample_bytes":@(buffer->bytes),
+                        @"record_stride_hypothesis":@(buffer->stride_hint), @"hierarchy_shape_valid":@(buffer->hierarchy_shape_valid),
+                        @"semantic_type_verified":@NO,
+                        @"sample_base64":[[NSData dataWithBytes:buffer->data length:buffer->bytes] base64EncodedStringWithOptions:0] }];
+                }
+            }
+            const CMNNames *catalog=nameData.length==sizeof(CMNNames) ? nameData.bytes : NULL;
+            if (catalog) for (uint32_t i=0;i<catalog->count;i++) {
+                const CMNName *name=&catalog->names[i];
+                [names addObject:@{ @"name_index":@(name->index), @"entry_address":@(name->entry_address), @"valid_ascii_text":@(name->valid),
+                    @"text":name->valid ? (id)[NSString stringWithUTF8String:name->text] : NSNull.null }];
             }
             unsigned valid = 0, queries = 0;
             NSMutableArray *arrayOffsets=[NSMutableArray array];
@@ -208,6 +264,16 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                 @"component_layout_sample_base64":[componentLayout base64EncodedStringWithOptions:0] ?: (id)NSNull.null,
                 @"component_layout_type_interpretation_verified":@NO,
                 @"component_reference_candidates":references,
+                @"resource_binding_evidence":@{ @"asset_candidates":assetCandidates, @"component_resource_links":links,
+                    @"root_asset_array_candidates":buffers, @"extra_asset_read_attempts":@(binding ? binding->assets.read_attempts : 0),
+                    @"extra_asset_read_failures":@(binding ? binding->assets.read_failures : 0), @"extra_asset_read_limit":@(CMR_READ_LIMIT),
+                    @"buffer_read_attempts":@(binding ? binding->read_attempts : 0), @"buffer_read_failures":@(binding ? binding->read_failures : 0),
+                    @"buffer_read_limit":@(CMB_BUFFER_READ_LIMIT), @"rejected_arrays":@(binding ? binding->rejected_arrays : 0),
+                    @"truncated":@(binding ? binding->truncated || binding->assets.truncated : NO), @"recursive_scan":@NO },
+                @"name_lookup":@{ @"source":@"pinned-Core-D6794-live-profile-chunked-name-table", @"names":names,
+                    @"available":@(catalog ? catalog->available : NO), @"read_attempts":@(catalog ? catalog->read_attempts : 0),
+                    @"read_failures":@(catalog ? catalog->read_failures : 0), @"rejected_text":@(catalog ? catalog->rejected_text : 0),
+                    @"truncated":@(catalog ? catalog->truncated : NO), @"name_limit":@(CMN_NAME_LIMIT), @"read_limit":@(CMN_READ_LIMIT) },
                 @"reference_probe":@{ @"read_attempts":@(evidence ? evidence->read_attempts : 0),
                     @"read_failures":@(evidence ? evidence->read_failures : 0),
                     @"rejected_headers":@(evidence ? evidence->rejected_headers : 0),
@@ -253,6 +319,8 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
     @autoreleasepool {
         NSData *componentLayout = nil;
         NSMutableData *referenceData = nil;
+        NSMutableData *bindingData = nil;
+        NSMutableData *nameData = nil;
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -310,10 +378,14 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
             [NSData dataWithBytes:layout length:sizeof(layout)] : nil;
         referenceData=[NSMutableData dataWithLength:sizeof(CMRReferences)];
         if (componentLayout) CMRCollect(componentLayout.bytes,componentLayout.length,CMReadRemote,referenceData.mutableBytes);
+        bindingData=[NSMutableData dataWithLength:sizeof(CMBBinding)];
+        nameData=[NSMutableData dataWithLength:sizeof(CMNNames)];
+        CMBCollect(component,referenceData.bytes,CMReadRemote,bindingData.mutableBytes);
+        CMCollectNames(referenceData.bytes,bindingData.bytes,nameData.mutableBytes);
         CMQueueSnapshot([NSData dataWithBytes:raw length:count*stride],
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
             [NSData dataWithBytes:projections length:count*sizeof(*projections)],
-            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,componentTransform,camera,size[0],size[1],
+            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,componentTransform,camera,size[0],size[1],
             component,boneAddress,remoteAddress,count,stride,start,CMNow(),geometryReady,truncated);
     done: ;
     }
