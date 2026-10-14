@@ -9,6 +9,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install instruction-test dependency
         run: python3 -m pip install --user --break-system-packages unicorn==2.1.4
       - name: Check unchanged baseline and optional import redirect
