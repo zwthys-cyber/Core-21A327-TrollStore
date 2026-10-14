@@ -313,6 +313,8 @@ def main():
             bone_record_stride=16, reference_transform_stride=48,
             bone_identity="name index and number", matrix_offset_0x260_hypothesis_rejected=True,
             render_buffers_verified=False, semantic_child_pose_space_verified=False),
+        camera_view_evidence=dict(local_source_bytes=52, native_projection_source="Core-DA704",
+            atomic_engine_frame_verified=False, layout_semantics_verified=False),
         minimum_sample_spacing_seconds=10,
         capture_window_seconds=180, ray_budget_ms_per_snapshot=10,
         entry_return="ARM64 veneer passes original LR in x4 before the C prologue",

@@ -249,7 +249,7 @@ static NSDictionary *CMMeshEvidenceJSON(const CMEMeshEvidence *evidence) {
         @"resource_limit":@(CME_RESOURCE_LIMIT), @"native_node_limit":@(CME_NATIVE_LIMIT), @"arbitrary_pointer_recursion":@NO };
 }
 
-static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData, NSData *meshData,
+static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout, NSData *referenceData, NSData *bindingData, NSData *nameData, NSData *meshData, NSData *cameraViewData,
                             CMTransform componentTransform, CMVec3 camera, float width, float height,
                             uintptr_t component, uint64_t transformAddress, uint64_t componentTransformAddress, unsigned count, unsigned stride, uint64_t start,
                             uint64_t end, bool geometryReady, bool rayTruncated) {
@@ -326,6 +326,10 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                 @"captured_all_declared_component_transforms":@YES, @"valid_transform_count":@(valid),
                 @"transform_stride":@(stride), @"component_transform":CMTransformJSON(&componentTransform),
                 @"camera_world_position":CMFloats((const float *)&camera,3), @"screen_size":@[@(width),@(height)],
+                @"camera_view_source_sample_bytes":@(cameraViewData.length),
+                @"camera_view_source_sample_base64":[cameraViewData base64EncodedStringWithOptions:0] ?: (id)NSNull.null,
+                @"camera_view_position_matches_ray_origin":@(cameraViewData.length==52 && !memcmp(cameraViewData.bytes,&camera,sizeof(camera))),
+                @"camera_view_layout_semantics_verified":@NO,
                 @"engine_frame_id_available":@NO, @"atomic_pose_snapshot_verified":@NO,
                 @"component_layout_sample_bytes":@(componentLayout.length),
                 @"component_layout_sample_base64":[componentLayout base64EncodedStringWithOptions:0] ?: (id)NSNull.null,
@@ -390,6 +394,7 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         NSMutableData *bindingData = nil;
         NSMutableData *nameData = nil;
         NSMutableData *meshData = nil;
+        NSData *cameraViewData = nil;
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -401,11 +406,15 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         CMVec3 camera; float size[2];
         if (!CMReadRemote(remoteAddress,&componentTransform,sizeof(componentTransform)) ||
             !CMValidTransform(&componentTransform) || !CMReadRemote(boneAddress,raw,count*stride) ||
-            !context || context>UINTPTR_MAX-0x220 || !CMSelfRead(context+0x1F4,&camera,sizeof(camera)) ||
+            !context || context>UINTPTR_MAX-0x228 || !CMSelfRead(context+0x1F4,&camera,sizeof(camera)) ||
             !CMSelfRead(context+4,size,sizeof(size)) || !isfinite(camera.x) || !isfinite(camera.y) || !isfinite(camera.z) ||
             !isfinite(size[0]) || !isfinite(size[1]) || size[0]<1 || size[1]<1 || size[0]>32768 || size[1]>32768) {
             atomic_store_explicit(&CMSkipReason,3,memory_order_relaxed); goto done;
         }
+        // DA704's uncached projection path copies this exact 52-byte source.
+        // Keep raw evidence; this does not assert an atomic engine camera frame.
+        uint8_t cameraView[52];
+        if (CMSelfRead(context+0x1F4,cameraView,sizeof(cameraView))) cameraViewData=[NSData dataWithBytes:cameraView length:sizeof(cameraView)];
         CMVec3 worlds[CM_BONE_LIMIT]; CMVec2 projections[CM_BONE_LIMIT];
         CMRaySample rays[CM_BONE_LIMIT*3]; memset(rays,0,sizeof(rays));
         for (unsigned i=0; i<count; i++) {
@@ -457,7 +466,7 @@ __attribute__((noinline)) static void CMTryCapture(void *destination, size_t len
         CMQueueSnapshot([NSData dataWithBytes:raw length:count*stride],
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
             [NSData dataWithBytes:projections length:count*sizeof(*projections)],
-            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,meshData,componentTransform,camera,size[0],size[1],
+            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,referenceData,bindingData,nameData,meshData,cameraViewData,componentTransform,camera,size[0],size[1],
             component,boneAddress,remoteAddress,count,stride,start,CMNow(),geometryReady,truncated);
     done: ;
     }

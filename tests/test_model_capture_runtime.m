@@ -11,7 +11,7 @@ static const uintptr_t TestBase=0x100000000ULL;
 static unsigned char TestFrame[2048], TestContext[1024], TestPose[256*48];
 static uint64_t TestClock=10000000000ULL, TestClockStep;
 static unsigned TestStride=48, TestCount=63, ReadCalls, RayCalls, LockDepth;
-static bool FailRemote, Ready, BadRay;
+static bool FailRemote, Ready, BadRay, FailView;
 
 static int ModelTestClock(clockid_t clock, struct timespec *t) {
     (void)clock; TestClock+=TestClockStep;
@@ -21,6 +21,7 @@ static int ModelTestClock(clockid_t clock, struct timespec *t) {
 static kern_return_t ModelTestSelfRead(vm_map_t task, vm_address_t address, vm_size_t size,
                                       vm_address_t destination, vm_size_t *copied) {
     (void)task; uint64_t scalar=0;
+    if (FailView && address==(uintptr_t)TestContext+0x1F4 && size==52) return KERN_INVALID_ADDRESS;
     if (address==TestBase+0xBD4720) scalar=0xA5A55A5AULL;
     else if (address==TestBase+0xBD4978) scalar=0xA5A55A5AULL^TestStride;
     else if (address==TestBase+0xC54459) scalar=Ready;
@@ -87,7 +88,7 @@ static uintptr_t ReaderFrame(void) { return (uintptr_t)(TestFrame+128); }
 static void Drain(void) { dispatch_sync(CMReportQueue, ^{}); }
 static void Reset(void) {
     Drain();memset(TestFrame,0,sizeof(TestFrame));memset(TestContext,0,sizeof(TestContext));memset(CMTargets,0,sizeof(CMTargets));
-    memset(TestPose,0,sizeof(TestPose));ReadCalls=RayCalls=LockDepth=0;FailRemote=Ready=BadRay=false;TestClockStep=0;TestCount=63;TestStride=48;
+    memset(TestPose,0,sizeof(TestPose));ReadCalls=RayCalls=LockDepth=0;FailRemote=Ready=BadRay=FailView=false;TestClockStep=0;TestCount=63;TestStride=48;
     atomic_store(&CMEnabled,true);atomic_store(&CMSkipReason,0);atomic_store(&CMReaderCalls,0);atomic_store(&CMComponentCalls,0);
     atomic_store(&CMForwardCalls,0);atomic_store(&CMUnmatchedCalls,0);atomic_store(&CMDisabledCalls,0);atomic_store(&CMRecursiveCalls,0);
     uintptr_t frame=ReaderFrame(),ret=TestBase+0xD8980,context=(uintptr_t)TestContext,component=0x200001000ULL,bones=0x200000000ULL;
@@ -136,10 +137,14 @@ int main(void) {
         assert([frame[@"captured_transform_array_address"] unsignedLongLongValue]==0x200000000ULL);
         assert([frame[@"component_transform_source_offset"] unsignedIntValue]==0x200);
         assert(([frame[@"matching_transform_array_offsets"] isEqualToArray:@[@0x848,@0x958]]));
+        assert([frame[@"camera_view_source_sample_bytes"] unsignedIntValue]==52 && [frame[@"camera_view_position_matches_ray_origin"] boolValue]);
         Capture();assert(CMFrames.count==1 && ReadCalls==3); // spacing prevents duplicate work
         TestClock+=9999999999ULL;Capture();assert(CMFrames.count==1);
         TestClock+=1;Capture();assert(CMFrames.count==2);
         TestClock+=10000000000ULL;Capture();assert(CMFrames.count==2); // per-target bound
+
+        Reset();FailView=true;Capture();frame=CMFrames.firstObject;
+        assert([frame[@"camera_view_source_sample_bytes"] unsignedIntValue]==0 && [frame[@"valid_transform_count"] unsignedIntValue]==63);
 
         Reset();Ready=true;Capture();assert(CMFrames.count==1 && RayCalls==63*3 && !LockDepth);
         frame=CMFrames.firstObject;NSArray *rays=frame[@"bones"][0][@"scene_ray_samples"];
