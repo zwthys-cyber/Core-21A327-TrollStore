@@ -135,7 +135,7 @@ int main(void) {
         assert([frame[@"component_layout_sample_bytes"] unsignedIntValue]==CM_COMPONENT_LAYOUT_BYTES);
         assert([frame[@"captured_transform_array_address"] unsignedLongLongValue]==0x200000000ULL);
         assert([frame[@"component_transform_source_offset"] unsignedIntValue]==0x200);
-        assert([frame[@"matching_transform_array_offsets"] isEqualToArray:@[@0x848,@0x958]]);
+        assert(([frame[@"matching_transform_array_offsets"] isEqualToArray:@[@0x848,@0x958]]));
         Capture();assert(CMFrames.count==1 && ReadCalls==3); // spacing prevents duplicate work
         TestClock+=9999999999ULL;Capture();assert(CMFrames.count==1);
         TestClock+=1;Capture();assert(CMFrames.count==2);
