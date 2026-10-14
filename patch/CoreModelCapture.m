@@ -18,6 +18,7 @@
 #define CM_TARGET_LIMIT 3
 #define CM_SAMPLES_PER_TARGET 2
 #define CM_RAY_BUDGET_NS 10000000ULL
+#define CM_COMPONENT_LAYOUT_BYTES 2048
 
 typedef bool (*CMReadFunction)(uint64_t, void *, size_t);
 typedef CMRayHit (*CMRayFunction)(void *, const CMVec3 *, const CMVec3 *);
@@ -127,7 +128,7 @@ static void CMWriteReport(NSString *status) {
         [data writeToURL:CMReportURL options:NSDataWritingAtomic error:NULL];
 }
 
-static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData,
+static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *projectionData, NSData *raysData, NSData *componentLayout,
                             CMTransform componentTransform, CMVec3 camera, float width, float height,
                             uintptr_t component, unsigned count, unsigned stride, uint64_t start,
                             uint64_t end, bool geometryReady, bool rayTruncated) {
@@ -164,6 +165,9 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
                 @"transform_stride":@(stride), @"component_transform":CMTransformJSON(&componentTransform),
                 @"camera_world_position":CMFloats((const float *)&camera,3), @"screen_size":@[@(width),@(height)],
                 @"engine_frame_id_available":@NO, @"atomic_pose_snapshot_verified":@NO,
+                @"component_layout_sample_bytes":@(componentLayout.length),
+                @"component_layout_sample_base64":[componentLayout base64EncodedStringWithOptions:0] ?: (id)NSNull.null,
+                @"component_layout_type_interpretation_verified":@NO,
                 @"geometry_ready":@(geometryReady), @"occlusion_source":@"Core-local-geometry-ray-intersection",
                 @"queried_ray_count":@(queries), @"ray_queries_truncated":@(rayTruncated), @"bones":bones };
             [CMFrames addObject:frame];
@@ -199,6 +203,7 @@ static void CMTryCapture(void *destination, size_t length, uintptr_t readerFrame
     if (atomic_flag_test_and_set_explicit(&CMBusy,memory_order_acquire)) return;
     CMInside=true;
     @autoreleasepool {
+        NSData *componentLayout = nil;
         uint64_t start=CMNow(); CMTarget *target=NULL;
         for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (CMTargets[i].component==component) target=&CMTargets[i];
         if (!target) for (unsigned i=0; i<CM_TARGET_LIMIT; i++) if (!CMTargets[i].component) { target=&CMTargets[i]; break; }
@@ -249,10 +254,15 @@ static void CMTryCapture(void *destination, size_t length, uintptr_t readerFrame
         }
         target->component=component; target->samples++; target->last_time=start;
         atomic_store_explicit(&CMSkipReason,0,memory_order_relaxed);
+        // A single bounded sample of the already located component supports
+        // later identification of its mesh-reference field; no pointer walk.
+        uint8_t layout[CM_COMPONENT_LAYOUT_BYTES];
+        componentLayout = CMRemoteRange(component,sizeof(layout)) && CMReadRemote(component,layout,sizeof(layout)) ?
+            [NSData dataWithBytes:layout length:sizeof(layout)] : nil;
         CMQueueSnapshot([NSData dataWithBytes:raw length:count*stride],
             [NSData dataWithBytes:worlds length:count*sizeof(*worlds)],
             [NSData dataWithBytes:projections length:count*sizeof(*projections)],
-            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentTransform,camera,size[0],size[1],
+            [NSData dataWithBytes:rays length:count*3*sizeof(*rays)],componentLayout,componentTransform,camera,size[0],size[1],
             component,count,stride,start,CMNow(),geometryReady,truncated);
     done: ;
     }

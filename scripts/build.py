@@ -301,6 +301,7 @@ def main():
     report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=1 if args.model_capture else 0,
         acquisition="full located component transform array, component transform, native projection, bounded original geometry ray distances",
         report="Core-model-runtime-report.json", max_targets=3, snapshots_per_target=2,
+        component_layout_sample_limit_bytes=2048, unknown_pointer_traversal=False,
         capture_window_seconds=180, ray_budget_ms_per_snapshot=10,
         live_mesh_binding_verified=False, full_render_mesh_verified=False, silhouette_implemented=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")

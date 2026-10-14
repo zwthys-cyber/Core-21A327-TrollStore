@@ -53,6 +53,9 @@ static bool ModelTestRead(uint64_t address, void *destination, size_t size) {
     if (address==0x200000000ULL && size==TestCount*TestStride) {
         memcpy(destination,TestPose,size);return true;
     }
+    if (address==0x200001000ULL && size==CM_COMPONENT_LAYOUT_BYTES) {
+        memset(destination,0x3A,size);return true;
+    }
     return false;
 }
 
@@ -101,13 +104,14 @@ int main(void) {
         CoreModelBzeroCapture(buffer,64,0,0);assert(errno==ERANGE && !ReadCalls);
         for (unsigned i=0;i<64;i++) assert(buffer[i]==0);
 
-        Capture();assert(CMFrames.count==1 && ReadCalls==2 && RayCalls==0 && !CMInside);
+        Capture();assert(CMFrames.count==1 && ReadCalls==3 && RayCalls==0 && !CMInside);
         NSDictionary *frame=CMFrames.firstObject;assert([frame[@"captured_transform_count"] unsignedIntValue]==63);
         assert([frame[@"valid_transform_count"] unsignedIntValue]==63 && [frame[@"bones"] count]==63);
         NSArray *xyz=frame[@"bones"][5][@"calculated_world_position"];
         assert([xyz[0] floatValue]==20 && [xyz[1] floatValue]==24 && [xyz[2] floatValue]==36);
         assert(![frame[@"geometry_ready"] boolValue]);
-        Capture();assert(CMFrames.count==1 && ReadCalls==2); // spacing prevents duplicate work
+        assert([frame[@"component_layout_sample_bytes"] unsignedIntValue]==CM_COMPONENT_LAYOUT_BYTES);
+        Capture();assert(CMFrames.count==1 && ReadCalls==3); // spacing prevents duplicate work
         TestClock+=3000000000ULL;Capture();assert(CMFrames.count==2);
         TestClock+=3000000000ULL;Capture();assert(CMFrames.count==2); // per-target bound
 
