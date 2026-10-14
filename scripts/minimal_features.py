@@ -220,14 +220,6 @@ def changes():
         branch(0xDC114, 0xDF47C),
     ])
     add(0xDC0FC, "21cc201e0820201e00e4002f0c4c211e600240bd0190201e0108211e", name_outline, "native outlined-name argument bridge in bypassed health block")
-    ray_origin = b"".join([
-        word(0xBD400A62),  # ldr s2, [x19, #8] (screen height)
-        word(0x1E349003),  # fmov s3, #-10
-        word(0x1E232842),  # fadd s2, s2, s3
-        word(0xBD0307E2),  # str s2, [sp, #0x304]
-        branch(0xDC130, 0xDC774),
-    ])
-    add(0xDC120, "0008031f03102c1eee41201e22bd031fe25b02bd", ray_origin, "bottom-center ray origin in bypassed health block")
     ray_alpha = b"".join([
         word(0x52A85908),  # mov w8, #100.0f bits
         word(0x1E270100),  # fmov s0, w8
@@ -250,7 +242,8 @@ def changes():
         branch(0xDC174, 0xDC0A0),
     ])
     add(0xDC15C, "63c4b7720041201e04008052497c0194ede340bd683e00b000894abd", name_color, "red human / white bot names in bypassed health block")
-    add(0xDC76C, "0824a852", branch(0xDC76C, 0xDC120), "ray begins ten drawing units above screen bottom")
+    # Keep the original DC76C MOV #10.0f and following store: rays begin
+    # at screen top-center. The former bottom-origin bridge stays unpatched.
 
     # The native collector has separate human/bot skeleton gates. Updating
     # render gates alone leaves joint validity unset when old skeleton settings

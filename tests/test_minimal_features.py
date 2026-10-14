@@ -66,12 +66,12 @@ class MinimalFeatureTests(unittest.TestCase):
                        0xDCAA8, 0xDCBD8, 0xDCD78,
                        0xD88C0, 0xD88D0, 0xD88DC, 0xD88E0,
                        0xDB604, 0xDBF84, 0xDBF88, 0xDC014, 0xDC050,
-                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDC76C, 0xDBF54]:
+                       0xDC08C, 0xDC09C, 0xDBF7C, 0xDC0E0, 0xDBF54]:
             allowed.update(range(offset, offset + 4))
         for offset in [0xDBD00, 0xDBD18, 0xDBD28, 0xDBD48, 0xDBD90, 0xDBD98, 0xDBD9C, 0xDC244, 0xDC2AC]:
             allowed.update(range(offset, offset + 4))
         for offset, length in [(0xDD468, 152), (0xDCD40, 44), (0xDC0E4, 24),
-                               (0xDC0FC, 28), (0xDC120, 20), (0xDC140, 28), (0xDC15C, 28), (0xDB6A8, 232),
+                               (0xDC0FC, 28), (0xDC140, 28), (0xDC15C, 28), (0xDB6A8, 232),
                                (0xDED8C, 240)]:
             allowed.update(range(offset, offset + length))
         for offset, length in [(0x743F3D, 12), (0x743F64, 12), (0x744522, 6)]:
@@ -96,7 +96,7 @@ class MinimalFeatureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "hash"):
                 minimal_core(data)
 
-    def test_requested_baseline_changes_only_range_instructions_and_label(self):
+    def test_requested_baseline_changes_only_range_label_and_top_ray_origin(self):
         baseline_source = subprocess.check_output([
             'git', 'show', '0fe975fc6053a0af8cac90c4a860696d08dec8c2:scripts/minimal_features.py'
         ], cwd=ROOT)
@@ -104,13 +104,14 @@ class MinimalFeatureTests(unittest.TestCase):
         exec(compile(baseline_source, '<requested-baseline>', 'exec'), baseline_scope)
         baseline = baseline_scope['minimal_core'](self.original)
         allowed = {i for offset, size in [(0xDB278, 4), (0xD88DC, 4), (0xDCAA4, 4),
-                                         (0x743F3D, 12)] for i in range(offset, offset + size)}
+                                         (0x743F3D, 12), (0xDC76C, 4), (0xDC120, 20)]
+                   for i in range(offset, offset + size)}
         changed = {i for i, (old, new) in enumerate(zip(baseline, self.binary)) if old != new}
         self.assertTrue(changed)
         self.assertTrue(changed <= allowed)
         self.assertEqual(len(baseline), len(self.binary))
         for offset, size in [(0xDB174, 4), (0xDB18C, 4), (0xDB790, 76),
-                             (0xDC754, 4), (0xDEF2C, 4)]:
+                             (0xDC754, 4), (0xDEF2C, 4), (0xDC76C, 4), (0xDC120, 20)]:
             self.assertEqual(self.binary[offset:offset + size], self.original[offset:offset + size])
         self.assertEqual(self.binary[0x743F3D:0x743F49], '600米标记'.encode())
 
@@ -514,7 +515,7 @@ class MinimalFeatureTests(unittest.TestCase):
                 mu.emu_start(BASE + 0xDC754, BASE + 0xDC804, count=100)
                 self.assertEqual([c[0] for c in calls], [0x13AD48, 0x13B1C0] if enabled else [])
                 if enabled:
-                    self.assertEqual(calls[0][1], [(width / 2, height - 10), (100.0, 70.0)])
+                    self.assertEqual(calls[0][1], [(width / 2, 10.0), (100.0, 70.0)])
                     self.assertEqual(calls[1][1], [(150.0, 100.0), (50.0, 300.0)])
 
     def test_offscreen_arrows_keep_correct_bearing_and_distance(self):

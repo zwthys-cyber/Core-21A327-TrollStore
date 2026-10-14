@@ -272,7 +272,7 @@ def main():
                   marker_names="original validated lookup and native string copy/cleanup; original bot flag selects name color: human opaque red 0xff0000ff, bot opaque white 0xffffffff; no category suffix; neutral unknown-player fallback; centered name with native black outline, font 14 times native scale",
                   feature_baseline_commit="0fe975fc6053a0af8cac90c4a860696d08dec8c2",
                   marker_count="sum original per-frame human and bot counters after enemy-team and finite inclusive 600-metre checks, before projection; centered red outlined digits at y=64*scale, font=24*scale; shared nearby-enemy checkbox",
-                  marker_rays="baseline 0fe975f: no per-frame quantity cap; bottom center, 10 drawing units above screen bottom; opaque white through 100 metres, white alpha 0x70 beyond 100 through 600 metres",
+                  marker_rays="baseline 0fe975f quantity/opacity: no per-frame cap; top center, 10 drawing units below screen top, connect downward to targets; opaque white through 100 metres, white alpha 0x70 beyond 100 through 600 metres",
                   marker_directions="offscreen only, inclusive 600 metres; native yellow seven-point arrow with black outline and outlined distance; original cached world X/Y relative to camera yaw; validated finite bearing and current screen bounds",
                   marker_diagnostics="read-only local activation, mode, target binding, source availability, readiness and cached joint counts; sampled every 5 seconds",
                   boot_acquisition="separate preparation app with current-boot stamp and digest; direct/probe fallback",
