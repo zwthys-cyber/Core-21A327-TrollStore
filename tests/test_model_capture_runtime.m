@@ -125,8 +125,9 @@ int main(void) {
         assert(![frame[@"geometry_ready"] boolValue]);
         assert([frame[@"component_layout_sample_bytes"] unsignedIntValue]==CM_COMPONENT_LAYOUT_BYTES);
         Capture();assert(CMFrames.count==1 && ReadCalls==3); // spacing prevents duplicate work
-        TestClock+=3000000000ULL;Capture();assert(CMFrames.count==2);
-        TestClock+=3000000000ULL;Capture();assert(CMFrames.count==2); // per-target bound
+        TestClock+=9999999999ULL;Capture();assert(CMFrames.count==1);
+        TestClock+=1;Capture();assert(CMFrames.count==2);
+        TestClock+=10000000000ULL;Capture();assert(CMFrames.count==2); // per-target bound
 
         Reset();Ready=true;Capture();assert(CMFrames.count==1 && RayCalls==63*3 && !LockDepth);
         frame=CMFrames.firstObject;NSArray *rays=frame[@"bones"][0][@"scene_ray_samples"];
@@ -150,7 +151,7 @@ int main(void) {
 
         NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:CMReportURL] options:0 error:NULL];
         assert(report && ![report[@"full_render_mesh_verified"] boolValue] && ![report[@"pixel_depth_texture_available"] boolValue]);
-        assert([report[@"capture_version"] unsignedIntValue]==2 && report[@"entry_bzero_calls_observed"]);
+        assert([report[@"capture_version"] unsignedIntValue]==3 && report[@"entry_bzero_calls_observed"]);
         [[NSFileManager defaultManager] removeItemAtPath:directory error:NULL];
         puts("PASS: exact bzero/errno forwarding; nested reads; full 63-transform snapshots; spacing and limits; pinned frame boundary; ray locks, miss/hit/malformed/budget; quaternion/scale world positions; honest report capabilities");
     }
