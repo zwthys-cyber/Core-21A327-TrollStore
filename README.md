@@ -2,9 +2,9 @@
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
-当前版本为 **v18 减少射线拥挤测试版（1.6 / build 19 / patch 18）**：每帧最多 3 条射线，只连 100 米内屏幕目标，白色透明度降为 160。姓名、方框、骨骼、方向提示和顶部敌人数沿用 300 米范围；真人红名、人机白名，不附加身份文字。射线按原处理顺序选取，不保证最近距离排序。详见 [v18 说明](docs/releases/v18-300m.md)。
+当前版本为 [**v18 减少射线拥挤测试版（1.6 / build 19 / patch 18）**](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v18-300m)：每帧最多 3 条射线，只连 100 米内屏幕目标，白色透明度降为 160。姓名、方框、骨骼、方向提示和顶部敌人数沿用 300 米范围；真人红名、人机白名，不附加身份文字。射线按原处理顺序选取，不保证最近距离排序。详见 [v18 说明](docs/releases/v18-300m.md)。
 
-主安装包为 `Core-17.0-21A327-TrollStore-v18-300m.ipa`，构建和发布结果将在完成后记录。仓库私有，浏览器需登录有访问权限的 GitHub 账号。实机画面效果仍待确认；显示精简不能保证不封号。
+v18 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v18-300m.ipa`，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库私有，浏览器需登录有访问权限的 GitHub 账号。实机画面效果仍待确认；显示精简不能保证不封号。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。历史版本见 [v17](docs/releases/v17-300m.md)、[v16](docs/releases/v16-300m.md)、[v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
@@ -13,6 +13,8 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 补丁仅针对当前系统及请求身份完全匹配的 21A327，不读取其他启动哈希目录，不替换成 21A329，不跳过原校验。失败时显示提示，日志保存在 Documents/Core-21A327-adaptation.log。主程序使用 platform-application、no-sandbox 和 AppDataContainers 权限，保留 Core 数据容器，并限定图形 IOKit 用户客户端例外，使用 TrollStore 安装。
 
 ## GitHub 构建
+
+按用户要求，服务器不运行编译和自动化回归；编译、测试及最终签名核验均放在 GitHub Actions。此处只修改文件、执行 Git 操作、查看 CI、下载发布产物和轻量核对版本及摘要。
 
 在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v18-300m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
