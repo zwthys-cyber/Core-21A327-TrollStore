@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>人物网格采集预览</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101722;color:#e8edf5;font:15px system-ui,sans-serif}header{padding:20px 24px;border-bottom:1px solid #334155}h1{font-size:23px;margin:0 0 8px}p{margin:8px 0;color:#a6b6ca;line-height:1.6}main{display:grid;grid-template-columns:minmax(0,1fr) 310px;min-height:75vh}aside{padding:18px;border-left:1px solid #334155}label{display:block;margin:12px 0}select,button,input[type=file]{font:inherit;color:#e8edf5;background:#1d2a3e;border:1px solid #51647e;border-radius:6px;padding:7px;max-width:100%}select{width:100%;margin-top:6px}button{cursor:pointer;margin:8px 5px 8px 0}canvas{width:100%;height:75vh;display:block;touch-action:none;background:radial-gradient(ellipse at center,#26384d,#101722)}.item{padding:10px 0;border-bottom:1px solid #334155;font-size:13px;overflow-wrap:anywhere}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}.muted{color:#a6b6ca}.error{color:#ffc67a}#status{white-space:pre-line;line-height:1.6}footer{padding:12px 24px;color:#a6b6ca;font-size:13px}@media(max-width:760px){main{grid-template-columns:1fr}canvas{height:60vh}aside{border:0;border-top:1px solid #334155}}
+</style>
+<header><h1>人物网格采集预览</h1><p>查看实际采到的头部、头发、衣服、裤子和鞋子。拖动旋转，滚轮缩放。</p><input id="file" type="file" accept=".json,application/json"><span id="date" class="muted"></span></header>
+<main><canvas id="canvas" aria-label="人物网格三维预览"></canvas><aside>
+<label>采集快照<select id="frame"></select></label>
+<label>模型细节<select id="lod"><option value="0">LOD 0</option><option value="1">LOD 1</option><option value="2">LOD 2</option></select></label>
+<label>姿态<select id="mode"><option value="rest">参考姿态</option><option value="posed">采集姿态重建</option></select></label>
+<label><input id="props" type="checkbox"> 显示翼装、降落伞等附件</label>
+<label><input id="wire" type="checkbox"> 显示三角形边</label>
+<button id="fit">重置视角</button><button id="save">保存预览图片</button>
+<p id="status">选择协议 7 的采集报告。</p><div id="parts"></div>
+</aside></main>
+<footer>分部颜色用于检查模型。当前渲染 LOD、透明裁剪、服装形变及逐像素遮挡尚未验证；缺少姿态的顶点及相关三角形不显示。某些头部的 LOD 2 数据包含身体，超出头部资源包围盒。</footer>
+<script id="capture" type="application/json">__CAPTURE_JSON__</script>
+<script>
+// __MODEL_PREVIEW_MODULE__
+const el=id=>document.getElementById(id),canvas=el('canvas'),ctx=canvas.getContext('2d');
+let report=null,result=null,yaw=.15,pitch=.08,zoom=1,center=[0,0,85],extent=100,drag=null;
+const colors=['#ffb86c','#67e8c5','#7eb6ff','#dba7ff','#f9d675','#7cddf4','#f3a4bb','#bdd99b'];
+function fit(){const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];let count=0;for(const m of result?.meshes??[])for(const p of m.positions){if(!p)continue;count++;for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],p[k]);hi[k]=Math.max(hi[k],p[k]);}}if(count){center=lo.map((v,k)=>(v+hi[k])/2);extent=Math.max(20,...hi.map((v,k)=>v-lo[k]));}yaw=.15;pitch=.08;zoom=1;draw();}
+function rotated(p){const a=p.map((v,i)=>v-center[i]),c=Math.cos(yaw),s=Math.sin(yaw),x=a[0]*c-a[1]*s,y=a[0]*s+a[1]*c;return [x,a[2]*Math.cos(pitch)-y*Math.sin(pitch),a[2]*Math.sin(pitch)+y*Math.cos(pitch)];}
+function draw(){const rect=canvas.getBoundingClientRect(),ratio=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.round(rect.width*ratio);canvas.height=Math.round(rect.height*ratio);ctx.scale(ratio,ratio);const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);if(!result)return;
+const scale=Math.min(w*.8,h*.8)/extent*zoom,faces=[];
+result.meshes.forEach((m,mi)=>{const points=m.positions.map(p=>p?rotated(p):null);for(const t of m.triangles){const p=t.map(i=>points[i]);if(p.some(v=>!v))continue;faces.push({p,color:colors[mi%colors.length],depth:(p[0][2]+p[1][2]+p[2][2])/3});}});faces.sort((a,b)=>b.depth-a.depth);
+for(const f of faces){ctx.beginPath();f.p.forEach((p,i)=>{const x=w/2+p[0]*scale,y=h/2-p[1]*scale;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath();ctx.fillStyle=f.color;ctx.fill();if(el('wire').checked){ctx.strokeStyle='#15223588';ctx.lineWidth=.45;ctx.stroke();}}
+ctx.fillStyle='#a6b6ca';ctx.font='13px system-ui';ctx.fillText(`快照 ${Number(el('frame').value)+1} · ${el('mode').value==='rest'?'参考姿态':'姿态重建'}`,16,25);}
+function update(){if(!report)return;try{result=buildFrame(report,Number(el('frame').value),Number(el('lod').value),el('mode').value==='posed',el('props').checked);const vertices=result.meshes.reduce((n,m)=>n+m.vertices,0),triangles=result.meshes.reduce((n,m)=>n+m.triangles.length,0),unknown=result.meshes.reduce((n,m)=>n+m.unknown,0);
+el('status').textContent=`${result.meshes.length} 个部件 · ${vertices.toLocaleString()} 个顶点\n显示 ${triangles.toLocaleString()} 个三角形${unknown?`\n${unknown.toLocaleString()} 个顶点缺少姿态`:''}`;el('parts').replaceChildren();
+result.meshes.forEach((m,i)=>{const row=document.createElement('label');row.className='item';const check=document.createElement('input');check.type='checkbox';check.checked=true;const dot=document.createElement('span');dot.className='dot';dot.style.background=colors[i%colors.length];const text=document.createElement('span');text.textContent=`${m.name} · LOD ${m.lod} · ${m.triangles.length}/${m.totalTriangles} 三角形`;row.append(check,dot,text);check.onchange=()=>{m.triangles=check.checked?m.saved:[];draw()};m.saved=m.triangles;el('parts').append(row);});
+result.errors.forEach(e=>{const row=document.createElement('p');row.className='item error';row.textContent=`${e.name}：${e.message}`;el('parts').append(row);});fit();}catch(error){result=null;el('status').textContent=error.message;draw();}}
+function load(data){if(data.capture_version!==7||!Array.isArray(data.snapshots))throw Error('请选择协议 7 的采集报告');report=data;el('date').textContent=` ${data.date??''}`;el('frame').replaceChildren();data.snapshots.forEach((f,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`${i+1} · ${f.component_id} · ${f.valid_transform_count} 骨骼`;el('frame').append(o)});update();}
+el('file').onchange=async event=>{try{const f=event.target.files[0];if(!f)return;if(f.size>16*1024*1024)throw Error('报告超过 16 MiB');load(JSON.parse(await f.text()));}catch(error){el('status').textContent=error.message}};
+for(const id of ['frame','lod','mode','props'])el(id).onchange=update;el('wire').onchange=draw;el('fit').onclick=fit;
+el('save').onclick=()=>{const a=document.createElement('a');a.download='人物网格预览.png';a.href=canvas.toDataURL('image/png');a.click()};
+canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId)};canvas.onpointerup=()=>{drag=null};canvas.onpointercancel=()=>{drag=null};canvas.onpointermove=e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*.008;pitch=Math.max(-1.4,Math.min(1.4,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];draw()};
+canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.1,Math.min(12,zoom*Math.exp(-e.deltaY*.001)));draw()},{passive:false});window.addEventListener('resize',draw);
+try{const data=JSON.parse(el('capture').textContent);if(data)load(data)}catch(error){el('status').textContent=error.message}draw();
+</script></html>
