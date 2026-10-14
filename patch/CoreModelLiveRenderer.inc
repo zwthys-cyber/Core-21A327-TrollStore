@@ -30,6 +30,7 @@
 typedef struct {
     atomic_uint_fast64_t frames,poseUpdates,metadataLoads,metadataFailures,meshLoads,cacheBytes,triangles,white,red,queryCalls,drawFrames,spans;
     atomic_uint_fast64_t staleTargets,unknownVisibility,unverifiedLOD,referenceFallbacks,unknownPose,badRays,budgetFrames,projectionMismatch,oversizedMasks;
+    atomic_uint_fast64_t drawTimeTotal,drawTimeMaximum;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
@@ -150,7 +151,12 @@ static NSData *CMLPoseMatrices(CMLTarget *target,uint32_t id,NSMutableDictionary
     NSData *cached=poses[@(id)];if(cached)return cached;if(id>=16||(visiting&(1U<<id)))return nil;
     CMLMesh *mesh=CMLMeshFor(target,id);if(!mesh)return nil;
     NSMutableData *data=[NSMutableData dataWithLength:mesh.bones*sizeof(CMSMatrix)];CMSMatrix *out=data.mutableBytes;
-    if(!id){if(mesh.bones!=target.count)return nil;for(uint32_t i=0;i<mesh.bones;i++){CMTransform t;memcpy(&t,(const uint8_t *)target.pose.bytes+(size_t)i*target.stride,sizeof(t));if(!CMSFromTransform(&t,&out[i]))return nil;}}
+    if(!id){
+        NSData *state=CMLState(target,0,states);uint64_t address=0;uint32_t count=0;
+        if(!state||target.stride!=48||!CMEArray(state.bytes,state.length,0x848,48,&address,&count)||count!=mesh.bones)return nil;
+        NSData *current=CMLBytes(address,count*48);if(!current)return nil;
+        for(uint32_t i=0;i<count;i++){CMTransform t;memcpy(&t,(const uint8_t *)current.bytes+(size_t)i*48,sizeof(t));if(!CMSFromTransform(&t,&out[i]))return nil;}
+    }
     else {
         NSData *state=CMLState(target,id,states);if(!state)return nil;const uint8_t *raw=state.bytes;int32_t master=-1,serial=0;memcpy(&master,raw+0x830,4);memcpy(&serial,raw+0x834,4);
         int32_t masterAsset=-1;const CMBBinding *b=target.binding.bytes;const CMRReferences *r=target.refs.bytes;
@@ -192,6 +198,7 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
     if(!CMSelfRead(context+0x23,&enabled,1)||!enabled||!CMSelfRead(CMBase+0xC54459,&ready,1)||ready!=1||
         !CMSelfRead(context+4,size,8)||!CMSelfRead(context+0x1F4,rawView,52))return;
     CMPView view;if(!CMPMakeView(rawView,size[0],size[1],&view))return;
+    uint64_t drawStart=CMNow();
     CMInside=true;pthread_mutex_lock(&CMLMutex);
     @autoreleasepool {
         NSMutableArray<NSData *> *projected=[NSMutableArray array],*triangleArrays=[NSMutableArray array];bool refreshed=false;uint64_t now=CMNow();
@@ -240,6 +247,8 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
         }}
     }
     pthread_mutex_unlock(&CMLMutex);CMInside=false;
+    uint64_t elapsed=CMNow()-drawStart;atomic_fetch_add(&CMLStats.drawTimeTotal,elapsed);uint_fast64_t maximum=atomic_load(&CMLStats.drawTimeMaximum);
+    while(elapsed>maximum&&!atomic_compare_exchange_weak(&CMLStats.drawTimeMaximum,&maximum,elapsed)){}
 }
 __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintptr_t entryReturn) {
     int saved=errno;uintptr_t caller=CMStripReturn((void *)entryReturn),base=CMBase;
@@ -254,11 +263,17 @@ __attribute__((naked)) pid_t cmdraw(void) { __asm__ volatile("mov x1, x30\nb _Co
 #endif
 static void CMLWriteStatus(NSURL *url) {
 #define CML_VALUE(field) @(atomic_load(&CMLStats.field))
+    NSMutableArray *schemas=[NSMutableArray array];bool schemaBusy=pthread_mutex_trylock(&CMLMutex)!=0;
+    if(!schemaBusy){for(NSNumber *address in CMLSchemas){CMFSchema s;memcpy(&s,((NSData *)CMLSchemas[address]).bytes,sizeof(s));
+        [schemas addObject:@{@"class_address":address,@"classes_walked":@(s.classes),@"fields_walked":@(s.fields),@"read_attempts":@(s.reads),@"read_failures":@(s.failures),@"truncated":@(s.truncated),
+            @"visible_found":@(s.visible.found),@"visible_offset":@(s.visible.offset),@"visible_mask":@(s.visible.mask),@"hidden_found":@(s.hidden.found),@"hidden_offset":@(s.hidden.offset),@"hidden_mask":@(s.hidden.mask),
+            @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod)}];}pthread_mutex_unlock(&CMLMutex);}
     NSDictionary *status=@{ @"render_version":@1,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),
         @"rasterized_triangles":CML_VALUE(triangles),@"pixel_query_calls":CML_VALUE(queryCalls),@"filled_frames":CML_VALUE(drawFrames),@"white_pixels":CML_VALUE(white),@"red_pixels":CML_VALUE(red),@"filled_spans":CML_VALUE(spans),
         @"stale_targets_skipped":CML_VALUE(staleTargets),@"unknown_visibility_samples":CML_VALUE(unknownVisibility),@"unverified_lod_samples":CML_VALUE(unverifiedLOD),@"master_reference_pose_fallback_bones":CML_VALUE(referenceFallbacks),
         @"unknown_pose_meshes":CML_VALUE(unknownPose),@"malformed_pixel_queries":CML_VALUE(badRays),@"budget_frames_skipped":CML_VALUE(budgetFrames),@"projection_mismatch_meshes":CML_VALUE(projectionMismatch),@"oversized_masks_skipped":CML_VALUE(oversizedMasks),
+        @"draw_time_total_ns":CML_VALUE(drawTimeTotal),@"draw_time_maximum_ns":CML_VALUE(drawTimeMaximum),@"reflected_component_schemas":schemas,@"schema_snapshot_busy":@(schemaBusy),
         @"pixel_grid_step":@1,@"occlusion_source":@"Core-local-geometry-per-pixel-rays",@"continuous_pose_sampling":@YES,@"silhouette_renderer_connected":@YES,
         @"game_current_lod_verified":@NO,@"material_alpha_clip_verified":@NO,@"cloth_morph_verified":@NO,@"master_reference_fallback_game_verified":@NO,@"gpu_scene_depth_available":@NO,@"full_requested_effect_verified":@NO };
 #undef CML_VALUE

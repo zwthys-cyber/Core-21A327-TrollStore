@@ -1,6 +1,7 @@
 #ifndef CORE_MODEL_REFLECTION_H
 #define CORE_MODEL_REFLECTION_H
 #include "CoreModelNames.h"
+#include "CoreModelReferences.h"
 
 // Legacy UObject/UField/UStruct layout, independently guarded by object headers,
 // named property classes, scalar dimensions and enclosing structure sizes.
