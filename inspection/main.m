@@ -25,7 +25,7 @@ static NSURL *ReportURL(void) {
 }
 
 static NSDictionary *InspectGame(void) {
-    NSMutableDictionary *report = [@{@"diagnostic_version":@2, @"date":NSDate.date.description,
+    NSMutableDictionary *report = [@{@"diagnostic_version":@3, @"date":NSDate.date.description,
         @"device":SystemString("hw.machine"), @"system_build":SystemString("kern.osversion"),
         @"target_bundle_id":GameID, @"silhouette_implemented":@NO, @"live_mesh_verified":@NO,
         @"target_process_started":@NO, @"target_process_memory_read":@NO,
@@ -102,6 +102,8 @@ static NSDictionary *InspectGame(void) {
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UIButton *inspectButton;
 @property(nonatomic, strong) UIButton *shareButton;
+@property(nonatomic, strong) UIButton *exportButton;
+@property(nonatomic, strong) NSDictionary *latestReport;
 @end
 
 @implementation InspectionController
@@ -117,8 +119,12 @@ static NSDictionary *InspectGame(void) {
     self.shareButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.shareButton setTitle:@"共享检查报告" forState:UIControlStateNormal];
     [self.shareButton addTarget:self action:@selector(shareReport) forControlEvents:UIControlEventTouchUpInside];
-    self.shareButton.enabled = [NSFileManager.defaultManager fileExistsAtPath:ReportURL().path];
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, self.status, self.inspectButton, self.shareButton]];
+    self.shareButton.enabled = NO;
+    self.exportButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.exportButton setTitle:@"导出资源样本" forState:UIControlStateNormal];
+    [self.exportButton addTarget:self action:@selector(exportSamples) forControlEvents:UIControlEventTouchUpInside];
+    self.exportButton.enabled = NO;
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, self.status, self.inspectButton, self.shareButton, self.exportButton]];
     stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 24; stack.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[[stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:24],
@@ -126,13 +132,13 @@ static NSDictionary *InspectGame(void) {
         [stack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:48]]];
 }
 - (void)inspect {
-    self.inspectButton.enabled = NO; self.shareButton.enabled = NO;
+    self.inspectButton.enabled = NO; self.shareButton.enabled = NO; self.exportButton.enabled = NO; self.latestReport = nil;
     self.status.text = @"正在检查游戏版本和资源清单…";
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         @autoreleasepool {
             NSDictionary *report;
             @try { report = InspectGame(); }
-            @catch (NSException *exception) { report = @{@"diagnostic_version":@2,
+            @catch (NSException *exception) { report = @{@"diagnostic_version":@3,
                 @"status":@"inspection-exception", @"exception":exception.name,
                 @"reason":exception.reason ?: @"", @"live_mesh_verified":@NO}; }
             NSError *error = nil;
@@ -140,10 +146,14 @@ static NSDictionary *InspectGame(void) {
             BOOL saved = data && [data writeToURL:ReportURL() options:NSDataWritingAtomic error:&error];
             dispatch_async(dispatch_get_main_queue(), ^{
                 self.inspectButton.enabled = YES; self.shareButton.enabled = saved;
+                self.latestReport = saved ? report : nil;
+                BOOL hasCandidate = NO;
+                for (NSDictionary *sample in report[@"pak_edge_samples"]) if (CSIHasClothingCandidate(sample)) hasCandidate = YES;
+                self.exportButton.enabled = saved && hasCandidate;
                 if (!saved) self.status.text = [NSString stringWithFormat:@"报告保存失败：%@", error.localizedDescription ?: @"未知错误"];
                 else if ([report[@"status"] isEqual:@"inspection-complete"]) {
                     NSDictionary *game = report[@"installed_game"];
-                    self.status.text = [NSString stringWithFormat:@"检查完成。\n\n和平精英 %@（%@）\n\n请共享检查报告。资源清单仍需分析，完整人物轮廓尚未验证。", game[@"version"], game[@"build"]];
+                    self.status.text = [NSString stringWithFormat:@"检查完成。\n\n和平精英 %@（%@）\n\n%@\n\n完整人物轮廓和遮挡分色仍待验证。", game[@"version"], game[@"build"], hasCandidate ? @"已找到小型衣服或配饰候选包，可点击“导出资源样本”。" : @"请共享检查报告，继续确定资源来源。"];
                 } else self.status.text = [NSString stringWithFormat:@"检查未完成：%@\n\n请共享报告，以便确定原因。", report[@"status"]];
             });
         }
@@ -154,6 +164,72 @@ static NSDictionary *InspectGame(void) {
     activity.popoverPresentationController.sourceView = self.shareButton;
     activity.popoverPresentationController.sourceRect = self.shareButton.bounds;
     [self presentViewController:activity animated:YES completion:nil];
+}
+- (void)exportSamples {
+    NSDictionary *report = self.latestReport;
+    self.exportButton.enabled = NO; self.inspectButton.enabled = NO; self.shareButton.enabled = NO;
+    self.status.text = @"正在导出候选资源样本…";
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        @autoreleasepool {
+            NSMutableArray *files = [NSMutableArray new], *records = [NSMutableArray new], *failures = [NSMutableArray new];
+            NSURL *documents = [ReportURL() URLByDeletingLastPathComponent];
+            NSURL *parent = [documents URLByAppendingPathComponent:@"CoreModelSamples" isDirectory:YES];
+            NSURL *directory = [parent
+                URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
+            NSError *error = nil;
+            @try {
+                BOOL parentReady = [NSFileManager.defaultManager createDirectoryAtURL:parent withIntermediateDirectories:NO
+                    attributes:@{NSFilePosixPermissions:@0700} error:&error];
+                struct stat parentStatus;
+                parentReady = parentReady && !lstat(parent.fileSystemRepresentation, &parentStatus) && S_ISDIR(parentStatus.st_mode);
+                if (parentReady && [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:NO
+                    attributes:@{NSFilePosixPermissions:@0700} error:&error]) {
+                    Class cls = NSClassFromString(@"LSApplicationProxy");
+                    id proxy = [cls respondsToSelector:@selector(applicationProxyForIdentifier:)] ? [cls applicationProxyForIdentifier:GameID] : nil;
+                    NSURL *bundle = [proxy respondsToSelector:@selector(bundleURL)] ? [proxy bundleURL] : nil;
+                    NSURL *container = [proxy respondsToSelector:@selector(dataContainerURL)] ? [proxy dataContainerURL] : nil;
+                    NSDictionary *info = bundle ? [NSDictionary dictionaryWithContentsOfURL:[bundle URLByAppendingPathComponent:@"Info.plist"]] : nil;
+                    NSDictionary *game = report[@"installed_game"];
+                    BOOL sameGame = [info[@"CFBundleIdentifier"] isEqual:GameID] &&
+                        [info[@"CFBundleShortVersionString"] isEqual:game[@"version"]] && [info[@"CFBundleVersion"] isEqual:game[@"build"]];
+                    if (sameGame) for (NSDictionary *sample in report[@"pak_edge_samples"]) {
+                        if (!CSIHasClothingCandidate(sample)) continue;
+                        NSURL *root = [sample[@"root"] isEqual:@"bundle"] ? bundle : container;
+                        NSDictionary *copied = root ? CSICopyPakSample(root, sample, directory) : CSIError(@"source-root-unavailable");
+                        if ([copied[@"status"] isEqual:@"exported"]) {
+                            [records addObject:copied]; [files addObject:[directory URLByAppendingPathComponent:copied[@"file_name"]]];
+                        } else [failures addObject:@{@"file":sample[@"relative_path"] ?: @"", @"result":copied}];
+                        if (records.count >= 2) break;
+                    }
+                    else [failures addObject:CSIError(@"installed-game-changed-since-scan")];
+                    if (records.count) {
+                        NSDictionary *manifest = @{@"export_version":@1, @"diagnostic_version":@3,
+                            @"installed_game":game ?: @{}, @"files":records, @"failures":failures,
+                            @"live_mesh_verified":@NO, @"pixel_depth_available":@NO, @"occlusion_coloring_implemented":@NO};
+                        NSData *encoded = [NSJSONSerialization dataWithJSONObject:manifest options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:&error];
+                        NSURL *manifestURL = [directory URLByAppendingPathComponent:@"Core-model-samples-manifest.json"];
+                        if (encoded && [encoded writeToURL:manifestURL options:NSDataWritingAtomic error:&error]) [files addObject:manifestURL];
+                        else [files removeAllObjects];
+                    }
+                }
+            } @catch (NSException *exception) {
+                error = [NSError errorWithDomain:@"CoreModelExport" code:1 userInfo:@{NSLocalizedDescriptionKey:exception.reason ?: exception.name}];
+                [files removeAllObjects];
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self.inspectButton.enabled = YES; self.shareButton.enabled = YES; self.exportButton.enabled = YES;
+                if (!files.count) {
+                    self.status.text = [NSString stringWithFormat:@"导出未完成：%@\n\n请重新检查并共享报告。", error.localizedDescription ?: failures.description];
+                    return;
+                }
+                self.status.text = [NSString stringWithFormat:@"已导出 %lu 个候选资源包及清单。\n\n请共享这些文件交给分析人员。完整人物轮廓及白色可见／红色遮挡效果尚未实现。", (unsigned long)records.count];
+                UIActivityViewController *activity = [[UIActivityViewController alloc] initWithActivityItems:files applicationActivities:nil];
+                activity.popoverPresentationController.sourceView = self.exportButton;
+                activity.popoverPresentationController.sourceRect = self.exportButton.bounds;
+                [self presentViewController:activity animated:YES completion:nil];
+            });
+        }
+    });
 }
 @end
 

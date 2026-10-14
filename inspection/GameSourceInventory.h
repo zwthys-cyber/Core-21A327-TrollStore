@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <CommonCrypto/CommonDigest.h>
 
 static NSDictionary *CSIError(NSString *message) {
     return @{@"status":@"unavailable", @"reason":message ?: @"unknown"};
@@ -251,4 +252,81 @@ static NSDictionary *CSIPakSample(NSURL *root, NSString *relative) {
         @"tail_offset":@(length - last.length), @"tail_bytes":@(last.length),
         @"tail_base64":[last base64EncodedStringWithOptions:0], @"resource_index_read":@NO,
         @"asset_encryption_verified":@NO, @"live_mesh_verified":@NO};
+}
+
+// A name in an archive edge remains a candidate, not a verified mesh class.
+static BOOL CSIHasClothingCandidate(NSDictionary *sample) {
+    if (![sample[@"status"] isEqual:@"sampled"] ||
+        [sample[@"file_bytes"] unsignedLongLongValue] > 8 * 1024 * 1024) return NO;
+    NSData *tail = [[NSData alloc] initWithBase64EncodedString:sample[@"tail_base64"] options:0];
+    if (!tail || tail.length > 4096) return NO;
+    for (NSString *name in @[@"Avatar_AnimBP_Jacket_", @"SK_Jacket_", @"SK_Hair_", @"SK_Body_",
+        @"SK_Pants_", @"SK_Shoes_", @"SK_Hat_", @"SK_Pendant_"]) {
+        NSData *needle = [name dataUsingEncoding:NSASCIIStringEncoding];
+        if ([tail rangeOfData:needle options:0 range:NSMakeRange(0, tail.length)].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+// Copy a small candidate archive into the inspector's own export directory.
+// Verify its sampled edges and actual size, copy through file descriptors,
+// and publish a digest only after the source remains unchanged throughout.
+static NSDictionary *CSICopyPakSample(NSURL *root, NSDictionary *sample, NSURL *directory) {
+    NSString *relative = sample[@"relative_path"];
+    NSDictionary *current = CSIPakSample(root, relative);
+    if (![current[@"status"] isEqual:@"sampled"]) return current;
+    for (NSString *field in @[@"file_bytes", @"prefix_base64", @"tail_base64"])
+        if (![current[field] isEqual:sample[field]]) return CSIError(@"source-sample-changed");
+    uint64_t length = [current[@"file_bytes"] unsignedLongLongValue];
+    if (length > 8 * 1024 * 1024) return CSIError(@"candidate-exceeds-8-mib-limit");
+    struct stat directoryStatus;
+    if (lstat(directory.fileSystemRepresentation, &directoryStatus) || !S_ISDIR(directoryStatus.st_mode))
+        return CSIError(@"export-directory-unavailable");
+    NSURL *source = [root URLByAppendingPathComponent:relative];
+    int input = open(source.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (input < 0) return CSIError(@"source-open-failed");
+    char rootPath[PATH_MAX], openedPath[PATH_MAX], resolvedPath[PATH_MAX];
+    struct stat before, after;
+    BOOL contained = realpath(root.fileSystemRepresentation, rootPath) &&
+        !fcntl(input, F_GETPATH, openedPath) && realpath(openedPath, resolvedPath) &&
+        [@(resolvedPath) hasPrefix:[@(rootPath) stringByAppendingString:@"/"]];
+    if (!contained || fstat(input, &before) || !S_ISREG(before.st_mode) || (uint64_t)before.st_size != length) {
+        close(input); return CSIError(@"source-identity-changed");
+    }
+    uint8_t edge[4096];
+    NSData *prefix = [[NSData alloc] initWithBase64EncodedString:current[@"prefix_base64"] options:0];
+    NSData *tail = [[NSData alloc] initWithBase64EncodedString:current[@"tail_base64"] options:0];
+    BOOL edgeMatch = prefix.length <= sizeof(edge) && tail.length <= sizeof(edge) &&
+        CSIRead(input, length, 0, edge, prefix.length) && !memcmp(edge, prefix.bytes, prefix.length) &&
+        CSIRead(input, length, length - tail.length, edge, tail.length) && !memcmp(edge, tail.bytes, tail.length);
+    if (!edgeMatch) { close(input); return CSIError(@"source-edges-changed"); }
+    NSURL *destination = [directory URLByAppendingPathComponent:relative.lastPathComponent];
+    int output = open(destination.fileSystemRepresentation, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (output < 0) { close(input); return CSIError(@"export-file-create-failed"); }
+    uint8_t buffer[65536], digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256_CTX hash; CC_SHA256_Init(&hash);
+    uint64_t copied = 0; BOOL success = YES;
+    while (copied < length) {
+        size_t amount = (size_t)MIN(length - copied, sizeof(buffer));
+        if (!CSIRead(input, length, copied, buffer, amount)) { success = NO; break; }
+        size_t written = 0;
+        while (written < amount) {
+            ssize_t n = write(output, buffer + written, amount - written);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) { success = NO; break; }
+            written += (size_t)n;
+        }
+        if (!success) break;
+        CC_SHA256_Update(&hash, buffer, (CC_LONG)amount); copied += amount;
+    }
+    success = success && !fstat(input, &after) && before.st_size == after.st_size &&
+        before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec && before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec &&
+        before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec && before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec;
+    int closeResult = close(output); close(input);
+    if (!success || closeResult) { unlink(destination.fileSystemRepresentation); return CSIError(@"copy-failed-or-source-changed"); }
+    CC_SHA256_Final(digest, &hash);
+    NSMutableString *hex = [NSMutableString new];
+    for (NSUInteger i = 0; i < sizeof(digest); i++) [hex appendFormat:@"%02x", digest[i]];
+    return @{@"status":@"exported", @"relative_path":relative, @"file_name":destination.lastPathComponent,
+        @"bytes":@(copied), @"sha256":hex, @"live_mesh_verified":@NO};
 }

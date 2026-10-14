@@ -189,9 +189,47 @@ int main(void) {
         assert(!mkfifo(pakPipe.fileSystemRepresentation, 0600));
         assert([CSIPakSample(FixtureRoot, @"pipe.pak")[@"status"] isEqual:@"unavailable"]);
         assert([NSJSONSerialization dataWithJSONObject:sample options:0 error:NULL]);
+
+        NSURL *exports = [FixtureRoot URLByAppendingPathComponent:@"Exports" isDirectory:YES];
+        assert([NSFileManager.defaultManager createDirectoryAtURL:exports withIntermediateDirectories:NO attributes:nil error:NULL]);
+        // The sparse source must be rejected before any large copy is attempted.
+        assert([CSICopyPakSample(FixtureRoot, sample, exports)[@"status"] isEqual:@"unavailable"]);
+        NSData *abc = [@"abc" dataUsingEncoding:NSASCIIStringEncoding];
+        assert([abc writeToURL:pak atomically:YES]);
+        NSDictionary *abcSample = CSIPakSample(FixtureRoot, @"sample.pak");
+        NSDictionary *exported = CSICopyPakSample(FixtureRoot, abcSample, exports);
+        assert([exported[@"status"] isEqual:@"exported"] && [exported[@"bytes"] isEqual:@3]);
+        assert([exported[@"sha256"] isEqual:@"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"]);
+        NSURL *copy = [exports URLByAppendingPathComponent:@"sample.pak"];
+        assert([[NSData dataWithContentsOfURL:copy] isEqual:abc]);
+        // Existing output must remain unchanged.
+        assert([CSICopyPakSample(FixtureRoot, abcSample, exports)[@"status"] isEqual:@"unavailable"]);
+        assert([[NSData dataWithContentsOfURL:copy] isEqual:abc]);
+        assert([[@"def" dataUsingEncoding:NSASCIIStringEncoding] writeToURL:pak atomically:YES]);
+        assert([CSICopyPakSample(FixtureRoot, abcSample, exports)[@"reason"] isEqual:@"source-sample-changed"]);
+        assert([[NSData dataWithContentsOfURL:copy] isEqual:abc]);
+        NSMutableData *chunked = [NSMutableData dataWithLength:131073];
+        for (NSUInteger i = 0; i < chunked.length; i++) ((uint8_t *)chunked.mutableBytes)[i] = (uint8_t)(i % 251);
+        assert([chunked writeToURL:pak atomically:YES]);
+        assert([NSFileManager.defaultManager removeItemAtURL:copy error:NULL]);
+        NSDictionary *chunkSample = CSIPakSample(FixtureRoot, @"sample.pak");
+        assert([CSICopyPakSample(FixtureRoot, chunkSample, exports)[@"status"] isEqual:@"exported"]);
+        assert([[NSData dataWithContentsOfURL:copy] isEqual:chunked]);
+        NSURL *exportLink = [FixtureRoot URLByAppendingPathComponent:@"ExportLink"];
+        assert(!symlink(exports.fileSystemRepresentation, exportLink.fileSystemRepresentation));
+        assert([CSICopyPakSample(FixtureRoot, chunkSample, exportLink)[@"status"] isEqual:@"unavailable"]);
+        assert([CSICopyPakSample(FixtureRoot, abcSample, Executable)[@"status"] isEqual:@"unavailable"]);
+        NSMutableDictionary *clothing = [chunkSample mutableCopy];
+        clothing[@"tail_base64"] = [[@"Avatar_AnimBP_Jacket_42.uasset" dataUsingEncoding:NSASCIIStringEncoding] base64EncodedStringWithOptions:0];
+        assert(CSIHasClothingCandidate(clothing));
+        clothing[@"tail_base64"] = [[@"SK_Pendant_1.uexp" dataUsingEncoding:NSASCIIStringEncoding] base64EncodedStringWithOptions:0];
+        assert(CSIHasClothingCandidate(clothing));
+        clothing[@"tail_base64"] = [[@"Avatar_Mesh/Icon/Icon_Jacket_42.ubulk SK_WEP_DP28.uasset" dataUsingEncoding:NSASCIIStringEncoding] base64EncodedStringWithOptions:0];
+        assert(!CSIHasClothingCandidate(clothing));
+        clothing[@"status"] = @"unavailable"; assert(!CSIHasClothingCandidate(clothing));
         assert([NSFileManager.defaultManager removeItemAtURL:FixtureRoot error:NULL]);
         assert([NSFileManager.defaultManager removeItemAtURL:outside error:NULL]);
-        puts("PASS: Mach-O formats and bounds, read-only resource inventory, scan limits, exact bounded pak samples including tiny/sparse files, symlinks/path escape/nonregular inputs rejected");
+        puts("PASS: Mach-O and resource bounds; exact pak edges; candidate filters; bounded chunked export and known SHA-256; stale samples, overwrite, large files, symlinks and path escape rejected");
     }
     return 0;
 }
