@@ -53,7 +53,7 @@ static void StartupRecord(const char *phase) {
     if (count <= 0 || (size_t)count >= sizeof(path)) return;
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return;
-    count = snprintf(line, sizeof(line), "patch=18 pid=%u startup: %s\n", getpid(), phase);
+    count = snprintf(line, sizeof(line), "patch=19 pid=%u startup: %s\n", getpid(), phase);
     if (count > 0 && (size_t)count < sizeof(line)) {
         ssize_t result;
         do { result = write(fd, line, (size_t)count); } while (result < 0 && errno == EINTR);
@@ -136,7 +136,7 @@ static BOOL MarkerRead(uintptr_t address, void *buffer, size_t length) {
 static void StartMarkerDiagnostics(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         uintptr_t base = MarkerImageBase();
-        if (!base) { Log(@"patch=18 markers diagnostics skipped: Core UUID mismatch"); return; }
+        if (!base) { Log(@"patch=19 markers diagnostics skipped: Core UUID mismatch"); return; }
         static dispatch_source_t timer;
         if (timer) return;
         timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
@@ -166,7 +166,7 @@ static void StartMarkerDiagnostics(void) {
                 }
             }
             NSString *state = [NSString stringWithFormat:
-                @"patch=18 markers sampled enabled=%u visibility_request=%u target_bound=%d visibility_mode=%u visibility_armed=%u geometry_running=%u source_offset_available=%d geometry_ready=%u scenes=%d/%d/%d cached_valid_joints=%u cached_obstructed_joints=%u",
+                @"patch=19 markers sampled enabled=%u visibility_request=%u target_bound=%d visibility_mode=%u visibility_armed=%u geometry_running=%u source_offset_available=%d geometry_ready=%u scenes=%d/%d/%d cached_valid_joints=%u cached_obstructed_joints=%u",
                 config[0x23], config[0x2f], target != 0, mode, armed, running,
                 sourceKey != sourceValue, config[0x1e9], scenes[0] != 0,
                 scenes[1] != 0, scenes[2] != 0, validCount, obstructedCount];
@@ -321,7 +321,7 @@ static BOOL ValidateWithBootCache(id self, SEL selector, NSURL *cache, NSURL *me
         if (ValidateOriginal(self, selector, cache, metadata, product, build, board)) return YES;
         if (Attempted) return NO;
         Attempted = YES;
-        Log([NSString stringWithFormat:@"patch=18 profile=enemy-markers-300m-low-clutter product=%@ build=%@ board=%@ uid=%u",
+        Log([NSString stringWithFormat:@"patch=19 profile=enemy-markers-600m-identity-colors product=%@ build=%@ board=%@ uid=%u",
              product, build, board, getuid()]);
         LogAcquisitionPermissions();
         LogSandboxStatus();

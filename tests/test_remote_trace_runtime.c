@@ -109,7 +109,7 @@ int main(void) {
     fd = open(path, O_RDONLY); assert(fd >= 0);
     memset(output, 0, sizeof(output));
     count = read(fd, output, sizeof(output) - 1); assert(count > 0); close(fd);
-    assert(strstr(output, "patch=18") && strstr(output, "rotation marker"));
+    assert(strstr(output, "patch=19") && strstr(output, "rotation marker"));
 
     // Concurrent writes cannot exceed either file's bound or interleave records.
     pthread_t writers[4];
@@ -119,9 +119,9 @@ int main(void) {
     assert(!stat(backup, &status) && status.st_size <= CORE_REMOTE_LOG_LIMIT);
     FILE *active = fopen(path, "r"); assert(active);
     while (fgets(output, sizeof(output), active)) {
-        assert(!strncmp(output, "patch=18 ", 9));
+        assert(!strncmp(output, "patch=19 ", 9));
         assert(output[strlen(output) - 1] == '\n');
-        assert(!strstr(output + 9, "patch=18 "));
+        assert(!strstr(output + 9, "patch=19 "));
     }
     assert(!ferror(active)); fclose(active);
 

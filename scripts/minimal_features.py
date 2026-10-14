@@ -1,4 +1,4 @@
-"""Limit the reviewed Core binary to named enemy markers within 300 metres.
+"""Limit the reviewed Core binary to named enemy markers within 600 metres.
 
 This changes the application's UI and feature execution only. It does not
 change the game, the kernel backend, target process names, or detection paths.
@@ -9,10 +9,8 @@ import hashlib
 import struct
 
 CORE_SHA256 = "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58"
-PROFILE = "enemy-markers-300m-low-clutter"
-RANGE_METRES = 300
-RAY_LIMIT = 3
-RAY_RANGE_METRES = 100
+PROFILE = "enemy-markers-600m-identity-colors"
+RANGE_METRES = 600
 
 
 def word(value):
@@ -119,7 +117,7 @@ def changes():
         add(offset, "08014039", word(0x39400000 | (0x23 << 10) | (27 << 5) | 8), "shared nearby-enemy toggle")
 
     # Offscreen arrows and their distance follow the same sole checkbox. The
-    # native actor/team, finite-distance, 300-metre and on-screen tests run first.
+    # native actor/team, finite-distance, 600-metre and on-screen tests run first.
     for offset, expected, register in [(0xDB46C, "6a974039", 10), (0xDB470, "69874039", 9)]:
         add(offset, expected, word(0x39400000 | (0x23 << 10) | (27 << 5) | register), "shared offscreen arrow/distance toggle")
     add(0xDBD00, "cd050194", word(0x12A01FE0), "opaque yellow direction arrow and distance")
@@ -160,7 +158,7 @@ def changes():
     add(0xDBD9C, "65d5aa7e", word(0x1E20C005), "vertical edge magnitude from bearing vector")
 
     # Original counters reset every frame and increment after enemy-team and
-    # finite 300-metre checks, before projection. Display their combined total,
+    # finite 600-metre checks, before projection. Display their combined total,
     # including offscreen actors, as one centered red number with native outline.
     counter = bytearray.fromhex(
         "688f4039480700346826402d6a0a40bd0910b0120801261e087900121f01096b680600540821201e"
@@ -230,38 +228,16 @@ def changes():
         branch(0xDC130, 0xDC774),
     ])
     add(0xDC120, "0008031f03102c1eee41201e22bd031fe25b02bd", ray_origin, "bottom-center ray origin in bypassed health block")
-    # Reserve a private counter above the original SP-relative locals. The
-    # frame pointer, saved registers, stack guard and PAC frame remain intact.
-    add(0xDB174, "ff830ed1", word(0xD1000000 | (0x3B0 << 10) | (31 << 5) | 31), "reserve sixteen private renderer stack bytes")
-    add(0xDEF2C, "ff830e91", word(0x91000000 | (0x3B0 << 10) | (31 << 5) | 31), "release private renderer stack bytes on original common exit")
-    reset = b"".join([
-        word(0xB9000000 | ((0x3A0 // 4) << 10) | (31 << 5) | 31),
-        adrp(0xDB794, 0xC54000, 23),  # replay original enemy-counter page load
-        branch(0xDB798, 0xDB190),
+    ray_alpha = b"".join([
+        word(0x52A85908),  # mov w8, #100.0f bits
+        word(0x1E270100),  # fmov s0, w8
+        word(0x1E2021A0),  # fcmp s13, s0 (original finite actor distance)
+        word(0x12800000),  # near: opaque white
+        word(0x12B1E008),  # far: white with alpha 0x70
+        word(0x1A88D000),  # csel w0, w0, w8, le
+        branch(0xDC158, 0xDC78C),
     ])
-    add(0xDB790, "e3ff41bd4128211e0028231e", reset, "reset private ray count each frame in disabled radar block")
-    add(0xDB18C, "d75b00b0", branch(0xDB18C, 0xDB790), "initialize ray limit before original human/bot counters")
-    # Native team/range/projection filtering still runs first. Limit only rays;
-    # skipped targets continue into the original box/name/skeleton drawing.
-    ray_gate = b"".join([
-        word(0xB9400000 | ((0x160 // 4) << 10) | (31 << 5) | 8),
-        word(0x7200011F),  # tst w8, #1 (original ray checkbox semantics)
-        branch(0xDB7A8, 0xDC7A8, 0),
-        word(0xB9400000 | ((0x3A0 // 4) << 10) | (31 << 5) | 9),
-        word(0x71000000 | (RAY_LIMIT << 10) | (9 << 5) | 31),
-        branch(0xDB7B4, 0xDC7A8, 2),  # unsigned count >= limit
-        word(0x52A0000A | ((struct.unpack('<I', struct.pack('<f', RAY_RANGE_METRES))[0] >> 16) << 5)),
-        word(0x1E270140),  # fmov s0, w10
-        word(0x1E2021A0),  # fcmp s13, s0
-        branch(0xDB7C4, 0xDC7A8, 8),  # too far or unordered NaN
-        word(0x1E2021A8),  # fcmp s13, #0
-        branch(0xDB7CC, 0xDC7A8, 4),  # negative distance
-        word(0x11000529),  # add w9, w9, #1
-        word(0xB9000000 | ((0x3A0 // 4) << 10) | (31 << 5) | 9),
-        branch(0xDB7D8, 0xDC75C),
-    ])
-    add(0xDB7A0, "e01702bd9f020071e83f083215019f5ae1430891e00316aae07740bde20315aa0302805269800194681b41b9c8040034600240bd0190231e0008211e", ray_gate, "at most three on-screen rays within one hundred metres per frame")
-    add(0xDC754, "e86341b9", branch(0xDC754, 0xDB7A0), "apply local ray limit before preparing line endpoints")
+    add(0xDC140, "e24302bde04702bd2808231ee1630991e2030991e00316aa63648452", ray_alpha, "dim rays beyond 100 metres in bypassed health block")
     # The original cached bot flag selects name color without category labels.
     # This health-only block is bypassed; keep the offscreen path at DC1B4 intact.
     name_color = b"".join([
@@ -283,7 +259,7 @@ def changes():
     # and range as the renderer before it chooses how many joints to acquire.
     for offset, expected in [(0xD88C0, "68e64239"), (0xD88D0, "688a4039")]:
         add(offset, expected, word(0x39400000 | (0x23 << 10) | (19 << 5) | 8), "shared toggle in native skeleton collector")
-    add(0xD88DC, "604240bd", word(0x52800008 | (RANGE_METRES << 5)), "collector skeleton range 300 metres")
+    add(0xD88DC, "604240bd", word(0x52800008 | (RANGE_METRES << 5)), "collector skeleton range 600 metres")
     add(0xD88E0, "00d8215e", word(0x1E220100), "convert fixed collector range to float")
 
     # Use unreachable aim-candidate instructions inside the same renderer frame;
@@ -335,13 +311,13 @@ def changes():
     add(0xDCBCC, "88be4039", word(0x39400000 | (0x23 << 10) | (20 << 5) | 8), "nearby markers request per-joint visibility")
     add(0xDCBD8, "7aa64739", branch(0xDCBD8, 0xDD4D0), "omit red/white skeleton when visibility is unavailable")
 
-    # Fix the original range clamp input to 300.0f. Keep native finite-distance,
+    # Fix the original range clamp input to 600.0f. Keep native finite-distance,
     # enemy-team and screen projection checks and original actor-loop cleanup.
-    add(0xDB278, "603340bd", word(0x52A00008 | (0x4396 << 5)), "fixed 300-metre range")
-    add(0xDB27C, "488fa852", word(0x1E270100), "range clamp input 300.0f")
-    add(0xDCAA4, "004140bd", word(0x52800008 | (RANGE_METRES << 5)), "skeleton range 300 metres")
+    add(0xDB278, "603340bd", word(0x52A00008 | (0x4416 << 5)), "fixed 600-metre range")
+    add(0xDB27C, "488fa852", word(0x1E270100), "range clamp input 600.0f")
+    add(0xDCAA4, "004140bd", word(0x52800008 | (RANGE_METRES << 5)), "skeleton range 600 metres")
     add(0xDCAA8, "00d8215e", word(0x1E220100), "convert fixed skeleton range to float")
-    add(0xDC788, "2b030194", word(0x12ABE000), "soft white ray with alpha 0xa0")
+    add(0xDC788, "2b030194", branch(0xDC788, 0xDC140), "distance-based ray opacity")
     for offset, expected in [(0xDC7DC, "16030194"),
                               (0xDCA3C, "7e020194")]:
         add(offset, expected, word(0x12800000), "white line/box/distance independent of old colors")
@@ -366,7 +342,7 @@ def changes():
         word(0xD503201F), word(0xD503201F),
     ])
     add(0xDCD40, "c95b009029c1099120910291e8000037885b00d008310691086978381f010071e87b40f90010889ab3010194", color, "fixed white-visible / red-obstructed skeleton colors")
-    for offset, old, new in [(0x743F3D, "玩家显示", "300米标记"),
+    for offset, old, new in [(0x743F3D, "玩家显示", "600米标记"),
                              (0x743F64, "显示距离", "附近敌人"),
                              (0x744522, "玩家", "位置")]:
         add(offset, old.encode(), new.encode(), "minimal display label")
