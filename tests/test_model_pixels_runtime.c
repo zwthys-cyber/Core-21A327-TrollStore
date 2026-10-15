@@ -8,11 +8,27 @@ static bool Query(void *context,const CMVec3 *camera,const CMVec3 *world,bool *b
 static void Span(void *context,int x,int y,int width,uint8_t colour) {(void)context;assert(x>=1&&y>=1&&width>0&&(colour==1||colour==2));Spans++;}
 static uint32_t CheckRectangles(const CMPMask *mask) {
     CMPRectangle rectangles[256];uint32_t count=CMPRectangles(mask,rectangles,256);assert(count<=256);
+    uint32_t rowWords=((uint32_t)mask->width+63)/64;uint64_t *bits=calloc((size_t)rowWords*mask->height,8);assert(bits);CMPCoverage sparse={bits,rowWords,0};
+    for(int y=0;y<mask->height;y++)for(int x=0;x<mask->width;x++)if(mask->pixels[(size_t)y*mask->width+x].colour){bits[(size_t)y*rowWords+x/64]|=1ULL<<(x%64);sparse.count++;}
+    CMPRectangle packed[256];assert(CMPRectanglesCovered(mask,&sparse,packed,256)==count);
+    for(uint32_t i=0;i<count;i++)assert(packed[i].x==rectangles[i].x&&packed[i].y==rectangles[i].y&&packed[i].width==rectangles[i].width&&packed[i].height==rectangles[i].height&&packed[i].colour==rectangles[i].colour);free(bits);
     uint8_t *coverage=calloc((size_t)mask->width*mask->height,1);assert(coverage);
     for(uint32_t i=0;i<count;i++){CMPRectangle r=rectangles[i];assert(r.width>0&&r.height>0&&r.x>=mask->x&&r.y>=mask->y&&r.x+r.width<=mask->x+mask->width&&r.y+r.height<=mask->y+mask->height);
         for(int y=r.y;y<r.y+r.height;y++)for(int x=r.x;x<r.x+r.width;x++){size_t p=(size_t)(y-mask->y)*mask->width+x-mask->x;assert(!coverage[p]);coverage[p]=r.colour;}}
     for(size_t p=0;p<(size_t)mask->width*mask->height;p++)assert(coverage[p]==mask->pixels[p].colour);
     free(coverage);return count;
+}
+static void CheckSparseCoverage(void) {
+    const int width=513,height=129;size_t count=(size_t)width*height;CMPPixel *dense=calloc(count,sizeof(CMPPixel)),*sparse=calloc(count,sizeof(CMPPixel));assert(dense&&sparse);
+    CMPMask a={11,19,width,height,dense},b={11,19,width,height,sparse};uint64_t *bits=calloc(9*height,8);assert(bits);CMPCoverage coverage={bits,9,0};
+    CMPVertex triangles[2][3]={{{{70,25},{10,0,0},.1f},{{80,25},{10,0,0},.1f},{{70,35},{10,0,0},.1f}},{{{450,110},{20,0,0},.05f},{{460,110},{20,0,0},.05f},{{450,120},{20,0,0},.05f}}};
+    for(unsigned i=0;i<2;i++){assert(CMPRasterTriangle(&a,triangles[i]));assert(CMPRasterTriangleCovered(&b,triangles[i],&coverage));}
+    uint32_t firstCount=coverage.count;assert(firstCount>0&&firstCount<200);assert(CMPRasterTriangleCovered(&b,triangles[0],&coverage)&&coverage.count==firstCount); // Overdraw never duplicates a covered pixel.
+    assert(!memcmp(dense,sparse,count*sizeof(CMPPixel)));CMPCursor cursor={0};uint32_t index,previous=0,seen=0;int x,y;
+    while(CMPNextCovered(&b,&coverage,&cursor,&index,&x,&y)){assert(sparse[index].inverse_depth&&(!seen||index>previous)&&index==(uint32_t)((y-b.y)*width+x-b.x));previous=index;seen++;}assert(seen==coverage.count);
+    uint8_t raw[52]={0};float fov=90;memcpy(raw+48,&fov,4);CMPView view;assert(CMPMakeView(raw,1024,768,&view));uint32_t whiteA,redA,whiteB,redB;Queries=StopAfter=0;
+    assert(CMPClassify(&a,&view,Query,NULL,&whiteA,&redA));unsigned denseQueries=Queries;Queries=0;assert(CMPClassifyCovered(&b,&view,&coverage,Query,NULL,&whiteB,&redB));assert(Queries==denseQueries&&whiteA==whiteB&&redA==redB&&!memcmp(dense,sparse,count*sizeof(CMPPixel)));
+    CheckRectangles(&b);CMPRectangle packed[256];assert(CMPRectanglesCovered(&b,&coverage,packed,256)==CMPRectangles(&a,packed,256));free(bits);free(dense);free(sparse);
 }
 static void CheckRotatedCamera(void) {
     float camera[13]={123456,-234567,345678,0,0,0,17,63,-21,0,0,0,87};CMPView view;assert(CMPMakeView((const uint8_t *)camera,800,600,&view));
@@ -41,10 +57,10 @@ int main(void) {
     CMPVertex invalid[3]={near[0],near[1],near[2]};invalid[0].inverse_depth=0;assert(!CMPRasterTriangle(&mask,invalid));
     float bad=NAN;memcpy(raw+48,&bad,4);assert(!CMPMakeView(raw,8,8,&view));
     CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};CMVec3 out;assert(CMWorldPosition(&t,&t,&out));
-    CheckRotatedCamera();
+    CheckRotatedCamera();CheckSparseCoverage();
     CMPPixel *solid=calloc(5000,sizeof(CMPPixel));assert(solid);for(unsigned i=0;i<5000;i++)solid[i].colour=1;CMPMask tall={20,30,1,5000,solid};CMPRectangle rectangle;
     assert(CMPSpans(&tall,NULL,NULL,4096)==4097&&CMPRectangles(&tall,&rectangle,1)==1&&rectangle.x==20&&rectangle.y==30&&rectangle.height==5000);free(solid);
     for(unsigned pattern=0;pattern<40;pattern++){for(unsigned i=0;i<64;i++)pixels[i].colour=(uint8_t)(((i*13+pattern*19)>>(pattern%5))%3);CheckRectangles(&mask);}
     memset(pixels,0,sizeof(pixels));pixels[0].colour=pixels[16].colour=1;assert(CheckRectangles(&mask)==2); // An empty row must break a rectangle.
-    puts("PASS: exact pixel centres; mixed wall-edge red/white; 8-byte perspective depth with rotated large-origin cameras; nearest surface; incomplete queries; exact nonoverlapping rectangle coverage, colour boundaries, empty rows, offsets and limits; malformed inputs");return 0;
+    puts("PASS: exact pixel centres; mixed wall-edge red/white; 8-byte perspective depth and rotated large-origin cameras; sparse/dense raster, query and rectangle equivalence; bit-word boundaries, empty gaps, offsets and overdraw deduplication; exact nonoverlapping packing; limits and malformed inputs");return 0;
 }

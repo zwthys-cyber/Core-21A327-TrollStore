@@ -12,6 +12,10 @@ typedef struct { CMVec2 xy;CMVec3 world;float inverse_depth; } CMPVertex;
 typedef struct { float inverse_depth;uint8_t colour; } CMPPixel;
 _Static_assert(sizeof(CMPPixel)==8,"Full-resolution depth/colour pixel");
 typedef struct { int x,y,width,height;CMPPixel *pixels; } CMPMask;
+// One bit per covered pixel lets queries and packing skip empty screen areas.
+// It records exact coverage, independently of the nearest-depth overwrite.
+typedef struct { uint64_t *words;uint32_t words_per_row,count; } CMPCoverage;
+typedef struct { size_t next_word;uint64_t remaining; } CMPCursor;
 typedef struct {int x,y,width,height;uint8_t colour;} CMPRectangle;
 typedef bool (*CMPQuery)(void *,const CMVec3 *,const CMVec3 *,bool *);
 typedef void (*CMPSpan)(void *,int,int,int,uint8_t);
@@ -43,8 +47,9 @@ static inline bool CMPWorldAtPixel(const CMPView *view,int x,int y,float inverse
         view->position.z+(view->forward.z+horizontal*view->right.z+vertical*view->up.z)*depth};
     return isfinite(world->x)&&isfinite(world->y)&&isfinite(world->z);
 }
-static inline bool CMPRasterTriangle(CMPMask *mask,const CMPVertex t[3]) {
+static inline bool CMPRasterTriangleCovered(CMPMask *mask,const CMPVertex t[3],CMPCoverage *coverage) {
     if (!mask->pixels||mask->width<=0||mask->height<=0) return false;
+    if(coverage&&(!coverage->words||coverage->words_per_row!=((uint32_t)mask->width+63)/64))return false;
     float area=CMPEdge(t[0].xy,t[1].xy,t[2].xy.x,t[2].xy.y);
     if (!isfinite(area)||fabsf(area)<1e-7f) return false;
     for (unsigned i=0;i<3;i++) if (!isfinite(t[i].inverse_depth)||t[i].inverse_depth<=0||!isfinite(t[i].world.x)||!isfinite(t[i].world.y)||!isfinite(t[i].world.z)) return false;
@@ -58,9 +63,28 @@ static inline bool CMPRasterTriangle(CMPMask *mask,const CMPVertex t[3]) {
         float depth=a*t[0].inverse_depth+b*t[1].inverse_depth+c*t[2].inverse_depth;
         CMPPixel *p=&mask->pixels[(size_t)(y-mask->y)*mask->width+(x-mask->x)];
         if (!isfinite(depth)||depth<=p->inverse_depth) continue;
+        if(coverage&&!p->inverse_depth){coverage->words[(size_t)(y-mask->y)*coverage->words_per_row+(x-mask->x)/64]|=1ULL<<((x-mask->x)%64);coverage->count++;}
         p->inverse_depth=depth;p->colour=0;
     }
     return true;
+}
+static inline bool CMPRasterTriangle(CMPMask *mask,const CMPVertex t[3]) {return CMPRasterTriangleCovered(mask,t,NULL);}
+static inline bool CMPNextCovered(const CMPMask *mask,const CMPCoverage *coverage,CMPCursor *cursor,uint32_t *index,int *x,int *y) {
+    size_t count=(size_t)coverage->words_per_row*mask->height;
+    while(true){
+        while(!cursor->remaining){if(cursor->next_word>=count)return false;cursor->remaining=coverage->words[cursor->next_word++];}
+        unsigned bit=(unsigned)__builtin_ctzll(cursor->remaining);cursor->remaining&=cursor->remaining-1;
+        size_t word=cursor->next_word-1;uint32_t row=(uint32_t)(word/coverage->words_per_row),column=(uint32_t)(word%coverage->words_per_row)*64+bit;
+        if(column>=(uint32_t)mask->width)continue;*index=row*(uint32_t)mask->width+column;*x=mask->x+(int)column;*y=mask->y+(int)row;return true;
+    }
+}
+static inline bool CMPClassifyCovered(CMPMask *mask,const CMPView *view,const CMPCoverage *coverage,CMPQuery query,void *context,uint32_t *white,uint32_t *red) {
+    *white=*red=0;CMPCursor cursor={0};uint32_t index;int x,y;
+    if(!coverage||!coverage->words||coverage->words_per_row!=((uint32_t)mask->width+63)/64)return false;
+    while(CMPNextCovered(mask,coverage,&cursor,&index,&x,&y)){CMPPixel *p=&mask->pixels[index];CMVec3 world;bool blocked=false;
+        if(!p->inverse_depth||!CMPWorldAtPixel(view,x,y,p->inverse_depth,&world)||!query(context,&view->position,&world,&blocked))return false;
+        p->colour=blocked?2:1;if(blocked)(*red)++;else(*white)++;}
+    return (uint64_t)*white+*red==coverage->count;
 }
 static inline bool CMPClassify(CMPMask *mask,const CMPView *view,CMPQuery query,void *context,uint32_t *white,uint32_t *red) {
     *white=*red=0;
@@ -82,13 +106,18 @@ static inline uint32_t CMPSpans(const CMPMask *mask,CMPSpan emit,void *context,u
 }
 // Merge identical horizontal runs in adjacent rows. The resulting rectangles
 // reproduce every classified pixel exactly; no dilation, sampling or averaging.
-static inline uint32_t CMPRectangles(const CMPMask *mask,CMPRectangle *out,uint32_t capacity) {
+static inline uint32_t CMPRectanglesCovered(const CMPMask *mask,const CMPCoverage *coverage,CMPRectangle *out,uint32_t capacity) {
     if(!mask->pixels||!out||mask->width<1||mask->width>8192||mask->height<1||mask->height>8192)return capacity+1;
+    if(coverage&&(!coverage->words||coverage->words_per_row!=((uint32_t)mask->width+63)/64))return capacity+1;
     uint32_t *storage=malloc((size_t)mask->width*2*sizeof(uint32_t));if(!storage)return capacity+1;
     uint32_t *previous=storage,*current=storage+mask->width,previousCount=0,count=0;
     for(int y=0;y<mask->height;y++){
         uint32_t currentCount=0,cursor=0;
-        for(int x=0;x<mask->width;){uint8_t colour=mask->pixels[(size_t)y*mask->width+x].colour;if(!colour){x++;continue;}
+        for(int x=0;x<mask->width;){
+            if(coverage){uint32_t word=(uint32_t)x/64;uint64_t bits=coverage->words[(size_t)y*coverage->words_per_row+word]&(~0ULL<<(x%64));
+                while(!bits&&++word<coverage->words_per_row)bits=coverage->words[(size_t)y*coverage->words_per_row+word];if(!bits)break;
+                x=(int)(word*64+(unsigned)__builtin_ctzll(bits));if(x>=mask->width)break;}
+            uint8_t colour=mask->pixels[(size_t)y*mask->width+x].colour;if(!colour){x++;continue;}
             int start=x;do{x++;}while(x<mask->width&&mask->pixels[(size_t)y*mask->width+x].colour==colour);
             int absoluteX=mask->x+start,width=x-start;while(cursor<previousCount&&out[previous[cursor]].x<absoluteX)cursor++;
             uint32_t index=count;
@@ -100,4 +129,5 @@ static inline uint32_t CMPRectangles(const CMPMask *mask,CMPRectangle *out,uint3
     }
     free(storage);return count;
 }
+static inline uint32_t CMPRectangles(const CMPMask *mask,CMPRectangle *out,uint32_t capacity) {return CMPRectanglesCovered(mask,NULL,out,capacity);}
 #endif
