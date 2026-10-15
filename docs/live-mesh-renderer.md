@@ -1,14 +1,14 @@
 # 实时人物网格填充
 
-目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充，但轮廓或边界不准。build 29 的原生结果缓冲越界已在 build 30 修正；build 32 的覆盖位和按需载入生效，仍记录模型阶段耗时尖峰。当前 **build 33 / render v6** 将部件读取与 CPU 蒙皮分开，并缓存静态三角形索引，处理模型阶段开销及后续附件读取被跳过的问题；性能改善和完整精确目标仍须实机验证。
+目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。实机已显示实时网格红白填充，精确轮廓和边界仍未完成。build 33 确认 CPU 蒙皮优化生效，失败原因则定位到不支持的顶点布局。当前 **build 34 / render v7** 支持本轮实际头部与降落伞的 28/32 字节顶点步长，并按已发现字段减少组件状态读取；部件补全、性能与精度仍须实机验证。
 
 ## 当前安装包
 
-- 文件：`Core-17.0-21A327-TrollStore-model-render-v6.ipa`
-- Bundle build：`33`；`CoreModelRenderVersion=6`；采集协议仍为 `7`。
-- 源码：`4bf3e56f8e371970f7865353b0caa8b02fb280ff`，分支 `feat/live-mesh-fill-v1`。
-- [云端构建与验证 38682000368](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38682000368)。包大小 7,265,723 字节，SHA-256 `05727186518c06e9b923c668efb7ebd448d5c095f02ab53209f52871b8f957ba`。
-- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v6.ipa`，已与云端元数据及包内 plist 核对。
+- 文件：`Core-17.0-21A327-TrollStore-model-render-v7.ipa`
+- Bundle build：`34`；`CoreModelRenderVersion=7`；采集协议仍为 `7`。
+- 源码：`00adb4abea017a9790c57bd9cedf41c304788620`，分支 `feat/live-mesh-fill-v1`。
+- [云端构建与验证 38685091656](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38685091656)。包大小 7,266,578 字节，SHA-256 `0502f78f10fd4bfc622966292366d389d5ef1c6f2deb40a3b1f8d417a51d17a3`。
+- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v7.ipa`，已与云端元数据及包内 plist 核对。
 
 正式 Release 仍是 v19；单独的 `model-capture-v7.ipa` 只采集输入，不含此绘制路径。
 
@@ -87,15 +87,25 @@ build 32 六份文件记录 68 次查询未完成、0 次矩形超限、46 组�
 
 代码中发现逐顶点反复读取对象属性及逐三角形索引解码/追加；同一人物的后续部件读取还会受到前面部件 CPU 蒙皮时间的影响。build 33 先采集本帧选中部件的状态和姿态，再进行蒙皮；载入时缓存 uint32 三角形索引，顶点和三角形循环使用预先取得的原始指针及数量。每帧仍依据顶点有效性过滤三角形，蒙皮数学和像素判断不变。新增 gather/skinning 子阶段耗时及 17 类载入失败明细；不能从 build 32 的单个不可用计数断言全部失败都由读取限时导致。
 
-[build 33 云端 38682000368](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38682000368) 在源码 `4bf3e56` 全部通过。新增场景确认前面部件的慢 CPU 投影不会使后续附件读取被拒绝，16/32 位索引正确解码且后续帧不重复解码，无法投影顶点仍会排除对应三角形，读预算失败归类正确。全部既有 ASan/UBSan、捕获/蒙皮/反射、41 项 Python、6 项 Node、签名和 ARM64 入口验证通过。尚无 build 33 手机报告，不能宣称模型阶段卡顿或轮廓精度已解决。
+[build 33 云端 38682000368](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38682000368) 在源码 `4bf3e56` 全部通过。新增场景确认前面部件的慢 CPU 投影不会使后续附件读取被拒绝，16/32 位索引正确解码且后续帧不重复解码，无法投影顶点仍会排除对应三角形，读预算失败归类正确。全部既有 ASan/UBSan、捕获/蒙皮/反射、41 项 Python、6 项 Node、签名和 ARM64 入口验证通过。后续实机数据见下一节。
+
+## build 33 顶点布局与 build 34
+
+build 33 的 CPU 蒙皮单次最长 3.826 ms，累计 0.835 秒；gather 累计 8.957 秒，单次最长 31.274 ms。60 次查询未完成、0 次矩形超限，实际填充 1,149 帧。3,522 次网格载入不可用全部归为 `layout`，读预算失败为 0。因此不能继续把这些不可用记录归为读取截止时间问题。
+
+原始采集确认 `F_Head_03_LOD` 使用 28 字节顶点步长、`SK_Parachute3_XXG_LOD` 三个 LOD 使用 32 字节；每个已捕获顶点的 float3(+8) 位置都在资源边界内，权重和为 255，索引与骨骼表已有数据。旧载入器只允许 24 字节，明确会拒绝这些模型。完整证据和推断边界见[本轮顶点布局排查](build33-vertex-layouts.md)。
+
+build 34 载入和蒙皮按 24/28/32 字节实际步长寻址。新增布局须通过全部位置的资源边界校验，原权重、分区、索引和骨骼表检查保留；离线预览同步支持。组件状态按反射字段所需范围读取，未知 schema 回退完整前缀，高偏移字段扩大范围；新增各步长载入次数和状态读取字节指标。
+
+[build 34 云端 38685091656](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38685091656) 在源码 `00adb4a` 全部通过。三种布局在生产合成场景中得到相同红白像素和轮廓覆盖，额外尾部不参与位置解释；越界位置、未知 36 字节布局拒绝；高反射字段及完整前缀回退正常。原有 ASan/UBSan、41 项 Python、更新后的 7 项 Node、签名/负载和 ARM64 入口检查全部通过。尚无 build 34 手机报告，不能宣称缺失部件或精确边界已全部解决。
 
 ## 仍需完成
 
-- 验证 build 33 的 gather/skinning 耗时、17 类载入失败原因、查询跳帧及部件显示，核对模型阶段是否下降、附件是否更完整；同时继续追踪预测/当前 LOD，当前级别仍可能需要游戏特定的渲染 LOD 来源。
+- 验证 build 34 的 28/32 字节网格是否载入并正确补齐头部/附件，核对 gather 耗时、状态读取字节、剩余失败原因和查询跳帧；同时继续追踪预测/当前 LOD，当前级别仍可能需要游戏特定的渲染 LOD 来源。
 - 对齐完整高细节人体及实际可见服装、头发；独立动画、GPU 服装/形态变形、材质透明裁剪均未验证。
 - Master Pose 缺失骨骼采用参考姿态回退并计数。[Epic 的模块化人物说明](https://dev.epicgames.com/documentation/en-us/unreal-engine/working-with-modular-characters?application_version=4.27) 支持标准引擎的该行为，但不能证明此定制游戏没有额外处理。
 - Core 本地几何可能与游戏最终渲染几何、透明材质和动态物体不同；没有游戏 GPU 场景深度，不能保证墙沿红白界线逐像素重合。
 - 多次远程读取与相机没有游戏帧编号或原子采样证明；快速移动和转向时的同步误差仍需实机对照。
 - build 28 的 launchd 首次异常消息超时仍存在；成功显示填充不能证明初始化已完全稳定。
 
-`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 33、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 33/`；关键校验包括 `render_version=6`、`gather_stage_*`、`skinning_stage_*`、`mesh_load_failure_reasons`、查询未完成计数及实际部件/边缘显示。
+`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 34、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 34/`；关键校验包括 `render_version=7`、`mesh_vertex_stride_loads`、`mesh_load_failure_reasons`、`component_state_bytes`、gather 耗时及实际头部/附件和边界显示。
