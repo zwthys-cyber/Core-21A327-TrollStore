@@ -33,6 +33,12 @@ test('hierarchical bind and correct snapshot-local asset lookup',()=>{
   const rest=buildFrame(report,0),posed=buildFrame(report,0,0,true);assert.equal(rest.meshes.length,1);assert.equal(posed.errors.length,0);
   close(rest.meshes[0].positions[0],[10,5,0]);close(posed.meshes[0].positions[0],[20,5,0]);assert.equal(posed.meshes[0].triangles.length,1);
 });
+test('observed 28/32-byte vertex records preserve positions and require valid bounds',()=>{
+  for(const stride of [28,32]){const {sample,resource}=fixture(),source=Buffer.from(sample.vertex_base64,'base64'),expected=decodeMesh(sample,resource).positions,bytes=Buffer.alloc(3*stride,0xD3);
+    for(let i=0;i<3;i++)source.copy(bytes,i*stride,i*24,i*24+20);Object.assign(sample.descriptor,{vertex_stride:stride,asset_bounds_shape_valid:true,asset_bounds_origin:[0,0,0],asset_bounds_extent:[20,20,20]});sample.vertex_base64=b64(bytes);
+    assert.deepEqual(decodeMesh(sample,resource).positions,expected);bytes.writeFloatLE(1000,8);sample.vertex_base64=b64(bytes);assert.throws(()=>decodeMesh(sample,resource),/bounds/);
+    sample.descriptor.asset_bounds_shape_valid=false;assert.throws(()=>decodeMesh(sample,resource),/bounds/);sample.descriptor.vertex_stride=36;assert.throws(()=>decodeMesh(sample,resource),/layout/);}
+});
 test('weighted unknown bones omit vertices and triangles without renormalization',()=>{
   const {report,frame,component,map}=fixture();frame.gpu_stream_probe.descriptors[0].asset_candidate_index=1;map.writeInt32LE(-1,4);component.master_bone_map_candidates[0].sample_base64=b64(map);
   const model=buildFrame(report,0,0,true);assert.equal(model.meshes[0].unknown,3);assert.equal(model.meshes[0].triangles.length,0);

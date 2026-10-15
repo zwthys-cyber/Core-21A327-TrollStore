@@ -262,7 +262,7 @@ def main():
     if args.model_capture:
         info.update(CFBundleVersion="27", CoreModelCaptureVersion="7")
     if args.model_render:
-        info.update(CFBundleVersion="33",CoreModelRenderVersion="6")
+        info.update(CFBundleVersion="34",CoreModelRenderVersion="7")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -285,7 +285,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ("Core-17.0-21A327-TrollStore-model-render-v6.ipa" if args.model_render else "Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
+    artifact = dist / ("Core-17.0-21A327-TrollStore-model-render-v7.ipa" if args.model_render else "Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -338,7 +338,7 @@ def main():
         entry_return="ARM64 veneer passes original LR in x4 before the C prologue",
         entry_diagnostics="all forwarding entries, unmatched callers, expected reader calls, disabled and recursive reader calls",
         live_mesh_binding_verified=False, full_render_mesh_verified=False, silhouette_implemented=args.model_render)
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=6 if args.model_render else 0,
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=7 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,
@@ -349,6 +349,8 @@ def main():
         mesh_stage_subtimings=["state/mesh/pose gathering","CPU skinning and projection"],pose_read_policy="gather selected part data before CPU skinning; CPU work cannot consume a later part's read deadline",
         static_triangle_indices="decode validated 16/32-bit indices once into cached uint32 arrays",geometry_loop_policy="cache raw pointers and scalar counts; no per-vertex property lookup or per-triangle NSMutableData append",
         mesh_load_failure_reasons=True,
+        supported_vertex_strides=[24,28,32],padded_vertex_validation="float3 at byte 8; all positions must pass asset bounds; weights/index/section palettes retain original validation",
+        component_state_policy="read through highest reflected required field, with 4096-byte fallback before schema discovery; metadata reuse reads fixed 0x830 prefix",
         incomplete_frame_policy="skip complete fill if pixel classification or rectangle budget is incomplete",
         native_batch_intersection="0x2AD2A0",native_batch_enabled=True,native_ray_result_bytes=96,native_ray_result_alignment=16,
         pixel_query_entry="batch per scene using corrected 96-byte ABI, original E0BE8/E0CF0 wrappers for parity and fallback",

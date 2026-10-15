@@ -39,7 +39,7 @@ export function referenceSkeleton(resource) {
 }
 export function decodeMesh(sample,resource) {
   const d=sample.descriptor,n=d.vertex_count,vertices=decode64(sample.vertex_base64),weights=decode64(sample.weight_base64);
-  if(n<1||n>16384||d.vertex_stride!==24||d.weight_stride!==8||vertices.length!==n*24||weights.length!==n*8) throw Error('Unsupported vertex/weight layout');
+  if(n<1||n>16384||![24,28,32].includes(d.vertex_stride)||d.weight_stride!==8||vertices.length!==n*d.vertex_stride||weights.length!==n*8) throw Error('Unsupported vertex/weight layout');
   const width=d.index_width_low_byte,arrays=sample.index_array_candidates.filter(a=>a.source_prefix_offset===72&&a.stride_hypothesis===width&&a.index_range_shape_valid);
   if(arrays.length!==1||![2,4].includes(width)) throw Error('Missing exact index array');
   const indexBytes=decode64(arrays[0].sample_base64),iv=view(indexBytes),indices=[];
@@ -64,8 +64,11 @@ export function decodeMesh(sample,resource) {
     sections.push({start,tri,first,count,palette});nextV+=count;nextI+=tri*3;
   }
   if(nextV!==n||nextI!==indices.length) throw Error('Mesh range coverage incomplete');
-  const vv=view(vertices),positions=Array.from({length:n},(_,i)=>[0,1,2].map(k=>vv.getFloat32(i*24+8+k*4,true)));
+  const vv=view(vertices),positions=Array.from({length:n},(_,i)=>[0,1,2].map(k=>vv.getFloat32(i*d.vertex_stride+8+k*4,true)));
   if(positions.some(p=>!finite(p))) throw Error('Invalid vertex positions');
+  if(d.vertex_stride!==24){const origin=d.asset_bounds_origin,extent=d.asset_bounds_extent;
+    if(!d.asset_bounds_shape_valid||!Array.isArray(origin)||!Array.isArray(extent)||origin.length!==3||extent.length!==3||!finite(origin)||!finite(extent)||extent.some(e=>e<0))throw Error('Unverified position bounds for padded vertex layout');
+    if(positions.some(p=>p.some((v,k)=>Math.abs(v-origin[k])>extent[k]+Math.max(.02,extent[k]*.0001))))throw Error('Padded vertex positions exceed asset bounds');}
   return {positions,weights,indices,sections,active};
 }
 function sameWorld(a,b) { return a.every((v,i)=>Math.abs(v-b[i])<.05); }

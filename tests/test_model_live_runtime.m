@@ -10,7 +10,7 @@ static const uint64_t ChildComponent=0x200030000ULL,ChildPose=0x200040000ULL,Chi
 static const uint64_t RenderAddress=0x500000000ULL,LODsAddress=0x500010000ULL,LODAddress=0x500020000ULL,IndexAddress=0x500030000ULL,SectionsAddress=0x500040000ULL;
 static uint8_t Context[2048],ComponentData[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256],SceneData[3][160];
 static uint8_t AssetData[1048],RenderData[16],LODArray[8],LODData[1024],IndexData[112],SectionsData[256];
-static uint8_t VertexData[72],WeightData[24];static uint16_t TriangleData[3]={0,1,2},BonePalette=0;
+static uint8_t VertexData[96],WeightData[24];static uint16_t TriangleData[3]={0,1,2},BonePalette=0;static uint32_t VertexStride=24;
 static uint8_t ChildData[4096];static uint32_t WideTriangleData[3]={0,1,2};
 static uint64_t TestTime=10000000000ULL;
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
@@ -42,7 +42,7 @@ static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzer
     if(address>=ChildComponent&&size<=sizeof(ChildData)&&address-ChildComponent<=sizeof(ChildData)-size){memcpy(out,ChildData+address-ChildComponent,size);return true;}
     if(ResourceMemory&&!FailResourceRead){const uint64_t addresses[]={Asset,RenderAddress,LODsAddress,LODAddress,IndexAddress,SectionsAddress};const void *arrays[]={AssetData,RenderData,LODArray,LODData,IndexData,SectionsData};const size_t sizes[]={sizeof(AssetData),sizeof(RenderData),sizeof(LODArray),sizeof(LODData),sizeof(IndexData),sizeof(SectionsData)};
         for(unsigned i=0;i<6;i++)if(address==addresses[i]&&size<=sizes[i]){memcpy(out,arrays[i],size);return true;}
-        if(address==0x600000000ULL&&size==72){memcpy(out,VertexData,72);return true;}if(address==0x600010000ULL&&size==24){memcpy(out,WeightData,24);return true;}
+        if(address==0x600000000ULL&&size==(size_t)VertexStride*3){memcpy(out,VertexData,size);return true;}if(address==0x600010000ULL&&size==24){memcpy(out,WeightData,24);return true;}
         if(address==0x600020000ULL&&size==6){memcpy(out,TriangleData,6);return true;}if(address==0x600020000ULL&&size==12){memcpy(out,WideTriangleData,12);return true;}if(address==0x600030000ULL&&size==2){memcpy(out,&BonePalette,2);return true;}}
     if((address==GamePose||address==ChildPose)&&size==48){CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};memcpy(out,&t,sizeof(t));return true;}return false;
 }
@@ -65,7 +65,7 @@ static void *List(void){return DrawList;}
 static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y>points[1].y);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
-    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=false;
+    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=false;
     memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
     CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
@@ -78,7 +78,7 @@ static void Setup(void){
     Context[0x23]=1;float screen[2]={8,8},fov=90;memcpy(Context+4,screen,8);memcpy(Context+0x1F4+48,&fov,4);
     uintptr_t begin=(uintptr_t)ActorRecord,end=begin+sizeof(ActorRecord);memcpy(Context+0x3F0,&begin,8);memcpy(Context+0x3F8,&end,8);uint32_t localTeam=1,team=2;float distance=10;memcpy(Context+0x3A8,&localTeam,4);memcpy(ActorRecord,&GameActor,8);memcpy(ActorRecord+8,&team,4);memcpy(ActorRecord+0x40,&distance,4);memcpy(SourceRecord,&GameActor,8);DrawList[0x30]=4;
     CMFSchema schema={0};schema.visible=(CMFBool){0x100,1,true};schema.hidden=(CMFBool){0x101,1,true};schema.predicted_found=true;schema.predicted_lod=0x900;CMLSchemas[@(GameClass)]=[NSData dataWithBytes:&schema length:sizeof(schema)];CMLSchemaStore.schemas=CMLSchemas;
-    CMLMesh *mesh=[CMLMesh new];mesh.key=(CMGKey){.asset=Asset};mesh.vertices=3;mesh.bones=1;mesh.sectionCount=1;mesh.indexCount=3;mesh.indexWidth=2;
+    CMLMesh *mesh=[CMLMesh new];mesh.key=(CMGKey){.asset=Asset};mesh.vertices=3;mesh.vertexStride=24;mesh.bones=1;mesh.sectionCount=1;mesh.indexCount=3;mesh.indexWidth=2;
     uint8_t vertices[72]={0},weights[24]={0};const CMVec3 positions[3]={{10,-7.5f,7.5f},{10,7.5f,7.5f},{10,-7.5f,-7.5f}};for(unsigned i=0;i<3;i++){memcpy(vertices+i*24+8,&positions[i],12);weights[i*8+4]=255;}
     memcpy(VertexData,vertices,72);memcpy(WeightData,weights,24);
     uint16_t indices[]={0,1,2},palettes[256]={0};CMSSection section={.triangle_count=1,.vertex_count=3,.bone_count=1};CMSMatrix inverse=CMSIdentity();uint32_t info[4]={100,0,UINT32_MAX,0};
@@ -95,7 +95,7 @@ static void Array(void *data,unsigned offset,uint64_t address,int32_t count){mem
 static CMLTarget *Reusable(void){
     ResourceMemory=true;memset(AssetData,0,sizeof(AssetData));memset(RenderData,0,sizeof(RenderData));memset(LODData,0,sizeof(LODData));memset(IndexData,0,sizeof(IndexData));memset(SectionsData,0,sizeof(SectionsData));
     CMLTarget *target=CMLTargets.firstObject;NSMutableData *binding=[target.binding mutableCopy],*names=[target.names mutableCopy],*gpu=[NSMutableData dataWithLength:sizeof(CMGDescriptors)];CMBBinding *b=binding.mutableBytes;CMNNames *n=names.mutableBytes;
-    CMRReference *asset=&b->assets.references[0];asset->header=target.identity;asset->header.name_index=200;asset->header.internal_index=8;asset->class_header_valid=true;asset->class_header.name_index=999;asset->prefix_bytes=sizeof(AssetData);memcpy(AssetData,&asset->header,40);memcpy(AssetData+0x38,&RenderAddress,8);memcpy(asset->prefix,AssetData,sizeof(AssetData));
+    CMRReference *asset=&b->assets.references[0];asset->header=target.identity;asset->header.name_index=200;asset->header.internal_index=8;asset->class_header_valid=true;asset->class_header.name_index=999;asset->prefix_bytes=sizeof(AssetData);memcpy(AssetData,&asset->header,40);memcpy(AssetData+0x38,&RenderAddress,8);float extent[3]={20,20,20};memcpy(AssetData+0x7C,extent,12);memcpy(asset->prefix,AssetData,sizeof(AssetData));
     n->count=1;n->names[0].index=999;n->names[0].valid=true;memcpy(n->names[0].text,"SkeletalMesh",13);
     Array(RenderData,0,LODsAddress,1);memcpy(LODArray,&LODAddress,8);Array(LODData,0,SectionsAddress,1);LODData[0x50]=2;memcpy(LODData+0x58,&IndexAddress,8);
     uint32_t count=3,vertices=24,weights=8;uint64_t vertex=0x600000000ULL,weight=0x600010000ULL,index=0x600020000ULL;
@@ -112,8 +112,13 @@ static void AddChild(CMLTarget *target) {
     NSMutableData *binding=[target.binding mutableCopy],*refs=[target.refs mutableCopy],*gpu=[target.gpu mutableCopy];CMBBinding *b=binding.mutableBytes;CMRReferences *r=refs.mutableBytes;CMGDescriptors *g=gpu.mutableBytes;
     b->assets.count=2;b->assets.references[1].address=ChildAsset;b->link_count=2;b->links[1]=(CMBLink){ChildComponent,ChildAsset,1};r->count=1;r->references[0].address=ChildComponent;r->references[0].header=header;r->references[0].prefix_bytes=4096;
     g->count=2;g->descriptors[1]=g->descriptors[0];g->descriptors[1].asset_index=1;g->descriptors[1].asset_address=ChildAsset;target.binding=binding;target.refs=refs;target.gpu=gpu;
-    CMLMesh *source=target.meshes.firstObject,*child=[CMLMesh new];child.key=(CMGKey){.asset=ChildAsset};child.vertices=3;child.bones=1;child.sectionCount=1;child.indexCount=3;child.indexWidth=2;
+    CMLMesh *source=target.meshes.firstObject,*child=[CMLMesh new];child.key=(CMGKey){.asset=ChildAsset};child.vertices=3;child.vertexStride=24;child.bones=1;child.sectionCount=1;child.indexCount=3;child.indexWidth=2;
     child.vertexData=source.vertexData;child.weightData=source.weightData;child.indexData=source.indexData;child.triangleData=source.triangleData;child.sectionData=source.sectionData;child.paletteData=source.paletteData;child.inverseData=source.inverseData;child.boneInfo=source.boneInfo;target.meshes=@[source,child];
+}
+static CMLTarget *WithStride(uint32_t stride) {
+    Setup();CMLTarget *target=Reusable();ReferenceEvidence(target);CMLMesh *original=target.meshes.firstObject;
+    memset(VertexData,0xD3,sizeof(VertexData));for(unsigned i=0;i<3;i++)memcpy(VertexData+(size_t)i*stride,(const uint8_t *)original.vertexData.bytes+i*24,20);VertexStride=stride;
+    NSMutableData *gpu=[target.gpu mutableCopy];((CMGDescriptors *)gpu.mutableBytes)->descriptors[0].vertex_stride=stride;memcpy(LODData+0xD0,&stride,4);target.gpu=gpu;target.meshes=@[];return target;
 }
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
 int main(void){@autoreleasepool {
@@ -124,6 +129,12 @@ int main(void){@autoreleasepool {
     Setup();UnreadableScene=true;Draw();assert(!Fills&&SceneLocks==1&&!RawCalls);
     Setup();uintptr_t noHandle=0;memcpy(SceneData[1]+8,&noHandle,8);Draw();assert(Fills==6&&SceneLocks==3&&RawCalls==36);
     Setup();AddChild(CMLTargets.firstObject);SlowProjection=true;uint64_t projectedBefore=atomic_load(&CMLStats.meshFrames);Draw();assert(Fills==6&&Reads==4&&atomic_load(&CMLStats.meshFrames)==projectedBefore+2); // CPU time on the first mesh cannot expire the second mesh's state/pose reads.
+    for(uint32_t stride=24;stride<=32;stride+=4){CMLTarget *target=WithStride(stride);uint64_t white=atomic_load(&CMLStats.white),red=atomic_load(&CMLStats.red);Draw();CMLMesh *mesh=target.meshes.firstObject;
+        assert(Fills==6&&mesh.vertexStride==stride&&mesh.vertexData.length==stride*3&&atomic_load(&CMLStats.white)==white+15&&atomic_load(&CMLStats.red)==red+6);unsigned reads=Reads;Draw();assert(Fills==12&&Reads==reads+2);}
+    CMLTarget *badPositions=WithStride(28);float outside=1000;memcpy(VertexData+8,&outside,4);uint64_t positionsRejected=atomic_load(&CMLLoadFailures[CML_LOAD_POSITION_SHAPE]);Draw();assert(!Fills&&!badPositions.meshes.count&&atomic_load(&CMLLoadFailures[CML_LOAD_POSITION_SHAPE])==positionsRejected+1);
+    Setup();CMLTarget *unsupported=Reusable();ReferenceEvidence(unsupported);CMGDescriptor unsupportedDescriptor=((const CMGDescriptors *)unsupported.gpu.bytes)->descriptors[0];unsupportedDescriptor.vertex_stride=36;unsigned layoutReads=Reads;uint64_t layoutRejected=atomic_load(&CMLLoadFailures[CML_LOAD_LAYOUT]);assert(!CMLLoadMesh(&unsupportedDescriptor,CMEResourceAt(unsupported.evidence.bytes,0))&&Reads==layoutReads&&atomic_load(&CMLLoadFailures[CML_LOAD_LAYOUT])==layoutRejected+1);
+    Setup();CMLTarget *prefixTarget=CMLTargets.firstObject;assert(CMLStateBytes(GameClass,4096)==0x910);NSMutableData *schemaBytes=[CMLSchemas[@(GameClass)] mutableCopy];CMFSchema *bounded=schemaBytes.mutableBytes;bounded->hide_skin=(CMFBool){0x950,8,true};CMLSchemas[@(GameClass)]=schemaBytes;assert(CMLStateBytes(GameClass,4096)==0x960);
+    NSMutableDictionary *state=[NSMutableDictionary dictionary];assert(CMLState(prefixTarget,0,state).length==0x960);bounded->predicted_lod=4092;CMLSchemas[@(GameClass)]=schemaBytes;assert(CMLStateBytes(GameClass,4096)==4096);[CMLSchemas removeAllObjects];assert(CMLStateBytes(GameClass,4096)==4096);
     Setup();CMLTarget *reused=Reusable();assert(CMLReuseMetadata(reused)&&Reads==7); // No bone-name, reference-pose, vertex or weight reads.
     LODData[0x2A0]=1;assert(CMLReuseMetadata(reused)); // Unrelated mutable GPU state must not trigger a reload.
     LODData[0xC8]^=8;assert(!CMLReuseMetadata(reused));LODData[0xC8]^=8;
@@ -178,5 +189,5 @@ int main(void){@autoreleasepool {
     NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:file]);pthread_mutex_unlock(&CMLMutex);
     NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];NSArray *reportedSchemas=status[@"reflected_component_schemas"];
     assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]&&reportedSchemas.count==1&&![status[@"schema_snapshot_busy"] boolValue]&&[status[@"native_ray_result_bytes"] intValue]==96);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
-    puts("PASS: original frame forwarding; sparse exact red/white fill; prepared rays, scene locks and 96-byte tail writes; raw/wrapper parity; metadata invalidation; complete part reads before slow CPU projection; cached 16/32-bit triangle decoding; read-budget failure reasons; lazy selected LOD and cross-slot reuse; hidden master bones; actor snapshots; pinned cache; malformed/budget guards; pose, errno and status");
+    puts("PASS: original frame forwarding; exact red/white fill for 24/28/32-byte vertices with hostile tail data; new layouts require position bounds; reflected state prefixes retain high fields and full-prefix fallback; prepared rays and 96-byte tail writes; metadata/part deadlines; cached triangles; lazy LOD and shared assets; hidden masters; actor/cache/budget guards; pose, errno and status");
 }return 0;}
