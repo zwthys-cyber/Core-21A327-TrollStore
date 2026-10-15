@@ -6,10 +6,12 @@
 #include <errno.h>
 static const uintptr_t TestBase=0x100000000ULL;
 static const uint64_t GameComponent=0x200001000ULL,GamePose=0x200010000ULL,GameActor=0x200020000ULL,Asset=0x300000000ULL,GameClass=0x400000000ULL;
+static const uint64_t RenderAddress=0x500000000ULL,LODsAddress=0x500010000ULL,LODAddress=0x500020000ULL,IndexAddress=0x500030000ULL,SectionsAddress=0x500040000ULL;
 static uint8_t Context[2048],ComponentData[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256],SceneData[3][160];
+static uint8_t AssetData[1048],RenderData[16],LODArray[8],LODData[1024],IndexData[112],SectionsData[256];
 static uint64_t TestTime=10000000000ULL;
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
-static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene;
+static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene,ResourceMemory,FailResourceRead,ReallocatedActors;
 static int TestClock(clockid_t clock,struct timespec *t){(void)clock;if(FailQueryBudget)TestTime+=20000000ULL;t->tv_sec=TestTime/1000000000ULL;t->tv_nsec=TestTime%1000000000ULL;return 0;}
 static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,vm_address_t dest,vm_size_t *copied){
     (void)task;uint64_t value=0;
@@ -20,6 +22,7 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
     else if(address>=(uintptr_t)SceneData&&address<(uintptr_t)SceneData+sizeof(SceneData)){
         if(UnreadableScene||size!=8||(address-(uintptr_t)SceneData)%160!=8)return KERN_INVALID_ADDRESS;
         memcpy((void *)dest,(void *)address,8);*copied=8;return KERN_SUCCESS;}
+    else if(ReallocatedActors&&address==(uintptr_t)Context+0x3F0&&size==16){memset((void *)dest,0,size);*copied=size;return KERN_SUCCESS;}
     else {const void *arrays[]={Context,ActorRecord,SourceRecord,Frame,DrawList};const size_t sizes[]={sizeof(Context),sizeof(ActorRecord),sizeof(SourceRecord),sizeof(Frame),sizeof(DrawList)};
         for(unsigned i=0;i<5;i++)if(address>=(uintptr_t)arrays[i]&&size<=sizes[i]&&address-(uintptr_t)arrays[i]<=sizes[i]-size){memcpy((void *)dest,(void *)address,size);*copied=size;return KERN_SUCCESS;}return KERN_INVALID_ADDRESS;}
     if(size>8)return KERN_INVALID_ADDRESS;memcpy((void *)dest,&value,size);*copied=size;return KERN_SUCCESS;
@@ -33,6 +36,8 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
 #undef clock_gettime
 static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzeroCapture(out,size,0,address,TestBase+0xE1960);
     if(address>=GameComponent&&size<=sizeof(ComponentData)&&address-GameComponent<=sizeof(ComponentData)-size){memcpy(out,ComponentData+address-GameComponent,size);return true;}
+    if(ResourceMemory&&!FailResourceRead){const uint64_t addresses[]={Asset,RenderAddress,LODsAddress,LODAddress,IndexAddress,SectionsAddress};const void *arrays[]={AssetData,RenderData,LODArray,LODData,IndexData,SectionsData};const size_t sizes[]={sizeof(AssetData),sizeof(RenderData),sizeof(LODArray),sizeof(LODData),sizeof(IndexData),sizeof(SectionsData)};
+        for(unsigned i=0;i<6;i++)if(address==addresses[i]&&size<=sizes[i]){memcpy(out,arrays[i],size);return true;}}
     if(address==GamePose&&size==48){CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};memcpy(out,&t,sizeof(t));return true;}return false;
 }
 static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){assert(camera==Context+0x1F4);CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(WrongProjection)p.xy.x+=10;return p.xy;}
@@ -51,14 +56,14 @@ static void Intersect(void *handle,CMRayHit *ray,void *context){unsigned slot=(u
     if(BadRay)ray->far_distance=NAN;if(WrongRaw)ray->geometry_id=123;}
 static void Original(void *p){assert(p==Context);OriginalCalls++;}
 static void *List(void){return DrawList;}
-static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y==points[1].y+1);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
+static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y>points[1].y);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
-    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=false;
+    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=false;
     memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
     CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
-    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLCachedBytes=0;
+    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLLoadingMeshes=nil;CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLCachedBytes=0;
     CMBase=TestBase;CMReadRemote=Reader;CMProject=Project;CMLock=Lock;CMUnlock=Unlock;for(unsigned i=0;i<3;i++)CMRayFunctions[i]=Ray;
     CMLExpectedContext=(uintptr_t)Context;CMLOriginalDraw=Original;CMLGetDrawList=List;CMLPolygon=Polygon;
     CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=7;h.name_index=100;memcpy(ComponentData,&h,40);
@@ -72,24 +77,54 @@ static void Setup(void){
     uint16_t indices[]={0,1,2},palettes[256]={0};CMSSection section={.triangle_count=1,.vertex_count=3,.bone_count=1};CMSMatrix inverse=CMSIdentity();uint32_t info[4]={100,0,UINT32_MAX,0};
     mesh.vertexData=[NSData dataWithBytes:vertices length:72];mesh.weightData=[NSData dataWithBytes:weights length:24];mesh.indexData=[NSData dataWithBytes:indices length:6];mesh.sectionData=[NSData dataWithBytes:&section length:sizeof(section)];mesh.paletteData=[NSData dataWithBytes:palettes length:512];mesh.inverseData=[NSData dataWithBytes:&inverse length:sizeof(inverse)];mesh.boneInfo=[NSData dataWithBytes:info length:16];
     CMLTarget *target=[CMLTarget new];target.component=GameComponent;target.actor=GameActor;target.asset=Asset;target.poseTime=target.metadataTime=TestTime;target.count=1;target.stride=48;target.transform=identity;
-    uint8_t raw[48]={0};memcpy(raw,&identity,44);target.pose=[NSData dataWithBytes:raw length:48];target.meshes=@[mesh];
+    uint8_t raw[48]={0};memcpy(raw,&identity,44);target.pose=[NSData dataWithBytes:raw length:48];target.meshes=@[mesh];target.identity=h;CMLReadDeadline=TestTime+12000000;CMLReads=0;target.topology=CMLTopology(ComponentData);
     NSMutableData *gpu=[NSMutableData dataWithLength:sizeof(CMGDescriptors)],*binding=[NSMutableData dataWithLength:sizeof(CMBBinding)],*refs=[NSMutableData dataWithLength:sizeof(CMRReferences)],*names=[NSMutableData dataWithLength:sizeof(CMNNames)];
     CMGDescriptors *g=gpu.mutableBytes;g->count=1;g->descriptors[0].asset_address=Asset;g->descriptors[0].asset_index=0;g->descriptors[0].lod_count=2;g->descriptors[0].name_index=100;
     CMBBinding *b=binding.mutableBytes;b->assets.count=1;b->assets.references[0].address=Asset;b->link_count=1;b->links[0]=(CMBLink){GameComponent,Asset,0};
     target.gpu=gpu;target.binding=binding;target.refs=refs;target.names=names;[CMLTargets addObject:target];
 }
+static void Array(void *data,unsigned offset,uint64_t address,int32_t count){memcpy((uint8_t *)data+offset,&address,8);memcpy((uint8_t *)data+offset+8,&count,4);memcpy((uint8_t *)data+offset+12,&count,4);}
+static CMLTarget *Reusable(void){
+    ResourceMemory=true;memset(AssetData,0,sizeof(AssetData));memset(RenderData,0,sizeof(RenderData));memset(LODData,0,sizeof(LODData));memset(IndexData,0,sizeof(IndexData));memset(SectionsData,0,sizeof(SectionsData));
+    CMLTarget *target=CMLTargets.firstObject;NSMutableData *binding=[target.binding mutableCopy],*names=[target.names mutableCopy],*gpu=[NSMutableData dataWithLength:sizeof(CMGDescriptors)];CMBBinding *b=binding.mutableBytes;CMNNames *n=names.mutableBytes;
+    CMRReference *asset=&b->assets.references[0];asset->header=target.identity;asset->header.name_index=200;asset->header.internal_index=8;asset->class_header_valid=true;asset->class_header.name_index=999;asset->prefix_bytes=sizeof(AssetData);memcpy(AssetData,&asset->header,40);memcpy(AssetData+0x38,&RenderAddress,8);memcpy(asset->prefix,AssetData,sizeof(AssetData));
+    n->count=1;n->names[0].index=999;n->names[0].valid=true;memcpy(n->names[0].text,"SkeletalMesh",13);
+    Array(RenderData,0,LODsAddress,1);memcpy(LODArray,&LODAddress,8);Array(LODData,0,SectionsAddress,1);LODData[0x50]=2;memcpy(LODData+0x58,&IndexAddress,8);
+    uint32_t count=3,vertices=24,weights=8;uint64_t vertex=0x600000000ULL,weight=0x600010000ULL,index=0x600020000ULL;
+    memcpy(LODData+0x60,&count,4);memcpy(LODData+0xC8,&vertex,8);memcpy(LODData+0xD0,&vertices,4);memcpy(LODData+0xD4,&count,4);memcpy(LODData+0x148,&weight,8);memcpy(LODData+0x150,&weights,4);memcpy(LODData+0x154,&count,4);Array(IndexData,0x48,index,3);
+    CMGCollect(b,n,Reader,gpu.mutableBytes);assert(((CMGDescriptors *)gpu.mutableBytes)->count==1);target.binding=binding;target.names=names;target.gpu=gpu;Reads=0;return target;
+}
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
 int main(void){@autoreleasepool {
-    Setup();Draw();assert(OriginalCalls==1&&Fills==9&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==51);
-    Setup();BlockScene=2;Draw();assert(Fills==9&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==63);
-    Setup();CMLIntersect=NULL;Draw();assert(Fills==9&&!SceneLocks&&!RawCalls);
-    Setup();WrongRaw=true;Draw();assert(Fills==9&&WhiteFills>0&&RedFills>0&&SceneLocks==1&&atomic_load(&CMLBatchDisabled));
+    Setup();Draw();assert(OriginalCalls==1&&Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==51);
+    Setup();BlockScene=2;Draw();assert(Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==63);
+    Setup();CMLIntersect=NULL;Draw();assert(Fills==6&&!SceneLocks&&!RawCalls);
+    Setup();WrongRaw=true;Draw();assert(Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==1&&atomic_load(&CMLBatchDisabled));
     Setup();UnreadableScene=true;Draw();assert(!Fills&&SceneLocks==1&&!RawCalls);
-    Setup();uintptr_t noHandle=0;memcpy(SceneData[1]+8,&noHandle,8);Draw();assert(Fills==9&&SceneLocks==3&&RawCalls==36);
+    Setup();uintptr_t noHandle=0;memcpy(SceneData[1]+8,&noHandle,8);Draw();assert(Fills==6&&SceneLocks==3&&RawCalls==36);
+    Setup();CMLTarget *reused=Reusable();assert(CMLReuseMetadata(reused)&&Reads==7); // No bone-name, reference-pose, vertex or weight reads.
+    LODData[0x2A0]=1;assert(CMLReuseMetadata(reused)); // Unrelated mutable GPU state must not trigger a reload.
+    LODData[0xC8]^=8;assert(!CMLReuseMetadata(reused));LODData[0xC8]^=8;
+    IndexData[0x48]^=8;assert(!CMLReuseMetadata(reused));IndexData[0x48]^=8;
+    SectionsData[20]=1;assert(!CMLReuseMetadata(reused));SectionsData[20]=0;
+    AssetData[0x38]^=8;assert(!CMLReuseMetadata(reused));AssetData[0x38]^=8;
+    AssetData[0x1C]=1;assert(!CMLReuseMetadata(reused));AssetData[0x1C]=0;
+    ComponentData[0x1C]=1;assert(!CMLReuseMetadata(reused));ComponentData[0x1C]=0;
+    ComponentData[0x178]=1;assert(!CMLReuseMetadata(reused));ComponentData[0x178]=0;
+    FailResourceRead=true;assert(!CMLReuseMetadata(reused));FailResourceRead=false;
+    Setup();reused=Reusable();CMLTarget *deferred=[CMLTarget new];deferred.meshes=reused.meshes;deferred.metadataTime=reused.metadataTime=TestTime-1000000001ULL;bool checked=false;
+    uint64_t checks=atomic_load(&CMLStats.metadataChecks);assert(CMLPrepareMetadata(reused,TestTime,&checked)&&checked);assert(CMLPrepareMetadata(deferred,TestTime,&checked)&&atomic_load(&CMLStats.metadataChecks)==checks+1);
+    checked=false;deferred.component=GameComponent;deferred.asset=Asset;deferred.count=1;NSArray *preserved=deferred.meshes;assert(!CMLPrepareMetadata(deferred,TestTime,&checked)&&deferred.metadataInvalid&&deferred.meshes==preserved);checked=false;assert(!CMLPrepareMetadata(deferred,TestTime,&checked)&&!checked);
+    Setup();reused=Reusable();CMLTarget *second=[CMLTarget new];second.component=reused.component;second.actor=reused.actor;second.asset=reused.asset;second.count=1;second.stride=48;second.poseTime=TestTime;second.identity=reused.identity;
+    second.meshes=reused.meshes;second.binding=reused.binding;second.names=reused.names;second.gpu=reused.gpu;second.refs=reused.refs;second.topology=reused.topology;second.metadataTime=reused.metadataTime=TestTime-1000000001ULL;[CMLTargets addObject:second];
+    uint64_t meshes=atomic_load(&CMLStats.meshFrames),deferredCount=atomic_load(&CMLStats.metadataDeferred);Draw();assert(Fills==6&&atomic_load(&CMLStats.meshFrames)==meshes+2&&atomic_load(&CMLStats.metadataDeferred)==deferredCount+1);
+    Setup();uint32_t ownTeam=0;uint64_t chunks=atomic_load(&CMLStats.actorSnapshotReads);NSData *snapshot=CMLReadActors((uintptr_t)Context,&ownTeam);assert(snapshot.length==504&&ownTeam==1&&CMLActorEligible(snapshot,ownTeam,GameActor)&&atomic_load(&CMLStats.actorSnapshotReads)==chunks+1);
+    ReallocatedActors=true;assert(!CMLReadActors((uintptr_t)Context,&ownTeam));ReallocatedActors=false;Context[0x3F8]++;assert(!CMLReadActors((uintptr_t)Context,&ownTeam));
     Setup();CMLTarget *pinnedTarget=CMLTargets.firstObject;CMLMesh *pinned=pinnedTarget.meshes.firstObject,*old=[CMLMesh new],*recent=[CMLMesh new];
     pinned.byteCost=12*1024*1024;old.byteCost=8*1024*1024;recent.byteCost=4*1024*1024;[CMLCache addObjectsFromArray:@[old,pinned,recent]];CMLCachedBytes=CML_CACHE_BYTES;
     assert(CMLMakeCacheRoom(12*1024*1024)&&CMLCache.count==1&&CMLCache.firstObject==pinned&&CMLCachedBytes==pinned.byteCost);
     assert(!CMLMakeCacheRoom(13*1024*1024)&&pinnedTarget.meshes.count==1);
+    CMLLoadingMeshes=@[pinned];pinnedTarget.meshes=nil;assert(!CMLMakeCacheRoom(13*1024*1024));CMLLoadingMeshes=nil;pinnedTarget.meshes=@[pinned];
     CMLTrimStaleTargets(TestTime+2000000001ULL);assert(!pinnedTarget.meshes&&!pinnedTarget.binding&&CMLMakeCacheRoom(13*1024*1024)&&!CMLCache.count&&!CMLCachedBytes);
     for(unsigned i=0;i<96;i++){CMLMesh *entry=[CMLMesh new];entry.byteCost=1;[CMLCache addObject:entry];CMLCachedBytes++;}
     assert(CMLMakeCacheRoom(1)&&CMLCache.count==96); // The observed build-28 ceiling no longer blocks a new outfit.
@@ -110,5 +145,5 @@ int main(void){@autoreleasepool {
     NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:file]);pthread_mutex_unlock(&CMLMutex);
     NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];NSArray *reportedSchemas=status[@"reflected_component_schemas"];
     assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]&&reportedSchemas.count==1&&![status[@"schema_snapshot_busy"] boolValue]&&[status[@"native_ray_result_bytes"] intValue]==96);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
-    puts("PASS: original frame forwarding; real mesh skinning, pixel rays and native red/white spans; exactly three separate scene locks; 16-byte native ray ABI; later-scene hits; raw/wrapper parity and scalar fallback; missing scene handles and unreadable scenes; flag restoration; hidden/team/LOD/stale/replaced targets; mismatch/malformed/budget fail closed; continuous pose after capture ends; getpid and errno; honest runtime status");
+    puts("PASS: original frame forwarding; real mesh skinning and exact red/white rectangles; three scene locks; 96-byte native tail writes; raw/wrapper parity and fallback; resource reuse and topology/identity/stream/index/section invalidation; deferred targets stay live; failed refresh preservation and retry; actor snapshot/reallocation; pinned cache; hidden/team/LOD/stale/malformed/budget guards; continuous pose; errno and status");
 }return 0;}

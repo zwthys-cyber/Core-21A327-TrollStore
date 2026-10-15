@@ -15,7 +15,7 @@
 @interface CMLMesh : NSObject
 @property(nonatomic) CMGKey key;
 @property(nonatomic) uint32_t lod,bones,vertices,sectionCount,indexCount,indexWidth,byteCost;
-@property(nonatomic,strong) NSData *vertexData,*weightData,*indexData,*sectionData,*paletteData,*inverseData,*boneInfo;
+@property(nonatomic,strong) NSData *vertexData,*weightData,*indexData,*sectionData,*paletteData,*inverseData,*boneInfo,*descriptor;
 @end
 @implementation CMLMesh
 @end
@@ -23,7 +23,9 @@
 @property(nonatomic) uint64_t component,actor,asset,poseTime,metadataTime,metadataRetryAfter;
 @property(nonatomic) uint32_t count,stride;
 @property(nonatomic) CMTransform transform;
-@property(nonatomic,strong) NSData *pose,*refs,*binding,*names,*evidence,*gpu;
+@property(nonatomic) CMRHeader identity;
+@property(nonatomic) bool metadataInvalid;
+@property(nonatomic,strong) NSData *pose,*refs,*binding,*names,*evidence,*gpu,*topology;
 @property(nonatomic,strong) NSArray<CMLMesh *> *meshes;
 @end
 @implementation CMLTarget
@@ -39,12 +41,15 @@ typedef struct {
     atomic_uint_fast64_t drawTimeTotal,drawTimeMaximum;
     atomic_uint_fast64_t batchPasses,batchParityChecks,batchParityFailures;
     atomic_uint_fast64_t cacheEvictions,cacheRejects,cacheEntries;
+    atomic_uint_fast64_t metadataChecks,metadataReuses,metadataDeferred,actorSnapshotReads,queryBudgetFrames,rectangleBudgetFrames;
+    atomic_uint_fast64_t eligibleFrames,meshFrames,maskBytesMaximum,metadataTimeTotal,metadataTimeMaximum;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
 static pthread_mutex_t CMLMutex=PTHREAD_MUTEX_INITIALIZER;
 static NSMutableArray<CMLTarget *> *CMLTargets;
 static NSMutableArray<CMLMesh *> *CMLCache;
+static NSArray<CMLMesh *> *CMLLoadingMeshes;
 static NSMutableDictionary<NSNumber *,NSData *> *CMLSchemas;
 static CMLSchemaSnapshot *CMLSchemaStore;
 static uint64_t CMLReadDeadline;
@@ -66,6 +71,53 @@ static NSData *CMLBytes(uint64_t address,size_t size) {
     NSMutableData *data=[NSMutableData dataWithLength:size];
     for (size_t offset=0;offset<size;) {size_t n=size-offset;if(n>16384)n=16384;if(!CMLRead(address+offset,(uint8_t *)data.mutableBytes+offset,n))return nil;offset+=n;}
     return data;
+}
+static bool CMLSameObject(CMRHeader a,CMRHeader b) {
+    return CMRHeaderCandidate(&a)&&CMRHeaderCandidate(&b)&&a.internal_index==b.internal_index&&a.class_address==b.class_address&&
+        a.name_index==b.name_index&&a.name_number==b.name_number&&a.outer_address==b.outer_address;
+}
+static NSData *CMLTopology(const uint8_t *layout) {
+    NSMutableData *stamp=[NSMutableData data];const uint32_t offsets[]={0x170,0x7D0},limits[]={16,4};
+    for(unsigned i=0;i<2;i++){
+        uint64_t address=0;int32_t count=0,capacity=0;memcpy(&address,layout+offsets[i],8);memcpy(&count,layout+offsets[i]+8,4);memcpy(&capacity,layout+offsets[i]+12,4);
+        if(count<0||capacity<count||capacity>128||(uint32_t)count>limits[i])return nil;
+        [stamp appendBytes:layout+offsets[i] length:16];
+        if(count){NSData *entries=CMLBytes(address,(size_t)count*8);if(!entries)return nil;[stamp appendData:entries];}
+    }
+    return stamp;
+}
+static bool CMLSameDescriptor(const CMGDescriptor *a,const CMGDescriptor *b) {
+    CMGKey ka=CMGKeyFor(a),kb=CMGKeyFor(b);size_t sections=(size_t)a->section_count*224;
+    return CMGKeyEqual(&ka,&kb)&&a->asset_index==b->asset_index&&a->lod_count==b->lod_count&&a->lod_index==b->lod_index&&
+        a->index_width==b->index_width&&a->index_address==b->index_address&&a->index_bytes>=0x58&&b->index_bytes>=0x58&&
+        !memcmp(a->index+0x48,b->index+0x48,16)&&a->section_address==b->section_address&&a->section_count==b->section_count&&
+        sections<=a->section_bytes&&sections<=b->section_bytes&&!memcmp(a->sections,b->sections,sections);
+}
+// Validate cached topology/resource/stream identities without re-reading bone
+// names, reference poses or vertex buffers every second. Animation stays live.
+static bool CMLReuseMetadata(CMLTarget *target) {
+    if(!target.meshes.count||!target.topology||target.binding.length!=sizeof(CMBBinding)||target.gpu.length!=sizeof(CMGDescriptors)||target.refs.length!=sizeof(CMRReferences)||target.names.length!=sizeof(CMNNames))return false;
+    CMLReadDeadline=CMNow()+12000000ULL;CMLReads=0;NSData *layout=CMLBytes(target.component,4096);if(!layout)return false;
+    CMRHeader root;memcpy(&root,layout.bytes,sizeof(root));if(!CMLSameObject(root,target.identity))return false;
+    NSData *topology=CMLTopology(layout.bytes);if(!topology||![topology isEqualToData:target.topology])return false;
+    const CMBBinding *binding=target.binding.bytes;const CMRReferences *refs=target.refs.bytes;
+    for(uint32_t i=0;i<binding->link_count;i++){
+        const CMBLink *link=&binding->links[i];if(link->asset_index==UINT32_MAX)continue;uint64_t asset=0;
+        if(link->component==target.component)memcpy(&asset,(const uint8_t *)layout.bytes+0x828,8);
+        else {const CMRReference *old=NULL;for(uint32_t j=0;j<refs->count;j++)if(refs->references[j].address==link->component)old=&refs->references[j];
+            CMRHeader header;if(!old||!CMLRead(link->component,&header,sizeof(header))||!CMLSameObject(header,old->header)||!CMLRead(link->component+0x828,&asset,8))return false;}
+        if(asset!=link->address)return false;
+    }
+    for(uint32_t i=0;i<binding->assets.count;i++){
+        const CMRReference *old=&binding->assets.references[i];uint8_t current[64];CMRHeader header;
+        if(old->prefix_bytes<sizeof(current)||!CMLRead(old->address,current,sizeof(current)))return false;memcpy(&header,current,sizeof(header));
+        if(!CMLSameObject(header,old->header)||memcmp(current+0x38,old->prefix+0x38,8))return false;
+    }
+    NSMutableData *storage=[NSMutableData dataWithLength:sizeof(CMGDescriptors)];CMGCollect(binding,target.names.bytes,CMLRead,storage.mutableBytes);
+    const CMGDescriptors *fresh=storage.bytes,*old=target.gpu.bytes;
+    if(fresh->read_failures||fresh->count!=old->count||fresh->rejected!=old->rejected||fresh->truncated!=old->truncated)return false;
+    for(uint32_t i=0;i<fresh->count;i++)if(!CMLSameDescriptor(&fresh->descriptors[i],&old->descriptors[i]))return false;
+    target.gpu=storage;target.metadataTime=CMNow();return true;
 }
 static void CMLObserve(uint64_t component,uint64_t actor,uint64_t transformAddress,uint64_t poseAddress,uint32_t count,uint32_t stride) {
     if (!atomic_load(&CMLReady)||!CMRemoteRange(actor,8)) return;
@@ -99,27 +151,27 @@ static CMFSchema CMLSchemaFor(const CMRReference *component,const CMNNames *sour
 }
 static void CMLTrimStaleTargets(uint64_t now) {
     for(CMLTarget *target in CMLTargets)if(target.poseTime&&now-target.poseTime>2000000000ULL){
-        target.meshes=nil;target.refs=nil;target.binding=nil;target.names=nil;target.evidence=nil;target.gpu=nil;target.metadataTime=0;
+        target.meshes=nil;target.refs=nil;target.binding=nil;target.names=nil;target.evidence=nil;target.gpu=nil;target.topology=nil;target.metadataTime=0;
     }
 }
 static bool CMLMakeCacheRoom(size_t bytes) {
     if(bytes>CML_CACHE_BYTES)return false;
     while(CMLCachedBytes>CML_CACHE_BYTES-bytes||CMLCache.count>=CML_CACHE_ENTRIES){
-        CMLMesh *oldest=nil;for(CMLMesh *mesh in CMLCache){bool pinned=false;
+        CMLMesh *oldest=nil;for(CMLMesh *mesh in CMLCache){bool pinned=[CMLLoadingMeshes containsObject:mesh];
             for(CMLTarget *target in CMLTargets)if([target.meshes containsObject:mesh]){pinned=true;break;}
             if(!pinned){oldest=mesh;break;}}
         if(!oldest){atomic_fetch_add(&CMLStats.cacheRejects,1);return false;}
-        CMLCachedBytes-=oldest.byteCost;[CMLCache removeObjectIdenticalTo:oldest];atomic_fetch_add(&CMLStats.cacheEvictions,1);
+        CMLCachedBytes-=oldest.byteCost;[CMLCache removeObjectIdenticalTo:oldest];atomic_fetch_add(&CMLStats.cacheEvictions,1);atomic_store(&CMLStats.cacheBytes,CMLCachedBytes);atomic_store(&CMLStats.cacheEntries,CMLCache.count);
     }
     atomic_store(&CMLStats.cacheBytes,CMLCachedBytes);atomic_store(&CMLStats.cacheEntries,CMLCache.count);return true;
 }
 static CMLMesh *CMLLoadMesh(const CMGDescriptor *d,const CMEResource *resource) {
     CMGKey key=CMGKeyFor(d);CMLMesh *cached=nil;for(CMLMesh *mesh in CMLCache){CMGKey existing=mesh.key;if(CMGKeyEqual(&existing,&key)){cached=mesh;break;}}
-    if(cached){[CMLCache removeObjectIdenticalTo:cached];[CMLCache addObject:cached];return cached;}
+    if(cached&&cached.descriptor.length==sizeof(*d)&&CMLSameDescriptor(cached.descriptor.bytes,d)){[CMLCache removeObjectIdenticalTo:cached];[CMLCache addObject:cached];return cached;}
     if (!resource||!resource->hierarchy_valid||!resource->reference_pose_valid||d->vertex_stride!=24||d->weight_stride!=8||!d->section_count||d->section_count>8||d->index_bytes<88) return nil;
     uint64_t indexAddress=0;uint32_t indexCount=0;
     if(!CMGArrayCandidate(d->index,d->index_bytes,0x48,d->index_width,d->vertex_count*18,&indexAddress,&indexCount)||indexCount%3) return nil;
-    size_t bytes=(size_t)d->vertex_count*32+(size_t)indexCount*d->index_width+(size_t)resource->count*sizeof(CMSMatrix)+resource->info_bytes+8192;
+    size_t bytes=(size_t)d->vertex_count*32+(size_t)indexCount*d->index_width+(size_t)resource->count*sizeof(CMSMatrix)+resource->info_bytes+8192+sizeof(*d);
     if(!CMLMakeCacheRoom(bytes))return nil;
     NSData *vertices=CMLBytes(d->vertex_address,(size_t)d->vertex_count*24),*weights=CMLBytes(d->weight_address,(size_t)d->vertex_count*8),*indices=CMLBytes(indexAddress,(size_t)indexCount*d->index_width);
     if(!vertices||!weights||!indices||!CMGWeightHypothesis(d,weights.bytes,weights.length)||!CMGIndexHypothesis(indices.bytes,indices.length,d->index_width,d->vertex_count))return nil;
@@ -138,19 +190,34 @@ static CMLMesh *CMLLoadMesh(const CMGDescriptor *d,const CMEResource *resource) 
     if(nextV!=d->vertex_count||nextI!=indexCount||!CMSReferenceInverse(resource->info,resource->pose,resource->count,inverse.mutableBytes))return nil;
     CMLMesh *mesh=[CMLMesh new];mesh.key=key;mesh.lod=d->lod_index;mesh.bones=resource->count;mesh.vertices=d->vertex_count;mesh.sectionCount=d->section_count;mesh.indexCount=indexCount;mesh.indexWidth=d->index_width;
     mesh.vertexData=vertices;mesh.weightData=weights;mesh.indexData=indices;mesh.sectionData=sections;mesh.paletteData=palettes;mesh.inverseData=inverse;mesh.boneInfo=[NSData dataWithBytes:resource->info length:resource->info_bytes];
+    mesh.descriptor=[NSData dataWithBytes:d length:sizeof(*d)];
     mesh.byteCost=(uint32_t)bytes;CMLCachedBytes+=(uint32_t)bytes;[CMLCache addObject:mesh];atomic_fetch_add(&CMLStats.meshLoads,1);atomic_store(&CMLStats.cacheBytes,CMLCachedBytes);atomic_store(&CMLStats.cacheEntries,CMLCache.count);return mesh;
 }
 static bool CMLRefresh(CMLTarget *target) {
     CMLReadDeadline=CMNow()+100000000ULL;CMLReads=0;NSData *layout=CMLBytes(target.component,4096);if(!layout)return false;
+    NSData *topology=CMLTopology(layout.bytes);
     NSMutableData *refs=[NSMutableData dataWithLength:sizeof(CMRReferences)],*binding=[NSMutableData dataWithLength:sizeof(CMBBinding)],*names=[NSMutableData dataWithLength:sizeof(CMNNames)],*evidence=[NSMutableData dataWithLength:sizeof(CMEMeshEvidence)],*gpu=[NSMutableData dataWithLength:sizeof(CMGDescriptors)];
     CMRCollect(layout.bytes,layout.length,CMLRead,refs.mutableBytes);CMBCollect(target.component,refs.bytes,CMLRead,binding.mutableBytes);CMCollectNames(refs.bytes,binding.bytes,names.mutableBytes);
     CMECollect(target.component,layout.bytes,layout.length,target.count,refs.bytes,binding.bytes,names.bytes,CMLRead,evidence.mutableBytes);
     CMGCollect(binding.bytes,names.bytes,CMLRead,gpu.mutableBytes);const CMGDescriptors *descriptors=gpu.bytes;const CMBBinding *b=binding.bytes;
     if(!b->assets.count||b->assets.references[0].address!=target.asset)return false;
-    NSMutableArray *meshes=[NSMutableArray array];target.meshes=meshes; // Pin partial loads during cache eviction.
+    NSMutableArray *meshes=[NSMutableArray array];CMLLoadingMeshes=meshes;
     for(uint32_t i=0;i<descriptors->count;i++){const CMGDescriptor *d=&descriptors->descriptors[i];CMLMesh *mesh=CMLLoadMesh(d,CMEResourceAt(evidence.bytes,d->asset_index));if(mesh)[meshes addObject:mesh];}
-    if(!meshes.count){target.meshes=nil;return false;}
-    target.refs=refs;target.binding=binding;target.names=names;target.evidence=evidence;target.gpu=gpu;target.meshes=meshes;target.metadataTime=CMNow();atomic_fetch_add(&CMLStats.metadataLoads,1);return true;
+    CMLLoadingMeshes=nil;if(!meshes.count)return false;
+    CMRHeader identity;memcpy(&identity,layout.bytes,sizeof(identity));
+    target.identity=identity;target.topology=topology;target.refs=refs;target.binding=binding;target.names=names;target.evidence=evidence;target.gpu=gpu;target.meshes=meshes;target.metadataTime=CMNow();atomic_fetch_add(&CMLStats.metadataLoads,1);return true;
+}
+static bool CMLPrepareMetadata(CMLTarget *target,uint64_t now,bool *checked) {
+    if(target.metadataTime&&now-target.metadataTime<=1000000000ULL)return target.meshes.count&&!target.metadataInvalid;
+    if(*checked||now<target.metadataRetryAfter){atomic_fetch_add(&CMLStats.metadataDeferred,1);return target.meshes.count&&!target.metadataInvalid;}
+    *checked=true;uint64_t start=CMNow();atomic_fetch_add(&CMLStats.metadataChecks,1);
+    bool ready=CMLReuseMetadata(target);
+    if(ready)atomic_fetch_add(&CMLStats.metadataReuses,1);else ready=CMLRefresh(target);
+    target.metadataInvalid=!ready;target.metadataRetryAfter=ready?0:CMNow()+1000000000ULL;
+    if(!ready)atomic_fetch_add(&CMLStats.metadataFailures,1);
+    uint64_t elapsed=CMNow()-start;atomic_fetch_add(&CMLStats.metadataTimeTotal,elapsed);uint_fast64_t maximum=atomic_load(&CMLStats.metadataTimeMaximum);
+    while(elapsed>maximum&&!atomic_compare_exchange_weak(&CMLStats.metadataTimeMaximum,&maximum,elapsed)){}
+    return ready;
 }
 
 // A per-frame state cache. Raw component prefixes and own pose arrays are read
@@ -165,10 +232,14 @@ static const CMRReference *CMLComponent(CMLTarget *target,uint32_t assetIndex) {
 }
 static NSData *CMLState(CMLTarget *target,uint32_t id,NSMutableDictionary *states) {
     NSData *cached=states[@(id)];if(cached)return cached;uint64_t address=target.component;size_t bytes=4096;
-    if(id){const CMRReference *c=CMLComponent(target,id);if(!c||c->prefix_bytes<0x8C8)return nil;address=c->address;bytes=c->prefix_bytes;}
+    const CMRReference *child=NULL;
+    if(id){child=CMLComponent(target,id);if(!child||child->prefix_bytes<0x8C8)return nil;address=child->address;bytes=child->prefix_bytes;}
     NSData *state=CMLBytes(address,bytes);if(!state)return nil;const CMBBinding *b=target.binding.bytes;
+    if(child){CMRHeader header;memcpy(&header,state.bytes,sizeof(header));if(!CMLSameObject(header,child->header)){target.metadataTime=0;return nil;}}
     uint64_t asset=0;memcpy(&asset,(const uint8_t *)state.bytes+0x828,8);
     if(id>=b->assets.count||asset!=b->assets.references[id].address){target.metadataTime=0;return nil;}
+    if(!id){CMRHeader header;memcpy(&header,state.bytes,sizeof(header));NSData *topology=CMLTopology(state.bytes);
+        if(!CMLSameObject(header,target.identity)||(target.topology&&(!topology||![topology isEqualToData:target.topology]))){target.metadataTime=0;return nil;}}
     states[@(id)]=state;return state;
 }
 static CMLMesh *CMLMeshFor(CMLTarget *target,uint32_t id) {
@@ -214,8 +285,9 @@ static bool CMLQueryPixel(void *context,const CMVec3 *camera,const CMVec3 *world
 // operations, but take each scene lock once for its complete pixel pass.
 // Scene locks are never held together. The outer original scene-list lock
 // remains held by the caller throughout, exactly as in D33F4.
-static bool CMLClassifyPixels(CMPMask *mask,CMVec3 camera,CMLQueryContext *q,uint32_t *white,uint32_t *red) {
-    if(!CMLIntersect||atomic_load(&CMLBatchDisabled))return CMPClassify(mask,camera,CMLQueryPixel,q,white,red);
+static bool CMLClassifyPixels(CMPMask *mask,const CMPView *view,CMLQueryContext *q,uint32_t *white,uint32_t *red) {
+    if(!CMLIntersect||atomic_load(&CMLBatchDisabled))return CMPClassify(mask,view,CMLQueryPixel,q,white,red);
+    CMVec3 camera=view->position;
     *white=*red=0;size_t count=(size_t)mask->width*mask->height;
     for(unsigned scene=0;scene<3;scene++){
         size_t first=0;while(first<count&&(!mask->pixels[first].inverse_depth||mask->pixels[first].colour==2))first++;
@@ -223,7 +295,8 @@ static bool CMLClassifyPixels(CMPMask *mask,CMVec3 camera,CMLQueryContext *q,uin
         // One comparison per scene/frame against the unchanged original
         // wrapper also checks this ABI on device. A discrepancy falls back to
         // the original pixel path and never treats unknown pixels as white.
-        CMRayHit reference=CMRayFunctions[scene](q->scenes[scene],&camera,&mask->pixels[first].world);
+        CMVec3 firstWorld;if(!CMPWorldAtPixel(view,mask->x+(int)(first%mask->width),mask->y+(int)(first/mask->width),mask->pixels[first].inverse_depth,&firstWorld))return false;
+        CMRayHit reference=CMRayFunctions[scene](q->scenes[scene],&camera,&firstWorld);
         atomic_fetch_add(&CMLStats.queryCalls,1);atomic_fetch_add(&CMLStats.batchParityChecks,1);
         uintptr_t address=(uintptr_t)q->scenes[scene];if(address>UINTPTR_MAX-0x60)return false;
         void *lock=(void *)(address+0x58),*handle=NULL;CMLock(lock);
@@ -231,7 +304,8 @@ static bool CMLClassifyPixels(CMPMask *mask,CMVec3 camera,CMLQueryContext *q,uin
         for(size_t p=first;complete&&p<count;p++){
             CMPPixel *pixel=&mask->pixels[p];if(!pixel->inverse_depth||pixel->colour==2)continue;
             if(!(calls&63)&&CMNow()>=q->deadline){complete=false;break;}
-            CMVec3 delta={pixel->world.x-camera.x,pixel->world.y-camera.y,pixel->world.z-camera.z};float distance=sqrtf(CMPDot(delta,delta));
+            CMVec3 world;if(!CMPWorldAtPixel(view,mask->x+(int)(p%mask->width),mask->y+(int)(p/mask->width),pixel->inverse_depth,&world)){complete=false;break;}
+            CMVec3 delta={world.x-camera.x,world.y-camera.y,world.z-camera.z};float distance=sqrtf(CMPDot(delta,delta));
             if(!isfinite(distance)||distance<0.001f){complete=false;break;}
             CMRayHit hit __attribute__((aligned(16)))={0};
             hit.origin[0]=camera.x;hit.origin[1]=camera.y;hit.origin[2]=camera.z;
@@ -244,20 +318,25 @@ static bool CMLClassifyPixels(CMPMask *mask,CMVec3 camera,CMLQueryContext *q,uin
         }
         CMUnlock(lock);atomic_fetch_add(&CMLStats.queryCalls,calls);atomic_fetch_add(&CMLStats.batchPasses,1);
         if(mismatch){atomic_fetch_add(&CMLStats.batchParityFailures,1);atomic_store(&CMLBatchDisabled,true);
-            return CMPClassify(mask,camera,CMLQueryPixel,q,white,red);}
+            return CMPClassify(mask,view,CMLQueryPixel,q,white,red);}
         if(!complete)return false;
     }
     for(size_t p=0;p<count;p++)if(mask->pixels[p].inverse_depth){CMPPixel *pixel=&mask->pixels[p];if(pixel->colour==2)(*red)++;else{pixel->colour=1;(*white)++;}}
     return true;
 }
-static void CMLDrawSpan(void *list,int x,int y,int width,uint8_t colour) {
-    CMVec2 p[4]={{x,y},{x+width,y},{x+width,y+1},{x,y+1}};CMLPolygon(list,p,4,colour==2 ? 0xFF0000FFU : 0xFFFFFFFFU);
+static void CMLDrawRectangle(void *list,CMPRectangle r) {
+    CMVec2 p[4]={{r.x,r.y},{r.x+r.width,r.y},{r.x+r.width,r.y+r.height},{r.x,r.y+r.height}};CMLPolygon(list,p,4,r.colour==2 ? 0xFF0000FFU : 0xFFFFFFFFU);
 }
-static bool CMLActorEligible(uintptr_t context,uint64_t actor) {
-    uint64_t begin=0,end=0;uint32_t localTeam=0;
-    if(!CMSelfRead(context+0x3F0,&begin,8)||!CMSelfRead(context+0x3F8,&end,8)||!CMSelfRead(context+0x3A8,&localTeam,4)||end<begin||(end-begin)%0x1F8||(end-begin)/0x1F8>512)return false;
-    for(uint64_t p=begin;p<end;p+=0x1F8){uint64_t id=0;uint32_t team=0;float distance=0;
-        if(!CMSelfRead(p,&id,8)||id!=actor)continue;if(!CMSelfRead(p+8,&team,4)||!CMSelfRead(p+0x40,&distance,4))return false;
+static NSData *CMLReadActors(uintptr_t context,uint32_t *localTeam) {
+    uint64_t begin=0,end=0;
+    if(!CMSelfRead(context+0x3F0,&begin,8)||!CMSelfRead(context+0x3F8,&end,8)||!CMSelfRead(context+0x3A8,localTeam,4)||end<begin||(end-begin)%0x1F8||(end-begin)/0x1F8>512)return nil;
+    NSMutableData *data=[NSMutableData dataWithLength:end-begin];
+    for(size_t offset=0;offset<data.length;){size_t chunk=data.length-offset;if(chunk>16384)chunk=16384;if(!CMSelfRead(begin+offset,(uint8_t *)data.mutableBytes+offset,chunk))return nil;offset+=chunk;atomic_fetch_add(&CMLStats.actorSnapshotReads,1);}
+    uint64_t final[2]={0};if(!CMSelfRead(context+0x3F0,final,sizeof(final))||final[0]!=begin||final[1]!=end)return nil;return data;
+}
+static bool CMLActorEligible(NSData *actors,uint32_t localTeam,uint64_t actor) {
+    const uint8_t *data=actors.bytes;for(size_t p=0;p<actors.length;p+=0x1F8){uint64_t id=0;uint32_t team=0;float distance=0;
+        memcpy(&id,data+p,8);if(id!=actor)continue;memcpy(&team,data+p+8,4);memcpy(&distance,data+p+0x40,4);
         return team!=localTeam&&isfinite(distance)&&distance>0&&distance<=600;}
     return false;
 }
@@ -267,18 +346,19 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
     if(!CMSelfRead(context+0x23,&enabled,1)||!enabled||!CMSelfRead(CMBase+0xC54459,&ready,1)||ready!=1||
         !CMSelfRead(context+4,size,8)||!CMSelfRead(context+0x1F4,rawView,52))return;
     CMPView view;if(!CMPMakeView(rawView,size[0],size[1],&view))return;
-    uint64_t drawStart=CMNow();
+    uint64_t drawStart=CMNow();atomic_fetch_add(&CMLStats.eligibleFrames,1);
     CMInside=true;pthread_mutex_lock(&CMLMutex);
     @autoreleasepool {
-        NSMutableArray<NSData *> *projected=[NSMutableArray array],*triangleArrays=[NSMutableArray array];bool refreshed=false;uint64_t now=CMNow();
+        NSMutableArray<NSData *> *projected=[NSMutableArray array],*triangleArrays=[NSMutableArray array];bool refreshed=false;uint64_t now=CMNow();uint32_t localTeam=0;NSData *actors=CMLReadActors(context,&localTeam);
         float minX=view.width,minY=view.height,maxX=0,maxY=0;CMLTrimStaleTargets(now);
         for(CMLTarget *target in CMLTargets){
             if(!target.poseTime||now-target.poseTime>250000000ULL){atomic_fetch_add(&CMLStats.staleTargets,1);continue;}
-            if(!CMLActorEligible(context,target.actor))continue;
-            if(!target.metadataTime||now-target.metadataTime>1000000000ULL){if(refreshed||now<target.metadataRetryAfter)continue;refreshed=true;target.meshes=nil;if(!CMLRefresh(target)){target.metadataRetryAfter=CMNow()+1000000000ULL;atomic_fetch_add(&CMLStats.metadataFailures,1);continue;}target.metadataRetryAfter=0;}
+            if(!actors||!CMLActorEligible(actors,localTeam,target.actor))continue;
+            if(!CMLPrepareMetadata(target,now,&refreshed))continue;
             CMLReadDeadline=CMNow()+12000000ULL;CMLReads=0;
             const CMGDescriptors *gpu=target.gpu.bytes;const CMNNames *names=target.names.bytes;
             NSMutableDictionary *states=[NSMutableDictionary dictionary],*poses=[NSMutableDictionary dictionary];
+            if(!CMLState(target,0,states))continue;
             for(uint32_t di=0;di<gpu->count;di++){
                 const CMGDescriptor *d=&gpu->descriptors[di];CMLMesh *mesh=nil;for(CMLMesh *m in target.meshes)if(m.lod==d->lod_index&&m.key.asset==d->asset_address)mesh=m;if(!mesh)continue;
                 NSData *state=CMLState(target,d->asset_index,states);if(!state)continue;const CMRReference *component=CMLComponent(target,d->asset_index);CMRReference root={0};
@@ -299,20 +379,21 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
                 }
                 if(!projectionOK){atomic_fetch_add(&CMLStats.projectionMismatch,1);continue;}
                 NSMutableData *tris=[NSMutableData data];for(uint32_t i=0;i<mesh.indexCount;i+=3){uint32_t t[3]={0};for(unsigned k=0;k<3;k++)memcpy(&t[k],(const uint8_t *)mesh.indexData.bytes+(size_t)(i+k)*mesh.indexWidth,mesh.indexWidth);if(ok[t[0]]&&ok[t[1]]&&ok[t[2]])[tris appendBytes:t length:sizeof(t)];}
-                [projected addObject:points];[triangleArrays addObject:tris];
+                [projected addObject:points];[triangleArrays addObject:tris];atomic_fetch_add(&CMLStats.meshFrames,1);
             }
         }
         int x=(int)fmaxf(0,floorf(minX)),y=(int)fmaxf(0,floorf(minY)),right=(int)fminf(view.width,ceilf(maxX)),bottom=(int)fminf(view.height,ceilf(maxY));
         if(right>x&&bottom>y&&projected.count){size_t count=(size_t)(right-x)*(bottom-y);if(count>CML_PIXEL_LIMIT)atomic_fetch_add(&CMLStats.oversizedMasks,1);else {
-            NSMutableData *pixels=[NSMutableData dataWithLength:count*sizeof(CMPPixel)];CMPMask mask={x,y,right-x,bottom-y,pixels.mutableBytes};
-            for(NSUInteger j=0;j<projected.count;j++){const CMPVertex *points=projected[j].bytes;const uint32_t *tris=triangleArrays[j].bytes;for(NSUInteger i=0;i<triangleArrays[j].length/12;i++){CMPVertex t[3]={points[tris[i*3]],points[tris[i*3+1]],points[tris[i*3+2]]};if(CMPRasterTriangle(&mask,t))atomic_fetch_add(&CMLStats.triangles,1);}}
+            uint64_t bytes=count*sizeof(CMPPixel);uint_fast64_t maximum=atomic_load(&CMLStats.maskBytesMaximum);while(bytes>maximum&&!atomic_compare_exchange_weak(&CMLStats.maskBytesMaximum,&maximum,bytes)){}
+            NSMutableData *pixels=[NSMutableData dataWithLength:bytes];CMPMask mask={x,y,right-x,bottom-y,pixels.mutableBytes};uint64_t triangles=0;
+            for(NSUInteger j=0;j<projected.count;j++){const CMPVertex *points=projected[j].bytes;const uint32_t *tris=triangleArrays[j].bytes;for(NSUInteger i=0;i<triangleArrays[j].length/12;i++){CMPVertex t[3]={points[tris[i*3]],points[tris[i*3+1]],points[tris[i*3+2]]};if(CMPRasterTriangle(&mask,t))triangles++;}}atomic_fetch_add(&CMLStats.triangles,triangles);
             CMLQueryContext query={{NULL,NULL,NULL},CMNow()+12000000ULL};bool complete=false;uint32_t white=0,red=0;
-            if(CMLock&&CMUnlock){CMLock((void *)(CMBase+0xBD4F78));if(CMSelfRead(CMBase+0xC15EC8,query.scenes,sizeof(query.scenes))&&query.scenes[0]&&query.scenes[1]&&query.scenes[2])complete=CMLClassifyPixels(&mask,view.position,&query,&white,&red);CMUnlock((void *)(CMBase+0xBD4F78));}
-            uint32_t spans=complete ? CMPSpans(&mask,NULL,NULL,CML_SPAN_LIMIT) : 0;
+            if(CMLock&&CMUnlock){CMLock((void *)(CMBase+0xBD4F78));if(CMSelfRead(CMBase+0xC15EC8,query.scenes,sizeof(query.scenes))&&query.scenes[0]&&query.scenes[1]&&query.scenes[2])complete=CMLClassifyPixels(&mask,&view,&query,&white,&red);CMUnlock((void *)(CMBase+0xBD4F78));}
+            NSMutableData *rectangles=[NSMutableData dataWithLength:CML_SPAN_LIMIT*sizeof(CMPRectangle)];uint32_t spans=complete ? CMPRectangles(&mask,rectangles.mutableBytes,CML_SPAN_LIMIT) : 0;
             if(complete&&spans&&spans<=CML_SPAN_LIMIT){void *list=CMLGetDrawList();uint8_t flags=0;if(list&&CMSelfRead((uintptr_t)list+0x30,&flags,1)){
-                *(uint8_t *)((uintptr_t)list+0x30)=flags&~4U;CMPSpans(&mask,CMLDrawSpan,list,CML_SPAN_LIMIT);*(uint8_t *)((uintptr_t)list+0x30)=flags;
+                *(uint8_t *)((uintptr_t)list+0x30)=flags&~4U;for(uint32_t i=0;i<spans;i++)CMLDrawRectangle(list,((const CMPRectangle *)rectangles.bytes)[i]);*(uint8_t *)((uintptr_t)list+0x30)=flags;
                 atomic_fetch_add(&CMLStats.drawFrames,1);atomic_fetch_add(&CMLStats.white,white);atomic_fetch_add(&CMLStats.red,red);atomic_fetch_add(&CMLStats.spans,spans);}}
-            else if(!complete||spans>CML_SPAN_LIMIT)atomic_fetch_add(&CMLStats.budgetFrames,1);
+            else if(!complete||spans>CML_SPAN_LIMIT){atomic_fetch_add(&CMLStats.budgetFrames,1);if(!complete)atomic_fetch_add(&CMLStats.queryBudgetFrames,1);else atomic_fetch_add(&CMLStats.rectangleBudgetFrames,1);}
         }}
     }
     pthread_mutex_unlock(&CMLMutex);CMInside=false;
@@ -339,11 +420,15 @@ static void CMLWriteStatus(NSURL *url) {
             @"hide_skin_found":@(s.hide_skin.found),@"hide_skin_offset":@(s.hide_skin.offset),@"hide_skin_mask":@(s.hide_skin.mask),
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;})}];}
-    NSDictionary *status=@{ @"render_version":@3,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+    NSDictionary *status=@{ @"render_version":@4,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+        @"eligible_draw_frames":CML_VALUE(eligibleFrames),@"projected_mesh_frames":CML_VALUE(meshFrames),@"actor_snapshot_chunks":CML_VALUE(actorSnapshotReads),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),
+        @"metadata_checks":CML_VALUE(metadataChecks),@"metadata_reuses":CML_VALUE(metadataReuses),@"metadata_deferred_targets":CML_VALUE(metadataDeferred),@"metadata_time_total_ns":CML_VALUE(metadataTimeTotal),@"metadata_time_maximum_ns":CML_VALUE(metadataTimeMaximum),
         @"rasterized_triangles":CML_VALUE(triangles),@"pixel_query_calls":CML_VALUE(queryCalls),@"filled_frames":CML_VALUE(drawFrames),@"white_pixels":CML_VALUE(white),@"red_pixels":CML_VALUE(red),@"filled_spans":CML_VALUE(spans),
+        @"filled_rectangles":CML_VALUE(spans),@"fill_packing":@"exact-identical-row-runs",@"mask_pixel_bytes":@(sizeof(CMPPixel)),@"mask_bytes_maximum":CML_VALUE(maskBytesMaximum),
         @"stale_targets_skipped":CML_VALUE(staleTargets),@"unknown_visibility_samples":CML_VALUE(unknownVisibility),@"unverified_lod_samples":CML_VALUE(unverifiedLOD),@"master_reference_pose_fallback_bones":CML_VALUE(referenceFallbacks),
         @"unknown_pose_meshes":CML_VALUE(unknownPose),@"malformed_pixel_queries":CML_VALUE(badRays),@"budget_frames_skipped":CML_VALUE(budgetFrames),@"projection_mismatch_meshes":CML_VALUE(projectionMismatch),@"oversized_masks_skipped":CML_VALUE(oversizedMasks),
+        @"query_frames_incomplete":CML_VALUE(queryBudgetFrames),@"rectangle_budget_frames_skipped":CML_VALUE(rectangleBudgetFrames),
         @"draw_time_total_ns":CML_VALUE(drawTimeTotal),@"draw_time_maximum_ns":CML_VALUE(drawTimeMaximum),@"reflected_component_schemas":schemas,@"schema_snapshot_busy":@NO,@"schema_snapshot_source":@"immutable-discovery-snapshot",
         @"native_batch_passes":CML_VALUE(batchPasses),@"native_batch_parity_checks":CML_VALUE(batchParityChecks),@"native_batch_parity_failures":CML_VALUE(batchParityFailures),@"native_batch_disabled":@(atomic_load(&CMLBatchDisabled)),
         @"native_batch_enabled":@(CMLIntersect&&!atomic_load(&CMLBatchDisabled)),@"native_ray_result_bytes":@(sizeof(CMRayHit)),@"native_ray_result_alignment":@(_Alignof(CMRayHit)),
@@ -356,10 +441,9 @@ static void CMLWriteStatus(NSURL *url) {
 static void CMLStartup(void) {
     CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLExpectedContext=CMBase+0xC54270;
     CMLOriginalDraw=(void (*)(void *))CMCallable(CMBase+0xDB144);CMLGetDrawList=(void *(*)(void))CMCallable(CMBase+0x123E30);CMLPolygon=(void (*)(void *,const CMVec2 *,int,uint32_t))CMCallable(CMBase+0x13C8AC);
-    // Build 29 crashed in this fast path after a short RayHit buffer corrupted
-    // the adjacent handle. Keep the corrected ABI everywhere, and use the
-    // unchanged original wrappers in this stability build.
-    CMLIntersect=NULL;atomic_store(&CMLBatchDisabled,true);atomic_store(&CMLReady,true);
+    // The full 96-byte result ABI and independent tail-write regression now
+    // cover this path. Per-frame comparisons still fall back to the wrappers.
+    CMLIntersect=(void (*)(void *,CMRayHit *,void *))CMCallable(CMBase+0x2AD2A0);atomic_store(&CMLBatchDisabled,false);atomic_store(&CMLReady,true);
     dispatch_async(CMReportQueue, ^{NSURL *url=[CMReportURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Core-model-render-status.json"];CMLWriteStatus(url);
         CMLStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CMLStatusTimer,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC),5*NSEC_PER_SEC,NSEC_PER_SEC);
         dispatch_source_set_event_handler(CMLStatusTimer, ^{CMLWriteStatus(url);});dispatch_resume(CMLStatusTimer);});

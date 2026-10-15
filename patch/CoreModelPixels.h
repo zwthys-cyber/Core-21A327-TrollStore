@@ -7,8 +7,12 @@
 // interpolation, majority voting, reduced-resolution mask or colour guessing.
 typedef struct { CMVec3 position,forward,right,up;float width,height,focal; } CMPView;
 typedef struct { CMVec2 xy;CMVec3 world;float inverse_depth; } CMPVertex;
-typedef struct { float inverse_depth;CMVec3 world;uint8_t colour; } CMPPixel;
+// Pixel ray + interpolated depth recover the surface position. Avoid storing
+// three redundant world coordinates in every framebuffer pixel.
+typedef struct { float inverse_depth;uint8_t colour; } CMPPixel;
+_Static_assert(sizeof(CMPPixel)==8,"Full-resolution depth/colour pixel");
 typedef struct { int x,y,width,height;CMPPixel *pixels; } CMPMask;
+typedef struct {int x,y,width,height;uint8_t colour;} CMPRectangle;
 typedef bool (*CMPQuery)(void *,const CMVec3 *,const CMVec3 *,bool *);
 typedef void (*CMPSpan)(void *,int,int,int,uint8_t);
 static inline float CMPDot(CMVec3 a,CMVec3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
@@ -31,11 +35,19 @@ static inline bool CMPProject(const CMPView *v,CMVec3 world,CMPVertex *out) {
     return isfinite(out->xy.x)&&isfinite(out->xy.y)&&fabsf(out->xy.x)<65536&&fabsf(out->xy.y)<65536;
 }
 static inline float CMPEdge(CMVec2 a,CMVec2 b,float x,float y) { return (b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x); }
+static inline bool CMPWorldAtPixel(const CMPView *view,int x,int y,float inverseDepth,CMVec3 *world) {
+    if(!isfinite(inverseDepth)||inverseDepth<=0||!isfinite(view->focal)||view->focal<=0)return false;
+    float horizontal=(x+.5f-view->width*.5f)/view->focal,vertical=(view->height*.5f-y-.5f)/view->focal,depth=1/inverseDepth;
+    *world=(CMVec3){view->position.x+(view->forward.x+horizontal*view->right.x+vertical*view->up.x)*depth,
+        view->position.y+(view->forward.y+horizontal*view->right.y+vertical*view->up.y)*depth,
+        view->position.z+(view->forward.z+horizontal*view->right.z+vertical*view->up.z)*depth};
+    return isfinite(world->x)&&isfinite(world->y)&&isfinite(world->z);
+}
 static inline bool CMPRasterTriangle(CMPMask *mask,const CMPVertex t[3]) {
     if (!mask->pixels||mask->width<=0||mask->height<=0) return false;
     float area=CMPEdge(t[0].xy,t[1].xy,t[2].xy.x,t[2].xy.y);
     if (!isfinite(area)||fabsf(area)<1e-7f) return false;
-    for (unsigned i=0;i<3;i++) if (!isfinite(t[i].inverse_depth)||t[i].inverse_depth<=0) return false;
+    for (unsigned i=0;i<3;i++) if (!isfinite(t[i].inverse_depth)||t[i].inverse_depth<=0||!isfinite(t[i].world.x)||!isfinite(t[i].world.y)||!isfinite(t[i].world.z)) return false;
     float minX=fminf(t[0].xy.x,fminf(t[1].xy.x,t[2].xy.x)),maxX=fmaxf(t[0].xy.x,fmaxf(t[1].xy.x,t[2].xy.x));
     float minY=fminf(t[0].xy.y,fminf(t[1].xy.y,t[2].xy.y)),maxY=fmaxf(t[0].xy.y,fmaxf(t[1].xy.y,t[2].xy.y));
     int x0=(int)fmaxf(mask->x,ceilf(minX-0.5f)),x1=(int)fminf(mask->x+mask->width-1,floorf(maxX-0.5f));
@@ -46,18 +58,15 @@ static inline bool CMPRasterTriangle(CMPMask *mask,const CMPVertex t[3]) {
         float depth=a*t[0].inverse_depth+b*t[1].inverse_depth+c*t[2].inverse_depth;
         CMPPixel *p=&mask->pixels[(size_t)(y-mask->y)*mask->width+(x-mask->x)];
         if (!isfinite(depth)||depth<=p->inverse_depth) continue;
-        const float weights[3]={a*t[0].inverse_depth/depth,b*t[1].inverse_depth/depth,c*t[2].inverse_depth/depth};
-        CMVec3 world={0};for (unsigned i=0;i<3;i++) { world.x+=weights[i]*t[i].world.x;world.y+=weights[i]*t[i].world.y;world.z+=weights[i]*t[i].world.z; }
-        if (!isfinite(world.x)||!isfinite(world.y)||!isfinite(world.z)) continue;
-        p->world=world;p->inverse_depth=depth;p->colour=0;
+        p->inverse_depth=depth;p->colour=0;
     }
     return true;
 }
-static inline bool CMPClassify(CMPMask *mask,CMVec3 camera,CMPQuery query,void *context,uint32_t *white,uint32_t *red) {
+static inline bool CMPClassify(CMPMask *mask,const CMPView *view,CMPQuery query,void *context,uint32_t *white,uint32_t *red) {
     *white=*red=0;
     for (int y=0;y<mask->height;y++) for (int x=0;x<mask->width;x++) {
         CMPPixel *p=&mask->pixels[(size_t)y*mask->width+x];if (!p->inverse_depth) continue;
-        bool blocked=false;if (!query(context,&camera,&p->world,&blocked)) return false;
+        CMVec3 world;bool blocked=false;if(!CMPWorldAtPixel(view,mask->x+x,mask->y+y,p->inverse_depth,&world)||!query(context,&view->position,&world,&blocked))return false;
         p->colour=blocked ? 2 : 1;if (blocked) (*red)++;else (*white)++;
     }
     return true;
@@ -70,5 +79,25 @@ static inline uint32_t CMPSpans(const CMPMask *mask,CMPSpan emit,void *context,u
         if (++count>limit) return count;if (emit) emit(context,mask->x+start,mask->y+y,x-start,colour);
     }
     return count;
+}
+// Merge identical horizontal runs in adjacent rows. The resulting rectangles
+// reproduce every classified pixel exactly; no dilation, sampling or averaging.
+static inline uint32_t CMPRectangles(const CMPMask *mask,CMPRectangle *out,uint32_t capacity) {
+    if(!mask->pixels||!out||mask->width<1||mask->width>8192||mask->height<1||mask->height>8192)return capacity+1;
+    uint32_t *storage=malloc((size_t)mask->width*2*sizeof(uint32_t));if(!storage)return capacity+1;
+    uint32_t *previous=storage,*current=storage+mask->width,previousCount=0,count=0;
+    for(int y=0;y<mask->height;y++){
+        uint32_t currentCount=0,cursor=0;
+        for(int x=0;x<mask->width;){uint8_t colour=mask->pixels[(size_t)y*mask->width+x].colour;if(!colour){x++;continue;}
+            int start=x;do{x++;}while(x<mask->width&&mask->pixels[(size_t)y*mask->width+x].colour==colour);
+            int absoluteX=mask->x+start,width=x-start;while(cursor<previousCount&&out[previous[cursor]].x<absoluteX)cursor++;
+            uint32_t index=count;
+            if(cursor<previousCount){CMPRectangle *r=&out[previous[cursor]];if(r->x==absoluteX&&r->width==width&&r->colour==colour){index=previous[cursor];r->height++;}}
+            if(index==count){if(count==capacity){free(storage);return capacity+1;}out[count++]=(CMPRectangle){absoluteX,mask->y+y,width,1,colour};}
+            current[currentCount++]=index;
+        }
+        uint32_t *swap=previous;previous=current;current=swap;previousCount=currentCount;
+    }
+    free(storage);return count;
 }
 #endif
