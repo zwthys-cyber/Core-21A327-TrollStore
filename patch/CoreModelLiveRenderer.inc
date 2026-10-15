@@ -97,13 +97,14 @@ static NSData *CMLTopology(const uint8_t *layout) {
     }
     return stamp;
 }
-static bool CMLSameDescriptor(const CMGDescriptor *a,const CMGDescriptor *b) {
+static bool CMLSameMeshDescriptor(const CMGDescriptor *a,const CMGDescriptor *b) {
     CMGKey ka=CMGKeyFor(a),kb=CMGKeyFor(b);size_t sections=(size_t)a->section_count*224;
-    return CMGKeyEqual(&ka,&kb)&&a->asset_index==b->asset_index&&a->lod_count==b->lod_count&&a->lod_index==b->lod_index&&
+    return CMGKeyEqual(&ka,&kb)&&a->lod_count==b->lod_count&&a->lod_index==b->lod_index&&
         a->index_width==b->index_width&&a->index_address==b->index_address&&a->index_bytes>=0x58&&b->index_bytes>=0x58&&
         !memcmp(a->index+0x48,b->index+0x48,16)&&a->section_address==b->section_address&&a->section_count==b->section_count&&
         sections<=a->section_bytes&&sections<=b->section_bytes&&!memcmp(a->sections,b->sections,sections);
 }
+static bool CMLSameDescriptor(const CMGDescriptor *a,const CMGDescriptor *b) {return a->asset_index==b->asset_index&&CMLSameMeshDescriptor(a,b);}
 // Validate cached topology/resource/stream identities without re-reading bone
 // names, reference poses or vertex buffers every second. Animation stays live.
 static bool CMLReuseMetadata(CMLTarget *target) {
@@ -177,7 +178,7 @@ static bool CMLMakeCacheRoom(size_t bytes) {
     atomic_store(&CMLStats.cacheBytes,CMLCachedBytes);atomic_store(&CMLStats.cacheEntries,CMLCache.count);return true;
 }
 static CMLMesh *CMLLoadMesh(const CMGDescriptor *d,const CMEResource *resource) {
-    CMGKey key=CMGKeyFor(d);CMLMesh *cached=nil;for(CMLMesh *mesh in CMLCache){CMGKey existing=mesh.key;if(CMGKeyEqual(&existing,&key)&&mesh.descriptor.length==sizeof(*d)&&CMLSameDescriptor(mesh.descriptor.bytes,d)){cached=mesh;break;}}
+    CMGKey key=CMGKeyFor(d);CMLMesh *cached=nil;for(CMLMesh *mesh in CMLCache){CMGKey existing=mesh.key;if(CMGKeyEqual(&existing,&key)&&mesh.descriptor.length==sizeof(*d)&&CMLSameMeshDescriptor(mesh.descriptor.bytes,d)){cached=mesh;break;}}
     if(cached){[CMLCache removeObjectIdenticalTo:cached];[CMLCache addObject:cached];return cached;}
     if (!resource||!resource->hierarchy_valid||!resource->reference_pose_valid||d->vertex_stride!=24||d->weight_stride!=8||!d->section_count||d->section_count>8||d->index_bytes<88) return nil;
     uint64_t indexAddress=0;uint32_t indexCount=0;
