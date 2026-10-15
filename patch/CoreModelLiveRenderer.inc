@@ -175,9 +175,9 @@ static void CMLObserve(uint64_t component,uint64_t actor,uint64_t transformAddre
 }
 static CMFSchema CMLSchemaFor(const CMRReference *component,const CMNNames *source) {
     NSNumber *key=@(component->header.class_address);NSData *cached=CMLSchemas[key];CMFSchema schema={0};if(cached.length==sizeof(schema))memcpy(&schema,cached.bytes,sizeof(schema));
-    CMLSchemaDiscovery *discovery=CMLDiscoveries[key];if(cached&&!discovery)return schema;
+    CMLSchemaDiscovery *discovery=CMLDiscoveries[key];if((cached&&!discovery)||CMLSchemaStepUsed)return schema;
     if(!discovery){if(CMLSchemas.count>=32)return schema;discovery=[CMLSchemaDiscovery new];CMLDiscoveries[key]=discovery;}
-    uint64_t now=CMNow();if(CMLSchemaStepUsed||now<discovery.retryAfter)return schema;CMLSchemaStepUsed=true;
+    uint64_t now=CMNow();if(now<discovery.retryAfter)return schema;CMLSchemaStepUsed=true;
     if(!discovery.scan){discovery.scan=[NSMutableData dataWithLength:sizeof(CMFScan)];CMFBegin(discovery.scan.mutableBytes,component->header.class_address);
         discovery.names=[NSMutableData dataWithBytes:source length:sizeof(*source)];CMNNames *names=discovery.names.mutableBytes;
         names->count=0;names->read_attempts=0;names->read_failures=0;names->rejected_text=0;names->truncated=false;discovery.attempts++;}
