@@ -1,14 +1,14 @@
 # 实时人物网格填充
 
-目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充；用户反馈轮廓或边界不准。build 29 针对实机证据继续修正，完整目标仍未验证完成。
+目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充；用户反馈轮廓或边界不准。build 29 实机暴露原生结果缓冲越界，当前修复包为 build 30；稳定性与完整精确目标仍须实机验证。
 
 ## 当前安装包
 
-- 文件：`Core-17.0-21A327-TrollStore-model-render-v2.ipa`
-- Bundle build：`29`；`CoreModelRenderVersion=2`；采集协议仍为 `7`。
-- 源码：`9a41839f564e9e8825cf4ed3ff7eb3e11a1bf2e7`，分支 `feat/live-mesh-fill-v1`。
-- [云端构建与验证 38674699733](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38674699733)。包大小 7,256,099 字节，SHA-256 `ab8a34e2c60a192040638e29a87ce63746a2edac821463843cb2c482c1480420`。
-- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v2.ipa`，已与云端元数据及包内 plist 核对。
+- 文件：`Core-17.0-21A327-TrollStore-model-render-v3.ipa`
+- Bundle build：`30`；`CoreModelRenderVersion=3`；采集协议仍为 `7`。
+- 源码：`eeba16ecffd7d35ecc3f8bb7e65fa0999981af8b`，分支 `feat/live-mesh-fill-v1`。
+- [云端构建与验证 38676541750](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38676541750)。包大小 7,255,871 字节，SHA-256 `10b473e72f57d4fecd7f7ecdd6d8af55be05ac450d2617afe83609abf2b988ef`。
+- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v3.ipa`，已与云端元数据及包内 plist 核对。
 
 正式 Release 仍是 v19；单独的 `model-capture-v7.ipa` 只采集输入，不含此绘制路径。
 
@@ -50,20 +50,28 @@
 1. 先取得完整的有界类链，优先扫描名为 `SceneComponent` 和 `SkinnedMeshComponent` 的类，避免游戏派生类字段先耗尽扫描限额；类型、偏移和 bool 位仍须通过检查，加入 `bHideSkin` 和原生 bool 掩码处理。
 2. 除 `ForcedLodModel` / `PredictedLODLevel` 属性外，尝试识别具备单个 int32 返回参数的原生 `GetPredictedLODLevel`。只接受完整的简短 ARM64 getter，包括可选 PAC、精确 FFrame::Code 增量、从 this 的 int32 读取、向 RESULT_PARAM 写入和返回。出现调用、分支、其他寄存器改写或类型不符即拒绝；不执行游戏代码。该路径未被实机报告确认，识别失败仍明确记录 LOD 未验证。
 3. 网格缓存改为 24 MiB / 512 项上限及最近最少使用淘汰；活动目标及正在载入的网格不淘汰。超过两秒未更新的目标释放元数据和网格引用。失败的目标刷新退避一秒，避免持续抢占其他目标的刷新机会。
-4. 原两个像素查询包装函数都在场景 `+0x58` 取共享锁，构造 80 字节射线，取 `+8` 句柄后调用 `0x2AD2A0`。新版按场景一次持锁批量处理所有待定像素，三个场景锁不同时持有；射线按 16 字节对齐，保留原掩码、距离和归一化方向。
-5. 每场景每帧的首个待定像素与原包装函数比较命中 ID 和距离。出现差异立即关闭批处理并回退原逐像素路径；每 64 条批量射线检查时间预算，不能中断已进入的原生调用或锁等待。此处减少锁和计时开销，不改变像素判定粒度。
+4. build 29 曾按场景批量调用 `0x2AD2A0` 来减少逐像素取锁开销，每个场景分别持锁，且按 16 字节对齐。**其中原生结果仍被错误声明为 80 字节，遗漏原 Core 实际保留的 96 字节槽位；build 30 已修正该错误并关闭此直接入口。**
+5. build 29 的首个待定像素还会与原包装函数比较命中 ID 和距离，但它没有检查结果尾部越界，不能防止该内存错误。每 64 条批量射线的时间检查同样不能代替 ABI 正确性。
 
 云端通过 40 项 Python 检查、生产实时入口到填充的合成内存场景、批量锁与原查询回退、可见性扫描在 384 个无关字段下的优先级、类型和 ARM64 getter 拒绝路径、缓存活动引用与超时释放，以及原有捕获/蒙皮/6 项 Node 检查、签名/精确负载及编译后 ARM64 入口验证。未将设备原始报告或游戏资源上传 CI，合成测试不能代替 build 29 实机效果。
 
 相同源码的[普通构建 38674899972](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38674899972) 也通过。编译和自动化测试均只在 GitHub Actions 运行；本地仅作源码编辑、报告分析及包元数据/校验和核对。分支上的绘制构建入口是已注册工作流：`gh workflow run model-capture.yml --ref feat/live-mesh-fill-v1 -f model_render=true`。
 
+## build 29 崩溃与 build 30
+
+用户上传两份 build 29 系统 IPS，确认 Core 退出而游戏仍运行。两次都是主线程在新增批量查询中 `EXC_BAD_ACCESS / SIGSEGV`，对应同一安装包 UUID 及相同调用位置。旧 80 字节声明与原调用者的 96 字节槽位不符，尾部覆盖相邻句柄的证据及指令对照见[完整排查](build29-ray-result-crash.md)。
+
+build 30 统一使用 96 字节、16 字节对齐的结果，尾部保留不解释的可写空间；所有原包装函数调用也采用此声明。当前包停用直接批量入口，保留原查询函数逐像素工作。状态文件新增 `native_ray_result_bytes=96`、`native_ray_result_alignment=16`、`native_batch_enabled=false`，并通过不可变反射快照解决绘制忙时字段列表为空的问题。
+
+[云端 38676541750](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38676541750) 通过 41 项 Python 检查、AddressSanitizer 生产管线检查、独立 96 字节尾部写入与旧布局句柄损坏复现、ASan/UBSan 边界检查以及既有签名和 ARM64 入口验证。手机上是否持续稳定仍需新的实机报告，不能用云端检查替代。
+
 ## 仍需完成
 
-- 验证 build 29 实机隐藏字段及预测 LOD 的读取结果，当前级别仍可能需要游戏特定的渲染 LOD 来源。
+- 先验证 build 30 的缓冲区修复在实机持续运行及遮挡命中时生效，再核对隐藏字段和预测 LOD；当前级别仍可能需要游戏特定的渲染 LOD 来源。
 - 对齐完整高细节人体及实际可见服装、头发；独立动画、GPU 服装/形态变形、材质透明裁剪均未验证。
 - Master Pose 缺失骨骼采用参考姿态回退并计数。[Epic 的模块化人物说明](https://dev.epicgames.com/documentation/en-us/unreal-engine/working-with-modular-characters?application_version=4.27) 支持标准引擎的该行为，但不能证明此定制游戏没有额外处理。
 - Core 本地几何可能与游戏最终渲染几何、透明材质和动态物体不同；没有游戏 GPU 场景深度，不能保证墙沿红白界线逐像素重合。
 - 多次远程读取与相机没有游戏帧编号或原子采样证明；快速移动和转向时的同步误差仍需实机对照。
 - build 28 的 launchd 首次异常消息超时仍存在；成功显示填充不能证明初始化已完全稳定。
 
-`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 29、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 29/`；关键校验包括 `render_version=2`、可见性/LOD 来源、缓存淘汰、原查询一致性和用户观察到的具体边缘误差。
+`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 30、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 30/`；关键校验包括 `render_version=3`、96 字节结果缓冲、可见性/LOD 来源、缓存和用户观察到的具体边缘误差。
