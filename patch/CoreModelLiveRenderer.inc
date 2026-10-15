@@ -359,7 +359,7 @@ static void CMLStartup(void) {
     // Build 29 crashed in this fast path after a short RayHit buffer corrupted
     // the adjacent handle. Keep the corrected ABI everywhere, and use the
     // unchanged original wrappers in this stability build.
-    CMLIntersect=NULL;atomic_store(&CMLReady,true);
+    CMLIntersect=NULL;atomic_store(&CMLBatchDisabled,true);atomic_store(&CMLReady,true);
     dispatch_async(CMReportQueue, ^{NSURL *url=[CMReportURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Core-model-render-status.json"];CMLWriteStatus(url);
         CMLStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CMLStatusTimer,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC),5*NSEC_PER_SEC,NSEC_PER_SEC);
         dispatch_source_set_event_handler(CMLStatusTimer, ^{CMLWriteStatus(url);});dispatch_resume(CMLStatusTimer);});

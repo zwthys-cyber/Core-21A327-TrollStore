@@ -14,6 +14,8 @@ __attribute__((noinline)) static void NativeResult(void *out) {
 }
 __attribute__((noinline)) static CMRayHit NativeWrapper(void) {CMRayHit result;NativeResult(&result);return result;}
 int main(void) {
+    struct {uint8_t short_ray[80];uint64_t handle,reserved;} legacy={0};legacy.handle=0x123456780ULL;
+    NativeResult(&legacy);assert(legacy.handle==0x1FFFFFFFFULL); // Same corrupted handle in both device crashes.
     struct {uint64_t before[2];CMRayHit ray;uint64_t after[2];} guarded={0};
     guarded.before[0]=guarded.before[1]=guarded.after[0]=guarded.after[1]=0xC0DEF00DFEEDBEEFULL;
     NativeResult(&guarded.ray);
