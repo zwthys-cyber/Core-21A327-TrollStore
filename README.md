@@ -6,7 +6,7 @@
 
 v19 已设为 [最新 Release](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/latest)。在 Assets 中下载 `Core-17.0-21A327-TrollStore-v19-600m.ipa`，7 个发布附件、6 项 SHA-256 摘要和根目录主 IPA 已核对一致。仓库私有，浏览器需登录有访问权限的 GitHub 账号。600 米实机效果仍待确认，显示依赖原采集流程能获取的目标。
 
-为用户要求的衣服、头发完整轮廓及可见白色／遮挡红色效果，已独立发布 [Core 模型检查 v3](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-inspector-v3)。v3 实机导出的两个候选包已核对，确认 21 个 SkeletalMesh、4 个 StaticMesh。21 个骨骼样本的首个 LOD 已解析出 44,721 个顶点、56,927 个三角形、UV、参考骨骼和蒙皮权重，索引及骨骼映射有效。运行时人物与网格绑定、附件姿态、形变及透明裁剪仍未验证；完整人物红白填色尚未实现。可选[实时数据采集版](docs/model-runtime-capture.md)用于取得所定位组件的全变换数组、原投影和有界几何射线距离，仍待实机报告确认。Core 主包正式最新版仍为 v19。详见[资源分析说明](docs/model-source-inspector.md)。
+衣服、头发完整轮廓及可见白色／遮挡红色的开发工作在 `feat/live-mesh-fill-v1` 分支推进，正式 Release 仍为 v19。开发包已接入实时模型蒙皮及逐像素红白填色，build 28 用户确认可见，但轮廓或边界不准；build 29 的原生结果缓冲越界已在 build 30 修复。当前 **build 31 / render v4** 针对随后出现的填充间歇和卡顿减少重复读取、查询取锁及绘制开销，已通过[云端验证](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38678390262)，实机性能改善与完整精确效果仍未验证。安装包、实机证据和未完成项见[实时绘制说明](docs/live-mesh-renderer.md)。历史[模型检查 v3](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/model-inspector-v3)及[采集 v1–v7](docs/model-runtime-capture.md)为该路径提供模型与姿态输入；单独的采集包不含实时填充。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。历史版本见 [v18](docs/releases/v18-300m.md)、[v17](docs/releases/v17-300m.md)、[v16](docs/releases/v16-300m.md)、[v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 

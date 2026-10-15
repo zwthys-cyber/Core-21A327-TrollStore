@@ -1,14 +1,14 @@
 # 实时人物网格填充
 
-目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充；用户反馈轮廓或边界不准。build 29 实机暴露原生结果缓冲越界，当前修复包为 build 30；稳定性与完整精确目标仍须实机验证。
+目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充，但轮廓或边界不准。build 29 的原生结果缓冲越界已在 build 30 修正；build 30 实机又确认间歇填充和卡顿。当前 **build 31 / render v4** 针对重复读取、查询取锁及绘制数量进行修复；性能改善和完整精确目标仍须实机验证。
 
 ## 当前安装包
 
-- 文件：`Core-17.0-21A327-TrollStore-model-render-v3.ipa`
-- Bundle build：`30`；`CoreModelRenderVersion=3`；采集协议仍为 `7`。
-- 源码：`eeba16ecffd7d35ecc3f8bb7e65fa0999981af8b`，分支 `feat/live-mesh-fill-v1`。
-- [云端构建与验证 38676541750](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38676541750)。包大小 7,255,871 字节，SHA-256 `10b473e72f57d4fecd7f7ecdd6d8af55be05ac450d2617afe83609abf2b988ef`。
-- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v3.ipa`，已与云端元数据及包内 plist 核对。
+- 文件：`Core-17.0-21A327-TrollStore-model-render-v4.ipa`
+- Bundle build：`31`；`CoreModelRenderVersion=4`；采集协议仍为 `7`。
+- 源码：`66f890d35eeeff85a8cfbac6ca2c6a054fd49d0e`，分支 `feat/live-mesh-fill-v1`。
+- [云端构建与验证 38678390262](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38678390262)。包大小 7,261,027 字节，SHA-256 `d527dada5f092defb2e66555c9e233b17397b97357fbddbd572cc25746f9c3aa`。
+- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v4.ipa`，已与云端元数据及包内 plist 核对。
 
 正式 Release 仍是 v19；单独的 `model-capture-v7.ipa` 只采集输入，不含此绘制路径。
 
@@ -43,7 +43,7 @@
 
 顶点、四权重、索引和 224 字节分区使用实机核对过的布局。以参考层级逆绑定和本帧姿态蒙皮，按当前相机投影，并抽样对照原投影。像素中心栅格化使用透视正确的世界坐标和最近表面；每个覆盖像素独立查询，不从关节颜色插值，不降低遮罩分辨率。
 
-原生几何查询使用原场景列表共享锁。三场景依次查询，任一命中为红，均未命中为白；异常或预算未完成保留未知，整帧新增填充跳过。填充通过关闭该次抗锯齿填充的原生矩形条带提交，随后还原 draw list 标志。
+原生几何查询使用原场景列表共享锁。三场景依次查询，任一命中为红，均未命中为白；异常或预算未完成保留未知，整帧新增填充跳过。填充通过关闭该次抗锯齿填充的原生矩形提交，随后还原 draw list 标志。build 31 将相邻行完全一致的条带合并为矩形，保持逐像素颜色和覆盖不变。
 
 ## build 29 修正
 
@@ -61,17 +61,25 @@
 
 用户上传两份 build 29 系统 IPS，确认 Core 退出而游戏仍运行。两次都是主线程在新增批量查询中 `EXC_BAD_ACCESS / SIGSEGV`，对应同一安装包 UUID 及相同调用位置。旧 80 字节声明与原调用者的 96 字节槽位不符，尾部覆盖相邻句柄的证据及指令对照见[完整排查](build29-ray-result-crash.md)。
 
-build 30 统一使用 96 字节、16 字节对齐的结果，尾部保留不解释的可写空间；所有原包装函数调用也采用此声明。当前包停用直接批量入口，保留原查询函数逐像素工作。状态文件新增 `native_ray_result_bytes=96`、`native_ray_result_alignment=16`、`native_batch_enabled=false`，并通过不可变反射快照解决绘制忙时字段列表为空的问题。
+build 30 统一使用 96 字节、16 字节对齐的结果，尾部保留不解释的可写空间；所有原包装函数调用也采用此声明。该版本停用直接批量入口，保留原查询函数逐像素工作。状态文件新增 `native_ray_result_bytes=96`、`native_ray_result_alignment=16`、`native_batch_enabled=false`，并通过不可变反射快照解决绘制忙时字段列表为空的问题。
 
 [云端 38676541750](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38676541750) 通过 41 项 Python 检查、AddressSanitizer 生产管线检查、独立 96 字节尾部写入与旧布局句柄损坏复现、ASan/UBSan 边界检查以及既有签名和 ARM64 入口验证。手机上是否持续稳定仍需新的实机报告，不能用云端检查替代。
 
+## build 30 卡顿与 build 31
+
+六份新文件记录 494 帧填充，327 次查询或条带超限跳帧，27,018,332 次原生查询，474 次全量元数据刷新，新增绘制单次最长 85.756 ms。缓存达到 156 项且没有拒绝，隐藏字段也已确认，均不是本次填充间歇的主要缺失项。预测 LOD 仍未找到。完整数据和改动边界见[本次排查](build30-fill-stalls.md)。
+
+build 31 复用经对象、附件图及流/索引/分区描述校验的静态元数据，当前姿态和可见性仍逐帧读取；其他目标等待本帧元数据检查机会时不再无条件消失。人物列表每帧分块读取一次，像素缓冲从 20 字节减至 8 字节，并按精确相同的相邻行合并矩形。修正后的 96 字节批量入口恢复使用，同时保留原包装函数比较和回退。没有降低像素分辨率、放宽 12 ms 查询限额或沿用上帧颜色。
+
+[build 31 云端 38678390262](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38678390262) 全部通过：41 项 Python 检查、ASan 生产实时场景、独立 ASan/UBSan 尾部写入、静态资源复用及变化失效、延期目标继续绘制、人物列表重分配、旋转相机透视恢复及矩形逐像素覆盖检查，另含全部既有捕获/蒙皮/反射、6 项 Node、签名/负载及 ARM64 入口检查。尚无 build 31 手机报告，不能宣称卡顿或精度已解决。
+
 ## 仍需完成
 
-- 先验证 build 30 的缓冲区修复在实机持续运行及遮挡命中时生效，再核对隐藏字段和预测 LOD；当前级别仍可能需要游戏特定的渲染 LOD 来源。
+- 验证 build 31 实机填充是否连续及绘制耗时是否下降，核对批量查询与原包装函数是否发生不一致；同时继续追踪预测/当前 LOD，当前级别仍可能需要游戏特定的渲染 LOD 来源。
 - 对齐完整高细节人体及实际可见服装、头发；独立动画、GPU 服装/形态变形、材质透明裁剪均未验证。
 - Master Pose 缺失骨骼采用参考姿态回退并计数。[Epic 的模块化人物说明](https://dev.epicgames.com/documentation/en-us/unreal-engine/working-with-modular-characters?application_version=4.27) 支持标准引擎的该行为，但不能证明此定制游戏没有额外处理。
 - Core 本地几何可能与游戏最终渲染几何、透明材质和动态物体不同；没有游戏 GPU 场景深度，不能保证墙沿红白界线逐像素重合。
 - 多次远程读取与相机没有游戏帧编号或原子采样证明；快速移动和转向时的同步误差仍需实机对照。
 - build 28 的 launchd 首次异常消息超时仍存在；成功显示填充不能证明初始化已完全稳定。
 
-`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 30、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 30/`；关键校验包括 `render_version=3`、96 字节结果缓冲、可见性/LOD 来源、缓存和用户观察到的具体边缘误差。
+`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 31、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 31/`；关键校验包括 `render_version=4`、`metadata_reuses`、`query_frames_incomplete`、`rectangle_budget_frames_skipped`、批量一致性、绘制最大耗时及实际边缘误差。
