@@ -39,16 +39,22 @@ static bool CMWorldPosition(const CMTransform *component, const CMTransform *bon
     return isfinite(out->x) && isfinite(out->y) && isfinite(out->z);
 }
 
-// The analyzed Core query returns an 80-byte RayHit via ARM64's x8 return buffer.
-// tfar and geometry ID are the fields read below; unused fields are not exported.
-typedef struct {
+// Core D33F4 uses three 96-byte, 16-byte-aligned native result slots at
+// SP+0x30/+0x90/+0xF0. The first 80 bytes do NOT describe the complete ABI:
+// native intersection can write the trailing 16 bytes too. Build 29's short
+// buffer let those writes corrupt its adjacent scene handle (two device IPS).
+// Keep that tail opaque; only the validated distance/geometry fields are read.
+typedef struct __attribute__((aligned(16))) {
     float origin[3], near_distance, direction[3], time, far_distance;
     uint32_t mask, ray_id, flags;
     float normal[3], u, v;
     uint32_t primitive_id, geometry_id, instance_id;
+    uint8_t native_tail[16];
 } CMRayHit;
 _Static_assert(sizeof(CMTransform) == 44, "FTransform read size");
-_Static_assert(sizeof(CMRayHit) == 80, "Core ray return ABI");
+_Static_assert(sizeof(CMRayHit) == 96, "Complete native Core ray return ABI");
+_Static_assert(_Alignof(CMRayHit) == 16, "Core ray return alignment");
+_Static_assert(offsetof(CMRayHit,native_tail) == 80, "Native intersection result tail");
 _Static_assert(offsetof(CMRayHit, far_distance) == 32, "Core ray distance field");
 _Static_assert(offsetof(CMRayHit, geometry_id) == 72, "Core ray hit field");
 

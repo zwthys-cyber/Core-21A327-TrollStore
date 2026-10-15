@@ -42,3 +42,9 @@ class ModelRenderImportTests(unittest.TestCase):
             self.assertEqual(self.before[offset:offset+4],bytes.fromhex(word),hex(offset))
         for site,target in ((0xE0C28,0x725000),(0xE0CA4,0x725010),(0xE0C9C,0x2AD2A0),(0xE0DA4,0x2AD2A0)):
             self.assertEqual(self.before[site:site+4],call(site,target))
+    def test_original_caller_reserves_three_96_byte_ray_results(self):
+        # D33F4: SP -= 0x1C0; FP=SP+0x1B0. Result addresses are
+        # FP-0xC0 (=SP+0xF0), SP+0x90 and SP+0x30: 96 bytes each.
+        # The previous 80-byte inference omitted native tail writes.
+        for offset,word in {0xD3428:'ff0307d1',0xD3444:'fdc30691',0xD34C8:'a80303d1',0xD34E8:'e8430291',0xD3554:'e8c30091'}.items():
+            self.assertEqual(self.before[offset:offset+4],bytes.fromhex(word),hex(offset))

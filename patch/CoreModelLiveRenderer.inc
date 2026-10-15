@@ -28,6 +28,11 @@
 @end
 @implementation CMLTarget
 @end
+@interface CMLSchemaSnapshot : NSObject
+@property(atomic,copy) NSDictionary<NSNumber *,NSData *> *schemas;
+@end
+@implementation CMLSchemaSnapshot
+@end
 typedef struct {
     atomic_uint_fast64_t frames,poseUpdates,metadataLoads,metadataFailures,meshLoads,cacheBytes,triangles,white,red,queryCalls,drawFrames,spans;
     atomic_uint_fast64_t staleTargets,unknownVisibility,unverifiedLOD,referenceFallbacks,unknownPose,badRays,budgetFrames,projectionMismatch,oversizedMasks;
@@ -41,6 +46,7 @@ static pthread_mutex_t CMLMutex=PTHREAD_MUTEX_INITIALIZER;
 static NSMutableArray<CMLTarget *> *CMLTargets;
 static NSMutableArray<CMLMesh *> *CMLCache;
 static NSMutableDictionary<NSNumber *,NSData *> *CMLSchemas;
+static CMLSchemaSnapshot *CMLSchemaStore;
 static uint64_t CMLReadDeadline;
 static uint32_t CMLReads,CMLCachedBytes;
 static uintptr_t CMLExpectedContext;
@@ -87,7 +93,7 @@ static CMFSchema CMLSchemaFor(const CMRReference *component,const CMNNames *sour
     NSMutableData *storage=[NSMutableData dataWithBytes:source length:sizeof(*source)];CMNNames *names=storage.mutableBytes;
     names->count=0;names->read_attempts=0;names->read_failures=0;names->truncated=false;
     CMFCollect(component->header.class_address,CMLRead,names,&schema);
-    if(CMLSchemas.count<32) CMLSchemas[@(component->header.class_address)]=[NSData dataWithBytes:&schema length:sizeof(schema)];
+    if(CMLSchemas.count<32){CMLSchemas[@(component->header.class_address)]=[NSData dataWithBytes:&schema length:sizeof(schema)];CMLSchemaStore.schemas=CMLSchemas;}
     CMLReadDeadline=CMNow()+12000000ULL;CMLReads=0;
     return schema;
 }
@@ -203,7 +209,7 @@ static bool CMLQueryPixel(void *context,const CMVec3 *camera,const CMVec3 *world
         if(hit.geometry_id!=UINT32_MAX){*blocked=true;return true;}}
     return true;
 }
-// E0BE8/E0CF0 both take scene+0x58's shared lock, initialize an 80-byte
+// E0BE8/E0CF0 both take scene+0x58's shared lock, use a 96-byte
 // ray and call 2AD2A0(scene->handle at +8, &ray, NULL). Keep the same
 // operations, but take each scene lock once for its complete pixel pass.
 // Scene locks are never held together. The outer original scene-list lock
@@ -326,20 +332,21 @@ __attribute__((naked)) pid_t cmdraw(void) { __asm__ volatile("mov x1, x30\nb _Co
 #endif
 static void CMLWriteStatus(NSURL *url) {
 #define CML_VALUE(field) @(atomic_load(&CMLStats.field))
-    NSMutableArray *schemas=[NSMutableArray array];bool schemaBusy=pthread_mutex_trylock(&CMLMutex)!=0;
-    if(!schemaBusy){for(NSNumber *address in CMLSchemas){CMFSchema s;memcpy(&s,((NSData *)CMLSchemas[address]).bytes,sizeof(s));
+    NSMutableArray *schemas=[NSMutableArray array];NSDictionary *published=CMLSchemaStore.schemas ?: @{};
+    for(NSNumber *address in published){CMFSchema s;memcpy(&s,((NSData *)published[address]).bytes,sizeof(s));
         [schemas addObject:@{@"class_address":address,@"classes_walked":@(s.classes),@"fields_walked":@(s.fields),@"read_attempts":@(s.reads),@"read_failures":@(s.failures),@"truncated":@(s.truncated),
             @"visible_found":@(s.visible.found),@"visible_offset":@(s.visible.offset),@"visible_mask":@(s.visible.mask),@"hidden_found":@(s.hidden.found),@"hidden_offset":@(s.hidden.offset),@"hidden_mask":@(s.hidden.mask),
             @"hide_skin_found":@(s.hide_skin.found),@"hide_skin_offset":@(s.hide_skin.offset),@"hide_skin_mask":@(s.hide_skin.mask),
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
-            @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;})}];}pthread_mutex_unlock(&CMLMutex);}
-    NSDictionary *status=@{ @"render_version":@2,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+            @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;})}];}
+    NSDictionary *status=@{ @"render_version":@3,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),
         @"rasterized_triangles":CML_VALUE(triangles),@"pixel_query_calls":CML_VALUE(queryCalls),@"filled_frames":CML_VALUE(drawFrames),@"white_pixels":CML_VALUE(white),@"red_pixels":CML_VALUE(red),@"filled_spans":CML_VALUE(spans),
         @"stale_targets_skipped":CML_VALUE(staleTargets),@"unknown_visibility_samples":CML_VALUE(unknownVisibility),@"unverified_lod_samples":CML_VALUE(unverifiedLOD),@"master_reference_pose_fallback_bones":CML_VALUE(referenceFallbacks),
         @"unknown_pose_meshes":CML_VALUE(unknownPose),@"malformed_pixel_queries":CML_VALUE(badRays),@"budget_frames_skipped":CML_VALUE(budgetFrames),@"projection_mismatch_meshes":CML_VALUE(projectionMismatch),@"oversized_masks_skipped":CML_VALUE(oversizedMasks),
-        @"draw_time_total_ns":CML_VALUE(drawTimeTotal),@"draw_time_maximum_ns":CML_VALUE(drawTimeMaximum),@"reflected_component_schemas":schemas,@"schema_snapshot_busy":@(schemaBusy),
+        @"draw_time_total_ns":CML_VALUE(drawTimeTotal),@"draw_time_maximum_ns":CML_VALUE(drawTimeMaximum),@"reflected_component_schemas":schemas,@"schema_snapshot_busy":@NO,@"schema_snapshot_source":@"immutable-discovery-snapshot",
         @"native_batch_passes":CML_VALUE(batchPasses),@"native_batch_parity_checks":CML_VALUE(batchParityChecks),@"native_batch_parity_failures":CML_VALUE(batchParityFailures),@"native_batch_disabled":@(atomic_load(&CMLBatchDisabled)),
+        @"native_batch_enabled":@(CMLIntersect&&!atomic_load(&CMLBatchDisabled)),@"native_ray_result_bytes":@(sizeof(CMRayHit)),@"native_ray_result_alignment":@(_Alignof(CMRayHit)),
         @"mesh_cache_entries":CML_VALUE(cacheEntries),@"mesh_cache_entry_limit":@CML_CACHE_ENTRIES,@"mesh_cache_evictions":CML_VALUE(cacheEvictions),@"mesh_cache_capacity_rejections":CML_VALUE(cacheRejects),
         @"pixel_grid_step":@1,@"occlusion_source":@"Core-local-geometry-per-pixel-rays",@"continuous_pose_sampling":@YES,@"silhouette_renderer_connected":@YES,
         @"game_current_lod_verified":@NO,@"material_alpha_clip_verified":@NO,@"cloth_morph_verified":@NO,@"master_reference_fallback_game_verified":@NO,@"gpu_scene_depth_available":@NO,@"full_requested_effect_verified":@NO };
@@ -347,9 +354,12 @@ static void CMLWriteStatus(NSURL *url) {
     NSData *data=[NSJSONSerialization dataWithJSONObject:status options:NSJSONWritingSortedKeys error:NULL];if(data.length&&data.length<65536)[data writeToURL:url options:NSDataWritingAtomic error:NULL];
 }
 static void CMLStartup(void) {
-    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLExpectedContext=CMBase+0xC54270;
+    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLExpectedContext=CMBase+0xC54270;
     CMLOriginalDraw=(void (*)(void *))CMCallable(CMBase+0xDB144);CMLGetDrawList=(void *(*)(void))CMCallable(CMBase+0x123E30);CMLPolygon=(void (*)(void *,const CMVec2 *,int,uint32_t))CMCallable(CMBase+0x13C8AC);
-    CMLIntersect=(void (*)(void *,CMRayHit *,void *))CMCallable(CMBase+0x2AD2A0);atomic_store(&CMLReady,true);
+    // Build 29 crashed in this fast path after a short RayHit buffer corrupted
+    // the adjacent handle. Keep the corrected ABI everywhere, and use the
+    // unchanged original wrappers in this stability build.
+    CMLIntersect=NULL;atomic_store(&CMLReady,true);
     dispatch_async(CMReportQueue, ^{NSURL *url=[CMReportURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Core-model-render-status.json"];CMLWriteStatus(url);
         CMLStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CMLStatusTimer,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC),5*NSEC_PER_SEC,NSEC_PER_SEC);
         dispatch_source_set_event_handler(CMLStatusTimer, ^{CMLWriteStatus(url);});dispatch_resume(CMLStatusTimer);});

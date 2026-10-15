@@ -45,6 +45,9 @@ static void Intersect(void *handle,CMRayHit *ray,void *context){unsigned slot=(u
     assert(ray->near_distance==0&&ray->time==0&&ray->flags==0&&ray->mask==UINT32_MAX&&ray->geometry_id==UINT32_MAX);
     float norm=ray->direction[0]*ray->direction[0]+ray->direction[1]*ray->direction[1]+ray->direction[2]*ray->direction[2];assert(fabsf(norm-1)<.00001f);
     if(slot==BlockScene&&ray->origin[1]+ray->direction[1]*ray->far_distance>=0){ray->geometry_id=7;ray->far_distance*=.5f;}
+    // Independent native writer extends through byte 95, as Core's native
+    // result slots do. Build 29 placed its scene handle at byte 80 instead.
+    uint64_t tail[2]={0x1FFFFFFFFULL,0xA5A55A5A11223344ULL};memcpy((uint8_t *)ray+80,tail,16);
     if(BadRay)ray->far_distance=NAN;if(WrongRaw)ray->geometry_id=123;}
 static void Original(void *p){assert(p==Context);OriginalCalls++;}
 static void *List(void){return DrawList;}
@@ -55,7 +58,7 @@ static void Setup(void){
     memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
     CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
-    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLCachedBytes=0;
+    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLCachedBytes=0;
     CMBase=TestBase;CMReadRemote=Reader;CMProject=Project;CMLock=Lock;CMUnlock=Unlock;for(unsigned i=0;i<3;i++)CMRayFunctions[i]=Ray;
     CMLExpectedContext=(uintptr_t)Context;CMLOriginalDraw=Original;CMLGetDrawList=List;CMLPolygon=Polygon;
     CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=7;h.name_index=100;memcpy(ComponentData,&h,40);
@@ -63,7 +66,7 @@ static void Setup(void){
     uint32_t poseCount=1;memcpy(ComponentData+0x848,&GamePose,8);memcpy(ComponentData+0x850,&poseCount,4);memcpy(ComponentData+0x854,&poseCount,4);
     Context[0x23]=1;float screen[2]={8,8},fov=90;memcpy(Context+4,screen,8);memcpy(Context+0x1F4+48,&fov,4);
     uintptr_t begin=(uintptr_t)ActorRecord,end=begin+sizeof(ActorRecord);memcpy(Context+0x3F0,&begin,8);memcpy(Context+0x3F8,&end,8);uint32_t localTeam=1,team=2;float distance=10;memcpy(Context+0x3A8,&localTeam,4);memcpy(ActorRecord,&GameActor,8);memcpy(ActorRecord+8,&team,4);memcpy(ActorRecord+0x40,&distance,4);memcpy(SourceRecord,&GameActor,8);DrawList[0x30]=4;
-    CMFSchema schema={0};schema.visible=(CMFBool){0x100,1,true};schema.hidden=(CMFBool){0x101,1,true};schema.predicted_found=true;schema.predicted_lod=0x900;CMLSchemas[@(GameClass)]=[NSData dataWithBytes:&schema length:sizeof(schema)];
+    CMFSchema schema={0};schema.visible=(CMFBool){0x100,1,true};schema.hidden=(CMFBool){0x101,1,true};schema.predicted_found=true;schema.predicted_lod=0x900;CMLSchemas[@(GameClass)]=[NSData dataWithBytes:&schema length:sizeof(schema)];CMLSchemaStore.schemas=CMLSchemas;
     CMLMesh *mesh=[CMLMesh new];mesh.key=(CMGKey){.asset=Asset};mesh.vertices=3;mesh.bones=1;mesh.sectionCount=1;mesh.indexCount=3;mesh.indexWidth=2;
     uint8_t vertices[72]={0},weights[24]={0};const CMVec3 positions[3]={{10,-7.5f,7.5f},{10,7.5f,7.5f},{10,-7.5f,-7.5f}};for(unsigned i=0;i<3;i++){memcpy(vertices+i*24+8,&positions[i],12);weights[i*8+4]=255;}
     uint16_t indices[]={0,1,2},palettes[256]={0};CMSSection section={.triangle_count=1,.vertex_count=3,.bone_count=1};CMSMatrix inverse=CMSIdentity();uint32_t info[4]={100,0,UINT32_MAX,0};
@@ -104,6 +107,6 @@ int main(void){@autoreleasepool {
     memcpy((void *)(f+8),&ret,8);memcpy((void *)(f-8),&ctx,8);memcpy((void *)(f-0x48),&GameComponent,8);memcpy((void *)(f-0x20),&record,8);memcpy((void *)(f+16+0x110),&GamePose,8);memcpy((void *)(f+16+0x118),&count,4);
     CoreModelBzeroCapture((void *)(f+16+0xD0),44,f,GameComponent+0x1F0,TestBase+0xE1960);assert(target.poseTime==TestTime&&Reads==3&&target.pose.length==48&&!atomic_load(&CMEnabled));
     errno=ERANGE;unsigned calls=OriginalCalls;assert(CoreModelRenderDispatch(NULL,TestBase+0x1234)==(uintptr_t)getpid()&&errno==ERANGE&&OriginalCalls==calls);
-    NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];CMLWriteStatus([NSURL fileURLWithPath:file]);NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
+    NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:file]);pthread_mutex_unlock(&CMLMutex);NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]&&[status[@"reflected_component_schemas"] count]==1&&![status[@"schema_snapshot_busy"] boolValue]&&[status[@"native_ray_result_bytes"] intValue]==96);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
     puts("PASS: original frame forwarding; real mesh skinning, pixel rays and native red/white spans; exactly three separate scene locks; 16-byte native ray ABI; later-scene hits; raw/wrapper parity and scalar fallback; missing scene handles and unreadable scenes; flag restoration; hidden/team/LOD/stale/replaced targets; mismatch/malformed/budget fail closed; continuous pose after capture ends; getpid and errno; honest runtime status");
 }return 0;}
