@@ -125,6 +125,11 @@ static NSDictionary *CMTransformJSON(const CMTransform *t) {
 
 // Called only on the serial writer queue; report contains at most six snapshots.
 static void CMWriteReport(NSString *status) {
+#ifdef CORE_MODEL_RENDER
+    const bool rendererConnected=true;
+#else
+    const bool rendererConnected=false;
+#endif
     NSDictionary *report = @{ @"capture_version":@7, @"status":status,
         @"date":[NSDate.date description], @"core_uuid":@"4ED1FD29-A46A-36B3-8DFC-36F67EA929D1",
         @"snapshots":CMFrames ?: @[], @"max_targets":@(CM_TARGET_LIMIT),
@@ -132,7 +137,7 @@ static void CMWriteReport(NSString *status) {
         @"mesh_buffer_snapshots":CMGPUBufferCatalog ?: @[], @"gpu_stream_session":CMGPUWriterStats ?: @{},
         @"report_byte_limit":@(8*1024*1024),
         @"full_render_mesh_verified":@NO, @"runtime_mesh_resource_binding_verified":@NO,
-        @"pixel_depth_texture_available":@NO, @"silhouette_implemented":@NO,
+        @"pixel_depth_texture_available":@NO, @"silhouette_implemented":@(rendererConnected),@"full_requested_effect_verified":@NO,
         @"target_files_modified":@NO, @"game_process_started":@NO, @"network_requests":@0,
         @"reader_bzero_calls_observed":@(atomic_load_explicit(&CMReaderCalls,memory_order_relaxed)),
         @"entry_bzero_calls_observed":@(atomic_load_explicit(&CMForwardCalls,memory_order_relaxed)),

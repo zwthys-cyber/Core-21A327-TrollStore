@@ -72,6 +72,6 @@ jobs:
         run: python3 scripts/check_model_capture_entry.py dist/*.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.model_render && 'Core-live-mesh-fill-v1' || 'Core-model-runtime-capture-v7' }}
+          name: ${{ inputs.model_render && 'Core-live-mesh-fill-v2' || 'Core-model-runtime-capture-v7' }}
           path: dist/*
           retention-days: 14

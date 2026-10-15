@@ -6,17 +6,20 @@
 #include <errno.h>
 static const uintptr_t TestBase=0x100000000ULL;
 static const uint64_t GameComponent=0x200001000ULL,GamePose=0x200010000ULL,GameActor=0x200020000ULL,Asset=0x300000000ULL,GameClass=0x400000000ULL;
-static uint8_t Context[2048],ComponentData[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256];
+static uint8_t Context[2048],ComponentData[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256],SceneData[3][160];
 static uint64_t TestTime=10000000000ULL;
-static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads;
-static bool BadRay,WrongProjection,FailQueryBudget;
+static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
+static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene;
 static int TestClock(clockid_t clock,struct timespec *t){(void)clock;if(FailQueryBudget)TestTime+=20000000ULL;t->tv_sec=TestTime/1000000000ULL;t->tv_nsec=TestTime%1000000000ULL;return 0;}
 static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,vm_address_t dest,vm_size_t *copied){
     (void)task;uint64_t value=0;
     if(address==TestBase+0xBD4720)value=0xAA55;
     else if(address==TestBase+0xBD4978)value=0xAA55^48;
     else if(address==TestBase+0xC54459)value=1;
-    else if(address==TestBase+0xC15EC8&&size==24){uintptr_t scenes[3]={1,2,3};memcpy((void *)dest,scenes,24);*copied=24;return KERN_SUCCESS;}
+    else if(address==TestBase+0xC15EC8&&size==24){uintptr_t scenes[3]={(uintptr_t)SceneData[0],(uintptr_t)SceneData[1],(uintptr_t)SceneData[2]};memcpy((void *)dest,scenes,24);*copied=24;return KERN_SUCCESS;}
+    else if(address>=(uintptr_t)SceneData&&address<(uintptr_t)SceneData+sizeof(SceneData)){
+        if(UnreadableScene||size!=8||(address-(uintptr_t)SceneData)%160!=8)return KERN_INVALID_ADDRESS;
+        memcpy((void *)dest,(void *)address,8);*copied=8;return KERN_SUCCESS;}
     else {const void *arrays[]={Context,ActorRecord,SourceRecord,Frame,DrawList};const size_t sizes[]={sizeof(Context),sizeof(ActorRecord),sizeof(SourceRecord),sizeof(Frame),sizeof(DrawList)};
         for(unsigned i=0;i<5;i++)if(address>=(uintptr_t)arrays[i]&&size<=sizes[i]&&address-(uintptr_t)arrays[i]<=sizes[i]-size){memcpy((void *)dest,(void *)address,size);*copied=size;return KERN_SUCCESS;}return KERN_INVALID_ADDRESS;}
     if(size>8)return KERN_INVALID_ADDRESS;memcpy((void *)dest,&value,size);*copied=size;return KERN_SUCCESS;
@@ -33,17 +36,26 @@ static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzer
     if(address==GamePose&&size==48){CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};memcpy(out,&t,sizeof(t));return true;}return false;
 }
 static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){assert(camera==Context+0x1F4);CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(WrongProjection)p.xy.x+=10;return p.xy;}
-static void Lock(void *p){assert(p==(void *)(TestBase+0xBD4F78)&&LockDepth==0);LockDepth++;}
-static void Unlock(void *p){assert(p==(void *)(TestBase+0xBD4F78)&&LockDepth==1);LockDepth--;}
-static CMRayHit Ray(void *scene,const CMVec3 *camera,const CMVec3 *world){assert(LockDepth==1);CMVec3 d={world->x-camera->x,world->y-camera->y,world->z-camera->z};CMRayHit hit={0};hit.geometry_id=world->y>=0&&(uintptr_t)scene==1?7:UINT32_MAX;hit.far_distance=sqrtf(CMPDot(d,d))*(hit.geometry_id==7?.5f:1);if(BadRay)hit.far_distance=NAN;return hit;}
+static void Lock(void *p){if(p==(void *)(TestBase+0xBD4F78)){assert(!LockDepth);LockDepth=1;return;}
+    assert(LockDepth==1);for(unsigned i=0;i<3;i++)if(p==SceneData[i]+0x58){LockDepth|=2U<<i;SceneLocks++;return;}assert(false);}
+static void Unlock(void *p){if(p==(void *)(TestBase+0xBD4F78)){assert(LockDepth==1);LockDepth=0;return;}
+    for(unsigned i=0;i<3;i++)if(p==SceneData[i]+0x58){assert(LockDepth==(1U|(2U<<i)));LockDepth=1;return;}assert(false);}
+static CMRayHit Ray(void *scene,const CMVec3 *camera,const CMVec3 *world){assert(LockDepth==1);CMVec3 d={world->x-camera->x,world->y-camera->y,world->z-camera->z};CMRayHit hit={0};hit.geometry_id=world->y>=0&&scene==SceneData[BlockScene]?7:UINT32_MAX;hit.far_distance=sqrtf(CMPDot(d,d))*(hit.geometry_id==7?.5f:1);if(BadRay)hit.far_distance=NAN;return hit;}
+static void Intersect(void *handle,CMRayHit *ray,void *context){unsigned slot=(unsigned)(uintptr_t)handle-1;assert(slot<3&&!context&&LockDepth==(1U|(2U<<slot))&&!((uintptr_t)ray&15));RawCalls++;
+    assert(ray->near_distance==0&&ray->time==0&&ray->flags==0&&ray->mask==UINT32_MAX&&ray->geometry_id==UINT32_MAX);
+    float norm=ray->direction[0]*ray->direction[0]+ray->direction[1]*ray->direction[1]+ray->direction[2]*ray->direction[2];assert(fabsf(norm-1)<.00001f);
+    if(slot==BlockScene&&ray->origin[1]+ray->direction[1]*ray->far_distance>=0){ray->geometry_id=7;ray->far_distance*=.5f;}
+    if(BadRay)ray->far_distance=NAN;if(WrongRaw)ray->geometry_id=123;}
 static void Original(void *p){assert(p==Context);OriginalCalls++;}
 static void *List(void){return DrawList;}
 static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y==points[1].y+1);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
-    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=0;BadRay=WrongProjection=FailQueryBudget=false;
+    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=false;
+    memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
+    CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
-    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];
+    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLCachedBytes=0;
     CMBase=TestBase;CMReadRemote=Reader;CMProject=Project;CMLock=Lock;CMUnlock=Unlock;for(unsigned i=0;i<3;i++)CMRayFunctions[i]=Ray;
     CMLExpectedContext=(uintptr_t)Context;CMLOriginalDraw=Original;CMLGetDrawList=List;CMLPolygon=Polygon;
     CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=7;h.name_index=100;memcpy(ComponentData,&h,40);
@@ -65,7 +77,19 @@ static void Setup(void){
 }
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
 int main(void){@autoreleasepool {
-    Setup();Draw();assert(OriginalCalls==1&&Fills==9&&WhiteFills>0&&RedFills>0);
+    Setup();Draw();assert(OriginalCalls==1&&Fills==9&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==51);
+    Setup();BlockScene=2;Draw();assert(Fills==9&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==63);
+    Setup();CMLIntersect=NULL;Draw();assert(Fills==9&&!SceneLocks&&!RawCalls);
+    Setup();WrongRaw=true;Draw();assert(Fills==9&&WhiteFills>0&&RedFills>0&&SceneLocks==1&&atomic_load(&CMLBatchDisabled));
+    Setup();UnreadableScene=true;Draw();assert(!Fills&&SceneLocks==1&&!RawCalls);
+    Setup();uintptr_t noHandle=0;memcpy(SceneData[1]+8,&noHandle,8);Draw();assert(Fills==9&&SceneLocks==3&&RawCalls==36);
+    Setup();CMLTarget *pinnedTarget=CMLTargets.firstObject;CMLMesh *pinned=pinnedTarget.meshes.firstObject,*old=[CMLMesh new],*recent=[CMLMesh new];
+    pinned.byteCost=12*1024*1024;old.byteCost=8*1024*1024;recent.byteCost=4*1024*1024;[CMLCache addObjectsFromArray:@[old,pinned,recent]];CMLCachedBytes=CML_CACHE_BYTES;
+    assert(CMLMakeCacheRoom(12*1024*1024)&&CMLCache.count==1&&CMLCache.firstObject==pinned&&CMLCachedBytes==pinned.byteCost);
+    assert(!CMLMakeCacheRoom(13*1024*1024)&&pinnedTarget.meshes.count==1);
+    CMLTrimStaleTargets(TestTime+2000000001ULL);assert(!pinnedTarget.meshes&&!pinnedTarget.binding&&CMLMakeCacheRoom(13*1024*1024)&&!CMLCache.count&&!CMLCachedBytes);
+    for(unsigned i=0;i<96;i++){CMLMesh *entry=[CMLMesh new];entry.byteCost=1;[CMLCache addObject:entry];CMLCachedBytes++;}
+    assert(CMLMakeCacheRoom(1)&&CMLCache.count==96); // The observed build-28 ceiling no longer blocks a new outfit.
     Setup();Context[0x23]=0;Draw();assert(OriginalCalls==1&&!Fills);
     Setup();ComponentData[0x101]=1;Draw();assert(!Fills);
     Setup();uint32_t team=1;memcpy(ActorRecord+8,&team,4);Draw();assert(!Fills);
@@ -81,5 +105,5 @@ int main(void){@autoreleasepool {
     CoreModelBzeroCapture((void *)(f+16+0xD0),44,f,GameComponent+0x1F0,TestBase+0xE1960);assert(target.poseTime==TestTime&&Reads==3&&target.pose.length==48&&!atomic_load(&CMEnabled));
     errno=ERANGE;unsigned calls=OriginalCalls;assert(CoreModelRenderDispatch(NULL,TestBase+0x1234)==(uintptr_t)getpid()&&errno==ERANGE&&OriginalCalls==calls);
     NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];CMLWriteStatus([NSURL fileURLWithPath:file]);NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
-    puts("PASS: original frame forwarding; real mesh skinning, pixel rays and native red/white spans; flag restoration; hidden/team/LOD/stale/replaced targets; mismatch/malformed/budget fail closed; continuous pose after capture ends; getpid and errno; honest runtime status");
+    puts("PASS: original frame forwarding; real mesh skinning, pixel rays and native red/white spans; exactly three separate scene locks; 16-byte native ray ABI; later-scene hits; raw/wrapper parity and scalar fallback; missing scene handles and unreadable scenes; flag restoration; hidden/team/LOD/stale/replaced targets; mismatch/malformed/budget fail closed; continuous pose after capture ends; getpid and errno; honest runtime status");
 }return 0;}
