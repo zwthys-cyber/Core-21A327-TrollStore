@@ -41,6 +41,7 @@
 @end
 @interface CMLSchemaSnapshot : NSObject
 @property(atomic,copy) NSDictionary<NSNumber *,NSData *> *schemas;
+@property(atomic,copy) NSArray<NSDictionary *> *meshFailures;
 @end
 @implementation CMLSchemaSnapshot
 @end
@@ -57,6 +58,7 @@ typedef struct {
     atomic_uint_fast64_t meshTimeTotal,meshTimeMaximum,rasterTimeTotal,rasterTimeMaximum,queryTimeTotal,queryTimeMaximum,packTimeTotal,packTimeMaximum,submitTimeTotal,submitTimeMaximum;
     atomic_uint_fast64_t gatherTimeTotal,gatherTimeMaximum,skinTimeTotal,skinTimeMaximum,indexDecodes;
     atomic_uint_fast64_t stateReads,stateBytes,stateBytesMaximum;
+    atomic_uint_fast64_t screenRejectedMeshes,lodDescriptorSkips;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
@@ -192,8 +194,34 @@ typedef enum {CML_LOAD_REFERENCE,CML_LOAD_LAYOUT,CML_LOAD_INDEX_HEADER,CML_LOAD_
     CML_LOAD_COVERAGE,CML_LOAD_INVERSE,CML_LOAD_READ_BUDGET,CML_LOAD_POSITION_SHAPE,CML_LOAD_REASON_COUNT} CMLLoadFailure;
 static atomic_uint_fast64_t CMLLoadFailures[CML_LOAD_REASON_COUNT];
 static atomic_uint_fast64_t CMLLoadedStrides[3];
-static CMLMesh *CMLLoadFailed(CMLLoadFailure reason) {atomic_fetch_add(&CMLLoadFailures[reason],1);return nil;}
+static const char *CMLFailureNames[]={"reference","layout","index_header","cache_limit","vertex_read","weight_read","index_read","weight_shape","index_shape","section","palette_read","palette_range","weight_range","section_indices","range_coverage","inverse_reference","read_budget","position_shape"};
+_Static_assert(sizeof(CMLFailureNames)/sizeof(CMLFailureNames[0])==CML_LOAD_REASON_COUNT,"Failure names match counters");
+static CMLLoadFailure CMLLastLoadFailure;
+static NSMutableArray<NSDictionary *> *CMLFailureRecords;
+static uint64_t CMLFailureKeys[16][9];static uint32_t CMLFailureKeyCount;
+static atomic_bool CMLFailureSamplesTruncated;
+static CMLMesh *CMLLoadFailed(CMLLoadFailure reason) {CMLLastLoadFailure=reason;atomic_fetch_add(&CMLLoadFailures[reason],1);return nil;}
 static CMLMesh *CMLLoadReadFailed(CMLLoadFailure reason) {return CMLLoadFailed(CMLReads>=1024||CMNow()>=CMLReadDeadline?CML_LOAD_READ_BUDGET:reason);}
+static void CMLRecordLoadFailure(CMLTarget *target,const CMGDescriptor *d) {
+    uint64_t key[9]={d->asset_address,d->render_address,d->lod_address,(uint64_t)d->name_index|((uint64_t)d->name_number<<32),
+        (uint64_t)d->internal_index|((uint64_t)d->lod_index<<32),(uint64_t)CMLLastLoadFailure|((uint64_t)d->index_width<<32),
+        (uint64_t)d->vertex_stride|((uint64_t)d->weight_stride<<32),(uint64_t)d->section_count|((uint64_t)d->index_bytes<<32),(uint64_t)d->section_bytes|((uint64_t)d->vertex_count<<32)};
+    for(uint32_t i=0;i<CMLFailureKeyCount;i++)if(!memcmp(key,CMLFailureKeys[i],sizeof(key)))return;
+    if(CMLFailureKeyCount==16){atomic_store(&CMLFailureSamplesTruncated,true);return;}
+    memcpy(CMLFailureKeys[CMLFailureKeyCount++],key,sizeof(key));const char *name=target.names.length==sizeof(CMNNames)?CMNText(target.names.bytes,d->name_index):NULL;
+    NSString *reason=[NSString stringWithUTF8String:CMLFailureNames[CMLLastLoadFailure]],*detail=reason;
+    if(CMLLastLoadFailure==CML_LOAD_LAYOUT){
+        if(d->vertex_stride!=24&&d->vertex_stride!=28&&d->vertex_stride!=32)detail=@"vertex_stride";
+        else if(d->weight_stride!=8)detail=@"weight_stride";
+        else if(!d->section_count)detail=@"section_count_zero";
+        else if(d->section_count>8)detail=@"section_count_limit";
+        else if(d->index_bytes<88)detail=@"index_prefix_incomplete";}
+    [CMLFailureRecords addObject:@{@"reason":reason,@"detail":detail,@"asset_name":name?[NSString stringWithUTF8String:name]:@"unresolved",@"asset_name_index":@(d->name_index),@"asset_name_number":@(d->name_number),@"asset_internal_index":@(d->internal_index),
+        @"target_component":@(target.component),@"asset_address":@(d->asset_address),@"render_address":@(d->render_address),@"lod_address":@(d->lod_address),@"lod_index":@(d->lod_index),@"asset_index":@(d->asset_index),
+        @"vertex_stride":@(d->vertex_stride),@"weight_stride":@(d->weight_stride),@"vertex_count":@(d->vertex_count),@"section_count":@(d->section_count),@"index_width":@(d->index_width),@"index_prefix_bytes":@(d->index_bytes),@"section_prefix_bytes":@(d->section_bytes),
+        @"vertex_address":@(d->vertex_address),@"weight_address":@(d->weight_address),@"index_descriptor_address":@(d->index_address),@"section_address":@(d->section_address)}];
+    CMLSchemaStore.meshFailures=CMLFailureRecords;
+}
 static CMLMesh *CMLLoadMesh(const CMGDescriptor *d,const CMEResource *resource) {
     CMGKey key=CMGKeyFor(d);CMLMesh *cached=nil;for(CMLMesh *mesh in CMLCache){CMGKey existing=mesh.key;if(CMGKeyEqual(&existing,&key)&&mesh.descriptor.length==sizeof(*d)&&CMLSameMeshDescriptor(mesh.descriptor.bytes,d)){cached=mesh;break;}}
     if(cached){[CMLCache removeObjectIdenticalTo:cached];[CMLCache addObject:cached];return cached;}
@@ -264,7 +292,7 @@ static CMLMesh *CMLLiveMesh(CMLTarget *target,const CMGDescriptor *descriptor) {
     for(CMLMesh *mesh in target.meshes)if(mesh.lod==descriptor->lod_index&&mesh.key.asset==descriptor->asset_address)return mesh;
     if(target.evidence.length!=sizeof(CMEMeshEvidence))return nil;
     CMLMesh *mesh=CMLLoadMesh(descriptor,CMEResourceAt(target.evidence.bytes,descriptor->asset_index));
-    if(!mesh){atomic_fetch_add(&CMLStats.meshUnavailable,1);return nil;}
+    if(!mesh){atomic_fetch_add(&CMLStats.meshUnavailable,1);CMLRecordLoadFailure(target,descriptor);return nil;}
     NSMutableArray *selected=[NSMutableArray array];for(CMLMesh *old in target.meshes)if(old.key.asset!=descriptor->asset_address)[selected addObject:old];[selected addObject:mesh];target.meshes=selected;return mesh;
 }
 
@@ -436,14 +464,22 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
             CMLReadDeadline=CMNow()+12000000ULL;CMLReads=0;
             const CMGDescriptors *gpu=target.gpu.bytes;const CMNNames *names=target.names.bytes;
             NSMutableDictionary *states=[NSMutableDictionary dictionary],*poses=[NSMutableDictionary dictionary];
+            uint32_t selectedLOD[16]={0},selectionReady=0,selectionUnverified=0;
             if(!CMLState(target,0,states))continue;
             for(uint32_t di=0;di<gpu->count;di++){
-                const CMGDescriptor *d=&gpu->descriptors[di];
-                NSData *state=CMLState(target,d->asset_index,states);if(!state)continue;const CMRReference *component=CMLComponent(target,d->asset_index);CMRReference root={0};
-                if(!d->asset_index){memcpy(&root.header,state.bytes,sizeof(root.header));root.address=target.component;component=&root;}if(!component)continue;
-                CMFSchema schema=CMLSchemaFor(component,names);bool visible=true,visibilityKnown=CMFVisibility(&schema,state.bytes,state.length,&visible);if(visibilityKnown&&!visible)continue;
-                if(!visibilityKnown){atomic_fetch_add(&CMLStats.unknownVisibility,1);const char *name=CMNText(names,d->name_index);if(name&&(strstr(name,"Parachute")||strstr(name,"Wingsuit")||strstr(name,"Glide")||strstr(name,"Smoke")))continue;}
-                bool lodKnown=false;uint32_t lod=CMFLOD(&schema,state.bytes,state.length,d->lod_count,&lodKnown);if(lod!=d->lod_index)continue;if(!lodKnown)atomic_fetch_add(&CMLStats.unverifiedLOD,1);
+                const CMGDescriptor *d=&gpu->descriptors[di];if(d->asset_index>=16)continue;uint32_t bit=1U<<d->asset_index;
+                if((selectionReady&bit)&&selectedLOD[d->asset_index]!=d->lod_index){atomic_fetch_add(&CMLStats.lodDescriptorSkips,1);continue;}
+                NSData *state=CMLState(target,d->asset_index,states);if(!state)continue;
+                if(!(selectionReady&bit)){
+                    const CMRReference *component=CMLComponent(target,d->asset_index);CMRReference root={0};
+                    if(!d->asset_index){memcpy(&root.header,state.bytes,sizeof(root.header));root.address=target.component;component=&root;}if(!component)continue;
+                    CMFSchema schema=CMLSchemaFor(component,names);bool visible=true,visibilityKnown=CMFVisibility(&schema,state.bytes,state.length,&visible);
+                    selectionReady|=bit;selectedLOD[d->asset_index]=UINT32_MAX;if(visibilityKnown&&!visible)continue;
+                    if(!visibilityKnown){atomic_fetch_add(&CMLStats.unknownVisibility,1);const char *name=CMNText(names,d->name_index);if(name&&(strstr(name,"Parachute")||strstr(name,"Wingsuit")||strstr(name,"Glide")||strstr(name,"Smoke")))continue;}
+                    bool lodKnown=false;selectedLOD[d->asset_index]=CMFLOD(&schema,state.bytes,state.length,d->lod_count,&lodKnown);if(!lodKnown)selectionUnverified|=bit;
+                    if(selectedLOD[d->asset_index]!=d->lod_index){atomic_fetch_add(&CMLStats.lodDescriptorSkips,1);continue;}
+                }
+                if(selectionUnverified&bit)atomic_fetch_add(&CMLStats.unverifiedLOD,1);
                 CMLMesh *mesh=CMLLiveMesh(target,d);if(!mesh)continue;
                 NSData *pose=CMLPoseMatrices(target,d->asset_index,states,poses,0);if(!pose){atomic_fetch_add(&CMLStats.unknownPose,1);continue;}
                 CMTransform componentTransform;memcpy(&componentTransform,(const uint8_t *)state.bytes+0x1F0,sizeof(componentTransform));CMSMatrix world;if(!CMSFromTransform(&componentTransform,&world))continue;
@@ -469,6 +505,10 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
                 ok[i]=1;meshMinX=fminf(meshMinX,p[i].xy.x);meshMinY=fminf(meshMinY,p[i].xy.y);meshMaxX=fmaxf(meshMaxX,p[i].xy.x);meshMaxY=fmaxf(meshMaxY,p[i].xy.y);
             }
             if(!projectionOK){atomic_fetch_add(&CMLStats.projectionMismatch,1);continue;}
+            // Bounds come from all of this frame's successfully projected
+            // vertices. A complete mesh outside one viewport half-plane
+            // cannot cover a screen pixel; straddling meshes remain intact.
+            if(meshMaxX<=0||meshMinX>=view.width||meshMaxY<=0||meshMinY>=view.height){atomic_fetch_add(&CMLStats.screenRejectedMeshes,1);continue;}
             minX=fminf(minX,meshMinX);minY=fminf(minY,meshMinY);maxX=fmaxf(maxX,meshMaxX);maxY=fmaxf(maxY,meshMaxY);
             [projected addObject:points];[triangleArrays addObject:triangles];[validArrays addObject:valid];atomic_fetch_add(&CMLStats.meshFrames,1);
         }
@@ -513,8 +553,7 @@ __attribute__((naked)) pid_t cmdraw(void) { __asm__ volatile("mov x1, x30\nb _Co
 #endif
 static void CMLWriteStatus(NSURL *url) {
 #define CML_VALUE(field) @(atomic_load(&CMLStats.field))
-    NSArray *failureNames=@[@"reference",@"layout",@"index_header",@"cache_limit",@"vertex_read",@"weight_read",@"index_read",@"weight_shape",@"index_shape",@"section",@"palette_read",@"palette_range",@"weight_range",@"section_indices",@"range_coverage",@"inverse_reference",@"read_budget",@"position_shape"];
-    NSMutableDictionary *loadFailures=[NSMutableDictionary dictionary];for(unsigned i=0;i<CML_LOAD_REASON_COUNT;i++)loadFailures[failureNames[i]]=@(atomic_load(&CMLLoadFailures[i]));
+    NSMutableDictionary *loadFailures=[NSMutableDictionary dictionary];for(unsigned i=0;i<CML_LOAD_REASON_COUNT;i++)loadFailures[[NSString stringWithUTF8String:CMLFailureNames[i]]]=@(atomic_load(&CMLLoadFailures[i]));
     NSMutableArray *schemas=[NSMutableArray array];NSDictionary *published=CMLSchemaStore.schemas ?: @{};
     for(NSNumber *address in published){CMFSchema s;memcpy(&s,((NSData *)published[address]).bytes,sizeof(s));
         [schemas addObject:@{@"class_address":address,@"classes_walked":@(s.classes),@"fields_walked":@(s.fields),@"read_attempts":@(s.reads),@"read_failures":@(s.failures),@"truncated":@(s.truncated),
@@ -522,7 +561,7 @@ static void CMLWriteStatus(NSURL *url) {
             @"hide_skin_found":@(s.hide_skin.found),@"hide_skin_offset":@(s.hide_skin.offset),@"hide_skin_mask":@(s.hide_skin.mask),
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;})}];}
-    NSDictionary *status=@{ @"render_version":@7,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+    NSDictionary *status=@{ @"render_version":@8,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"eligible_draw_frames":CML_VALUE(eligibleFrames),@"projected_mesh_frames":CML_VALUE(meshFrames),@"actor_snapshot_chunks":CML_VALUE(actorSnapshotReads),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),
         @"metadata_checks":CML_VALUE(metadataChecks),@"metadata_reuses":CML_VALUE(metadataReuses),@"metadata_deferred_targets":CML_VALUE(metadataDeferred),@"metadata_time_total_ns":CML_VALUE(metadataTimeTotal),@"metadata_time_maximum_ns":CML_VALUE(metadataTimeMaximum),
@@ -533,6 +572,8 @@ static void CMLWriteStatus(NSURL *url) {
         @"mesh_load_failure_reasons":loadFailures,@"static_index_values_decoded":CML_VALUE(indexDecodes),@"geometry_loop_policy":@"cached-pointers-and-static-triangle-indices",@"pose_read_policy":@"gather-before-skinning",
         @"supported_vertex_strides":@[@24,@28,@32],@"mesh_vertex_stride_loads":@{@"24":@(atomic_load(&CMLLoadedStrides[0])),@"28":@(atomic_load(&CMLLoadedStrides[1])),@"32":@(atomic_load(&CMLLoadedStrides[2]))},
         @"component_state_reads":CML_VALUE(stateReads),@"component_state_bytes":CML_VALUE(stateBytes),@"component_state_bytes_maximum":CML_VALUE(stateBytesMaximum),@"component_state_policy":@"reflected-required-prefix-with-full-prefix-fallback",
+        @"mesh_load_failure_samples":CMLSchemaStore.meshFailures?:@[],@"mesh_load_failure_sample_limit":@16,@"mesh_load_failure_samples_truncated":@(atomic_load(&CMLFailureSamplesTruncated)),
+        @"empty_or_offscreen_meshes_skipped":CML_VALUE(screenRejectedMeshes),@"unselected_lod_descriptors_skipped":CML_VALUE(lodDescriptorSkips),@"screen_cull_source":@"current-projected-vertex-bounds",@"lod_selection_scope":@"once-per-asset-per-frame",
         @"stale_targets_skipped":CML_VALUE(staleTargets),@"unknown_visibility_samples":CML_VALUE(unknownVisibility),@"unverified_lod_samples":CML_VALUE(unverifiedLOD),@"master_reference_pose_fallback_bones":CML_VALUE(referenceFallbacks),
         @"unknown_pose_meshes":CML_VALUE(unknownPose),@"malformed_pixel_queries":CML_VALUE(badRays),@"budget_frames_skipped":CML_VALUE(budgetFrames),@"projection_mismatch_meshes":CML_VALUE(projectionMismatch),@"oversized_masks_skipped":CML_VALUE(oversizedMasks),
         @"query_frames_incomplete":CML_VALUE(queryBudgetFrames),@"rectangle_budget_frames_skipped":CML_VALUE(rectangleBudgetFrames),
@@ -549,7 +590,7 @@ static void CMLWriteStatus(NSURL *url) {
     NSData *data=[NSJSONSerialization dataWithJSONObject:status options:NSJSONWritingSortedKeys error:NULL];if(data.length&&data.length<65536)[data writeToURL:url options:NSDataWritingAtomic error:NULL];
 }
 static void CMLStartup(void) {
-    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLExpectedContext=CMBase+0xC54270;
+    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLFailureRecords=[NSMutableArray array];CMLExpectedContext=CMBase+0xC54270;
     CMLOriginalDraw=(void (*)(void *))CMCallable(CMBase+0xDB144);CMLGetDrawList=(void *(*)(void))CMCallable(CMBase+0x123E30);CMLPolygon=(void (*)(void *,const CMVec2 *,int,uint32_t))CMCallable(CMBase+0x13C8AC);
     // The full 96-byte result ABI and independent tail-write regression now
     // cover this path. Per-frame comparisons still fall back to the wrappers.
