@@ -262,7 +262,7 @@ def main():
     if args.model_capture:
         info.update(CFBundleVersion="27", CoreModelCaptureVersion="7")
     if args.model_render:
-        info.update(CFBundleVersion="35",CoreModelRenderVersion="8")
+        info.update(CFBundleVersion="37",CoreModelRenderVersion="9")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -285,7 +285,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ("Core-17.0-21A327-TrollStore-model-render-v8.ipa" if args.model_render else "Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
+    artifact = dist / ("Core-17.0-21A327-TrollStore-model-render-v9.ipa" if args.model_render else "Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -338,7 +338,7 @@ def main():
         entry_return="ARM64 veneer passes original LR in x4 before the C prologue",
         entry_diagnostics="all forwarding entries, unmatched callers, expected reader calls, disabled and recursive reader calls",
         live_mesh_binding_verified=False, full_render_mesh_verified=False, silhouette_implemented=args.model_render)
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=8 if args.model_render else 0,
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=9 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,
@@ -354,6 +354,9 @@ def main():
         failure_sample_limit=16,failure_sample_source="deduplicated immutable snapshots; named resource, exact layout fields and failure reason without raw mesh bytes",
         screen_cull_source="all current successfully projected vertices; reject only empty meshes or a complete mesh outside one viewport half-plane",
         lod_selection_scope="once per asset per frame using the same live component state",
+        schema_discovery="one 16-node step per frame, separate 2 ms read window, cached property classes, at most three attempts after transient read failures",
+        schema_session_limits=dict(classes=12,fields=384,header_reads=896,name_reads=640),
+        frame_gates="separate toggle, geometry, camera and actor snapshot unavailability counters",
         incomplete_frame_policy="skip complete fill if pixel classification or rectangle budget is incomplete",
         native_batch_intersection="0x2AD2A0",native_batch_enabled=True,native_ray_result_bytes=96,native_ray_result_alignment=16,
         pixel_query_entry="batch per scene using corrected 96-byte ABI, original E0BE8/E0CF0 wrappers for parity and fallback",

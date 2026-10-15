@@ -46,7 +46,7 @@ jobs:
         run: |
           xcrun clang -O2 -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror tests/test_model_pixels_runtime.c -o /tmp/core-model-pixels-test
           /tmp/core-model-pixels-test
-          xcrun clang -O2 -Wall -Wextra -Werror tests/test_model_reflection_runtime.c -o /tmp/core-model-reflection-test
+          xcrun clang -O2 -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror tests/test_model_reflection_runtime.c -o /tmp/core-model-reflection-test
           /tmp/core-model-reflection-test
       - name: Test bounded component reference candidate reads
         run: |
@@ -76,6 +76,6 @@ jobs:
         run: python3 scripts/check_model_capture_entry.py dist/*.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.model_render && 'Core-live-mesh-fill-v8' || 'Core-model-runtime-capture-v7' }}
+          name: ${{ inputs.model_render && 'Core-live-mesh-fill-v9' || 'Core-model-runtime-capture-v7' }}
           path: dist/*
           retention-days: 14

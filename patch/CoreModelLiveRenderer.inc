@@ -45,6 +45,13 @@
 @end
 @implementation CMLSchemaSnapshot
 @end
+@interface CMLSchemaDiscovery : NSObject
+@property(nonatomic,strong) NSMutableData *scan,*names;
+@property(nonatomic) uint64_t retryAfter;
+@property(nonatomic) uint32_t attempts;
+@end
+@implementation CMLSchemaDiscovery
+@end
 typedef struct {
     atomic_uint_fast64_t frames,poseUpdates,metadataLoads,metadataFailures,meshLoads,cacheBytes,triangles,white,red,queryCalls,drawFrames,spans;
     atomic_uint_fast64_t staleTargets,unknownVisibility,unverifiedLOD,referenceFallbacks,unknownPose,badRays,budgetFrames,projectionMismatch,oversizedMasks;
@@ -59,6 +66,8 @@ typedef struct {
     atomic_uint_fast64_t gatherTimeTotal,gatherTimeMaximum,skinTimeTotal,skinTimeMaximum,indexDecodes;
     atomic_uint_fast64_t stateReads,stateBytes,stateBytesMaximum;
     atomic_uint_fast64_t screenRejectedMeshes,lodDescriptorSkips;
+    atomic_uint_fast64_t schemaSteps,schemaRetries,schemaTimeTotal,schemaTimeMaximum;
+    atomic_uint_fast64_t disabledFrames,geometryUnavailableFrames,cameraUnavailableFrames,actorSnapshotUnavailableFrames;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
@@ -68,6 +77,8 @@ static NSMutableArray<CMLMesh *> *CMLCache;
 static NSArray<CMLMesh *> *CMLLoadingMeshes;
 static NSMutableDictionary<NSNumber *,NSData *> *CMLSchemas;
 static CMLSchemaSnapshot *CMLSchemaStore;
+static NSMutableDictionary<NSNumber *,CMLSchemaDiscovery *> *CMLDiscoveries;
+static bool CMLSchemaStepUsed;
 static uint64_t CMLReadDeadline;
 static uint32_t CMLReads,CMLCachedBytes;
 static uintptr_t CMLExpectedContext;
@@ -163,14 +174,29 @@ static void CMLObserve(uint64_t component,uint64_t actor,uint64_t transformAddre
     pthread_mutex_unlock(&CMLMutex);
 }
 static CMFSchema CMLSchemaFor(const CMRReference *component,const CMNNames *source) {
-    NSData *cached=CMLSchemas[@(component->header.class_address)];CMFSchema schema={0};
-    if(cached){memcpy(&schema,cached.bytes,sizeof(schema));return schema;}
-    NSMutableData *storage=[NSMutableData dataWithBytes:source length:sizeof(*source)];CMNNames *names=storage.mutableBytes;
-    names->count=0;names->read_attempts=0;names->read_failures=0;names->truncated=false;
-    CMFCollect(component->header.class_address,CMLRead,names,&schema);
-    if(CMLSchemas.count<32){CMLSchemas[@(component->header.class_address)]=[NSData dataWithBytes:&schema length:sizeof(schema)];CMLSchemaStore.schemas=CMLSchemas;}
-    CMLReadDeadline=CMNow()+12000000ULL;CMLReads=0;
-    return schema;
+    NSNumber *key=@(component->header.class_address);NSData *cached=CMLSchemas[key];CMFSchema schema={0};if(cached.length==sizeof(schema))memcpy(&schema,cached.bytes,sizeof(schema));
+    CMLSchemaDiscovery *discovery=CMLDiscoveries[key];if(cached&&!discovery)return schema;
+    if(!discovery){if(CMLSchemas.count>=32)return schema;discovery=[CMLSchemaDiscovery new];CMLDiscoveries[key]=discovery;}
+    uint64_t now=CMNow();if(CMLSchemaStepUsed||now<discovery.retryAfter)return schema;CMLSchemaStepUsed=true;
+    if(!discovery.scan){discovery.scan=[NSMutableData dataWithLength:sizeof(CMFScan)];CMFBegin(discovery.scan.mutableBytes,component->header.class_address);
+        discovery.names=[NSMutableData dataWithBytes:source length:sizeof(*source)];CMNNames *names=discovery.names.mutableBytes;
+        names->count=0;names->read_attempts=0;names->read_failures=0;names->rejected_text=0;names->truncated=false;discovery.attempts++;}
+    uint64_t savedDeadline=CMLReadDeadline,start=CMNow();uint32_t savedReads=CMLReads;
+    CMLReadDeadline=start+2000000ULL;CMLReads=0;CMFScan *scan=discovery.scan.mutableBytes;
+    bool finished=CMFStep(scan,CMLRead,discovery.names.mutableBytes,16);uint64_t elapsed=CMNow()-start;
+    // Discovery has its own small window. Preserve the remaining data-read
+    // budget instead of resetting it, or charging earlier/later part reads.
+    CMLReadDeadline=savedDeadline+elapsed;CMLReads=savedReads;
+    atomic_fetch_add(&CMLStats.schemaSteps,1);atomic_fetch_add(&CMLStats.schemaTimeTotal,elapsed);CMLMaximum(&CMLStats.schemaTimeMaximum,elapsed);
+    CMFSchema fresh=scan->schema;
+    if(!fresh.visible.found)fresh.visible=schema.visible;if(!fresh.hidden.found)fresh.hidden=schema.hidden;if(!fresh.hide_skin.found)fresh.hide_skin=schema.hide_skin;
+    if(!fresh.forced_found&&schema.forced_found){fresh.forced_found=true;fresh.forced_lod=schema.forced_lod;}
+    if(!fresh.predicted_found&&schema.predicted_found){fresh.predicted_found=true;fresh.predicted_lod=schema.predicted_lod;fresh.predicted_source=schema.predicted_source;fresh.predicted_getter=schema.predicted_getter;}
+    if(!fresh.min_found&&schema.min_found){fresh.min_found=true;fresh.min_lod=schema.min_lod;}
+    CMLSchemas[key]=[NSData dataWithBytes:&fresh length:sizeof(fresh)];CMLSchemaStore.schemas=CMLSchemas;
+    if(finished){if((fresh.failures||fresh.name_failures)&&discovery.attempts<3){discovery.scan=nil;discovery.names=nil;discovery.retryAfter=CMNow()+1000000000ULL;atomic_fetch_add(&CMLStats.schemaRetries,1);}
+        else [CMLDiscoveries removeObjectForKey:key];}
+    return fresh;
 }
 static void CMLTrimStaleTargets(uint64_t now) {
     for(CMLTarget *target in CMLTargets)if(target.poseTime&&now-target.poseTime>2000000000ULL){
@@ -449,13 +475,15 @@ static bool CMLActorEligible(NSData *actors,uint32_t localTeam,uint64_t actor) {
 __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
     atomic_fetch_add(&CMLStats.frames,1);if(!atomic_load(&CMLReady)||context!=CMLExpectedContext||CMInside)return;
     uint8_t enabled=0,ready=0;float size[2];uint8_t rawView[52];
-    if(!CMSelfRead(context+0x23,&enabled,1)||!enabled||!CMSelfRead(CMBase+0xC54459,&ready,1)||ready!=1||
-        !CMSelfRead(context+4,size,8)||!CMSelfRead(context+0x1F4,rawView,52))return;
-    CMPView view;if(!CMPMakeView(rawView,size[0],size[1],&view))return;
+    if(!CMSelfRead(context+0x23,&enabled,1)||!enabled){atomic_fetch_add(&CMLStats.disabledFrames,1);return;}
+    if(!CMSelfRead(CMBase+0xC54459,&ready,1)||ready!=1){atomic_fetch_add(&CMLStats.geometryUnavailableFrames,1);return;}
+    CMPView view;if(!CMSelfRead(context+4,size,8)||!CMSelfRead(context+0x1F4,rawView,52)||!CMPMakeView(rawView,size[0],size[1],&view)){atomic_fetch_add(&CMLStats.cameraUnavailableFrames,1);return;}
     uint64_t drawStart=CMNow();atomic_fetch_add(&CMLStats.eligibleFrames,1);
     CMInside=true;pthread_mutex_lock(&CMLMutex);
+    CMLSchemaStepUsed=false;
     @autoreleasepool {
         NSMutableArray<NSData *> *projected=[NSMutableArray array],*triangleArrays=[NSMutableArray array],*validArrays=[NSMutableArray array];NSMutableArray<CMLDrawItem *> *items=[NSMutableArray array];bool refreshed=false;uint64_t now=CMNow();uint32_t localTeam=0;NSData *actors=CMLReadActors(context,&localTeam);
+        if(!actors)atomic_fetch_add(&CMLStats.actorSnapshotUnavailableFrames,1);
         float minX=view.width,minY=view.height,maxX=0,maxY=0;CMLTrimStaleTargets(now);uint64_t meshStart=CMNow();
         for(CMLTarget *target in CMLTargets){
             if(!target.poseTime||now-target.poseTime>250000000ULL){atomic_fetch_add(&CMLStats.staleTargets,1);continue;}
@@ -557,12 +585,15 @@ static void CMLWriteStatus(NSURL *url) {
     NSMutableArray *schemas=[NSMutableArray array];NSDictionary *published=CMLSchemaStore.schemas ?: @{};
     for(NSNumber *address in published){CMFSchema s;memcpy(&s,((NSData *)published[address]).bytes,sizeof(s));
         [schemas addObject:@{@"class_address":address,@"classes_walked":@(s.classes),@"fields_walked":@(s.fields),@"read_attempts":@(s.reads),@"read_failures":@(s.failures),@"truncated":@(s.truncated),
+            @"scan_finished":@(s.scan_finished),@"scan_steps":@(s.steps),@"field_limit_reached":@(s.field_limit_reached),@"read_limit_reached":@(s.read_limit_reached),@"name_reads":@(s.name_reads),@"name_read_failures":@(s.name_failures),@"name_limit_reached":@(s.name_limit_reached),
             @"visible_found":@(s.visible.found),@"visible_offset":@(s.visible.offset),@"visible_mask":@(s.visible.mask),@"hidden_found":@(s.hidden.found),@"hidden_offset":@(s.hidden.offset),@"hidden_mask":@(s.hidden.mask),
             @"hide_skin_found":@(s.hide_skin.found),@"hide_skin_offset":@(s.hide_skin.offset),@"hide_skin_mask":@(s.hide_skin.mask),
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
-            @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;})}];}
-    NSDictionary *status=@{ @"render_version":@8,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+            @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
+            @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
+    NSDictionary *status=@{ @"render_version":@9,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"eligible_draw_frames":CML_VALUE(eligibleFrames),@"projected_mesh_frames":CML_VALUE(meshFrames),@"actor_snapshot_chunks":CML_VALUE(actorSnapshotReads),
+        @"toggle_disabled_frames":CML_VALUE(disabledFrames),@"geometry_unavailable_frames":CML_VALUE(geometryUnavailableFrames),@"camera_unavailable_frames":CML_VALUE(cameraUnavailableFrames),@"actor_snapshot_unavailable_frames":CML_VALUE(actorSnapshotUnavailableFrames),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),
         @"metadata_checks":CML_VALUE(metadataChecks),@"metadata_reuses":CML_VALUE(metadataReuses),@"metadata_deferred_targets":CML_VALUE(metadataDeferred),@"metadata_time_total_ns":CML_VALUE(metadataTimeTotal),@"metadata_time_maximum_ns":CML_VALUE(metadataTimeMaximum),
         @"rasterized_triangles":CML_VALUE(triangles),@"pixel_query_calls":CML_VALUE(queryCalls),@"filled_frames":CML_VALUE(drawFrames),@"white_pixels":CML_VALUE(white),@"red_pixels":CML_VALUE(red),@"filled_spans":CML_VALUE(spans),
@@ -574,6 +605,7 @@ static void CMLWriteStatus(NSURL *url) {
         @"component_state_reads":CML_VALUE(stateReads),@"component_state_bytes":CML_VALUE(stateBytes),@"component_state_bytes_maximum":CML_VALUE(stateBytesMaximum),@"component_state_policy":@"reflected-required-prefix-with-full-prefix-fallback",
         @"mesh_load_failure_samples":CMLSchemaStore.meshFailures?:@[],@"mesh_load_failure_sample_limit":@16,@"mesh_load_failure_samples_truncated":@(atomic_load(&CMLFailureSamplesTruncated)),
         @"empty_or_offscreen_meshes_skipped":CML_VALUE(screenRejectedMeshes),@"unselected_lod_descriptors_skipped":CML_VALUE(lodDescriptorSkips),@"screen_cull_source":@"current-projected-vertex-bounds",@"lod_selection_scope":@"once-per-asset-per-frame",
+        @"schema_discovery_policy":@"one-16-node-step-per-frame-with-independent-2ms-window",@"schema_discovery_steps":CML_VALUE(schemaSteps),@"schema_discovery_retries":CML_VALUE(schemaRetries),@"schema_discovery_time_total_ns":CML_VALUE(schemaTimeTotal),@"schema_discovery_time_maximum_ns":CML_VALUE(schemaTimeMaximum),
         @"stale_targets_skipped":CML_VALUE(staleTargets),@"unknown_visibility_samples":CML_VALUE(unknownVisibility),@"unverified_lod_samples":CML_VALUE(unverifiedLOD),@"master_reference_pose_fallback_bones":CML_VALUE(referenceFallbacks),
         @"unknown_pose_meshes":CML_VALUE(unknownPose),@"malformed_pixel_queries":CML_VALUE(badRays),@"budget_frames_skipped":CML_VALUE(budgetFrames),@"projection_mismatch_meshes":CML_VALUE(projectionMismatch),@"oversized_masks_skipped":CML_VALUE(oversizedMasks),
         @"query_frames_incomplete":CML_VALUE(queryBudgetFrames),@"rectangle_budget_frames_skipped":CML_VALUE(rectangleBudgetFrames),
@@ -590,7 +622,7 @@ static void CMLWriteStatus(NSURL *url) {
     NSData *data=[NSJSONSerialization dataWithJSONObject:status options:NSJSONWritingSortedKeys error:NULL];if(data.length&&data.length<65536)[data writeToURL:url options:NSDataWritingAtomic error:NULL];
 }
 static void CMLStartup(void) {
-    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLFailureRecords=[NSMutableArray array];CMLExpectedContext=CMBase+0xC54270;
+    CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLDiscoveries=[NSMutableDictionary dictionary];CMLFailureRecords=[NSMutableArray array];CMLExpectedContext=CMBase+0xC54270;
     CMLOriginalDraw=(void (*)(void *))CMCallable(CMBase+0xDB144);CMLGetDrawList=(void *(*)(void))CMCallable(CMBase+0x123E30);CMLPolygon=(void (*)(void *,const CMVec2 *,int,uint32_t))CMCallable(CMBase+0x13C8AC);
     // The full 96-byte result ABI and independent tail-write regression now
     // cover this path. Per-frame comparisons still fall back to the wrappers.
