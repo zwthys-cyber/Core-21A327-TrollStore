@@ -1,14 +1,14 @@
 # 实时人物网格填充
 
-目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充，但轮廓或边界不准。build 29 的原生结果缓冲越界已在 build 30 修正；build 30 实机又确认间歇填充和卡顿。当前 **build 31 / render v4** 针对重复读取、查询取锁及绘制数量进行修复；性能改善和完整精确目标仍须实机验证。
+目标是实际身体、服装、头发及姿态对应的完整轮廓，露出白色、遮挡红色。build 28 已在手机上出现红白填充，但轮廓或边界不准。build 29 的原生结果缓冲越界已在 build 30 修正；build 30–31 实机仍有间歇填充和卡顿。当前 **build 32 / render v5** 在模型复用和矩形合并基础上跳过空白像素扫描，并只载入当前可见且选用的 LOD；性能改善和完整精确目标仍须实机验证。
 
 ## 当前安装包
 
-- 文件：`Core-17.0-21A327-TrollStore-model-render-v4.ipa`
-- Bundle build：`31`；`CoreModelRenderVersion=4`；采集协议仍为 `7`。
-- 源码：`66f890d35eeeff85a8cfbac6ca2c6a054fd49d0e`，分支 `feat/live-mesh-fill-v1`。
-- [云端构建与验证 38678390262](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38678390262)。包大小 7,261,027 字节，SHA-256 `d527dada5f092defb2e66555c9e233b17397b97357fbddbd572cc25746f9c3aa`。
-- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v4.ipa`，已与云端元数据及包内 plist 核对。
+- 文件：`Core-17.0-21A327-TrollStore-model-render-v5.ipa`
+- Bundle build：`32`；`CoreModelRenderVersion=5`；采集协议仍为 `7`。
+- 源码：`2ea509954a0aa0e7a0c81e0b9e92f25025c3d190`，分支 `feat/live-mesh-fill-v1`。
+- [云端构建与验证 38679890908](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38679890908)。包大小 7,264,172 字节，SHA-256 `6a90c870a2283ef259c0bdf4b1a5734cb1e82effb1f8d339f20caf177ffe3d85`。
+- 本地交付路径：`/root/Core-17.0-21A327-TrollStore-model-render-v5.ipa`，已与云端元数据及包内 plist 核对。
 
 正式 Release 仍是 v19；单独的 `model-capture-v7.ipa` 只采集输入，不含此绘制路径。
 
@@ -71,15 +71,23 @@ build 30 统一使用 96 字节、16 字节对齐的结果，尾部保留不解�
 
 build 31 复用经对象、附件图及流/索引/分区描述校验的静态元数据，当前姿态和可见性仍逐帧读取；其他目标等待本帧元数据检查机会时不再无条件消失。人物列表每帧分块读取一次，像素缓冲从 20 字节减至 8 字节，并按精确相同的相邻行合并矩形。修正后的 96 字节批量入口恢复使用，同时保留原包装函数比较和回退。没有降低像素分辨率、放宽 12 ms 查询限额或沿用上帧颜色。
 
-[build 31 云端 38678390262](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38678390262) 全部通过：41 项 Python 检查、ASan 生产实时场景、独立 ASan/UBSan 尾部写入、静态资源复用及变化失效、延期目标继续绘制、人物列表重分配、旋转相机透视恢复及矩形逐像素覆盖检查，另含全部既有捕获/蒙皮/反射、6 项 Node、签名/负载及 ARM64 入口检查。尚无 build 31 手机报告，不能宣称卡顿或精度已解决。
+[build 31 云端 38678390262](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38678390262) 全部通过：41 项 Python 检查、ASan 生产实时场景、独立 ASan/UBSan 尾部写入、静态资源复用及变化失效、延期目标继续绘制、人物列表重分配、旋转相机透视恢复及矩形逐像素覆盖检查，另含全部既有捕获/蒙皮/反射、6 项 Node、签名/负载及 ARM64 入口检查。之后实机确认这些路径生效，但仍有查询跳帧，见下节。
+
+## build 31 查询跳帧与 build 32
+
+build 31 六份文件记录 1,126 帧填充、354 次元数据复用、1,979 次批量比较且无不一致、0 次矩形超限；同时仍有 216 次查询未完成，新增绘制单次最长 78.531 ms。缓存达到 512 项，582 次载入及 70 次淘汰，没有拒绝。详见[本轮证据和修复](build31-query-stalls.md)。测试时长和场景不同，不能用填充总数与上一轮直接换算性能倍率。
+
+build 32 以精确覆盖位跳过人物之间的空白区域，覆盖射线每帧只准备一次并在场景间复用，临时射线内存限制 8 MiB。静态缓冲只在可见且 LOD 选中后载入；隐藏主组件仍保留骨骼供附件姿态使用。同一资源跨不同人物附件槽位共享静态缓存，LOD 切换仍按本帧选择载入，不猜测级别。报告增加五阶段耗时、覆盖量和临时内存指标。
+
+[build 32 云端 38679890908](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38679890908) 在最终源码 `2ea5099` 全部通过，包括 ASan 生产管线、ASan/UBSan 原生尾部和覆盖检查、密集/覆盖位路径的深度及颜色一致性、跨位边界与重叠表面、惰性载入/隐藏主骨骼/LOD 切换/跨槽位缓存复用，以及全部既有测试、签名、负载和 ARM64 入口检查。尚无 build 32 手机报告，不能宣称查询跳帧或精度已解决。
 
 ## 仍需完成
 
-- 验证 build 31 实机填充是否连续及绘制耗时是否下降，核对批量查询与原包装函数是否发生不一致；同时继续追踪预测/当前 LOD，当前级别仍可能需要游戏特定的渲染 LOD 来源。
+- 验证 build 32 实机填充是否连续及五阶段耗时，核对覆盖位和惰性网格载入后的查询跳帧、缓存及部件显示；同时继续追踪预测/当前 LOD，当前级别仍可能需要游戏特定的渲染 LOD 来源。
 - 对齐完整高细节人体及实际可见服装、头发；独立动画、GPU 服装/形态变形、材质透明裁剪均未验证。
 - Master Pose 缺失骨骼采用参考姿态回退并计数。[Epic 的模块化人物说明](https://dev.epicgames.com/documentation/en-us/unreal-engine/working-with-modular-characters?application_version=4.27) 支持标准引擎的该行为，但不能证明此定制游戏没有额外处理。
 - Core 本地几何可能与游戏最终渲染几何、透明材质和动态物体不同；没有游戏 GPU 场景深度，不能保证墙沿红白界线逐像素重合。
 - 多次远程读取与相机没有游戏帧编号或原子采样证明；快速移动和转向时的同步误差仍需实机对照。
 - build 28 的 launchd 首次异常消息超时仍存在；成功显示填充不能证明初始化已完全稳定。
 
-`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 31、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 31/`；关键校验包括 `render_version=4`、`metadata_reuses`、`query_frames_incomplete`、`rectangle_budget_frames_skipped`、批量一致性、绘制最大耗时及实际边缘误差。
+`full_requested_effect_verified` 保持 false。新报告位于 Core 的 Documents：`Core-model-render-status.json` 持续每五秒写入，采集文件及四份日志合计六个文件。安装 build 32、开启附近敌人后，分别观察无遮挡、部分遮挡和完全遮挡视角，将新文件放在 `/root/core/build 32/`；关键校验包括 `render_version=5`、五阶段耗时、`mask_grid_pixels/mask_covered_pixels`、`query_frames_incomplete`、缓存及 LOD 切换、批量一致性和实际边缘误差。
