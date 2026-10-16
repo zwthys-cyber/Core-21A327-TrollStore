@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 import struct
 from pathlib import Path
 
@@ -18,7 +19,18 @@ def main():
     image = analyze.MachO(args.game)
     if image.uuid != analyze.GAME_UUID or hashlib.sha256(image.data).hexdigest() != analyze.GAME_SHA256:
         raise ValueError('Unreviewed vehicle analysis input')
-    analyze.TERMS = config['terms']
+    discovered = []
+    fragments = config.get('discover_string_fragments', [])
+    section = image.cstrings
+    for value in image.data[section['offset']:section['offset'] + section['length']].split(b'\0'):
+        if len(value) <= 96 and any(fragment.encode() in value for fragment in fragments):
+            name = value.decode('ascii', errors='ignore')
+            if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9:]*', name):
+                discovered.append(name)
+    discovered = sorted(set(discovered))
+    if len(discovered) > 256:
+        raise ValueError('Vehicle discovery exceeded the reviewed name bound')
+    analyze.TERMS = list(dict.fromkeys(config['terms'] + discovered))
     properties, functions = analyze.inspect_properties(image)
     clusters = []
     for region in config['property_regions']:
@@ -41,7 +53,8 @@ def main():
                              string=image.string(value)))
         tables.append(dict(label=entry['label'], address=hex(address), rows=rows))
     report = dict(status='static-vehicle-candidates-only', runtime_validated=False,
-                  properties=properties, functions=functions, clusters=clusters, pointer_tables=tables)
+                  properties=properties, functions=functions, clusters=clusters, pointer_tables=tables,
+                  discovered_names=discovered)
     report['reviewed_strings'] = []
     for entry in config.get('strings', []):
         offset = image.offset(int(entry['address'], 16))

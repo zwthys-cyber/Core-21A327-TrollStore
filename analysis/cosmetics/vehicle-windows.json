@@ -1,5 +1,6 @@
 {
   "terms": ["VehicleAvatarComponent", "VehicleAvatarComp", "VehicleSkinID", "CurrentVehicle", "ReplicatedVehicle", "GetVehicleAvatarComponent", "GetVehicleSkinID", "CurVehicleSkinID", "RealVehicleSkinID", "PreVehicleSkinID", "PendingVehicleSkinID", "VehicleAvatarItemList", "RepVehicleAvatarItemList", "OnRep_VehicleAvatarItemList", "DoReponceVehicleAvatarItemList", "VehicleUseDoRepOnce", "OnRep_AvatarMeshChanged", "AvatarMeshChangedVehicle", "GetCurrentVehicle", "GetVehicleAvatarSyncDataIDBySlot", "GetVehicleAvatarSyncDataBySlot", "GetMasterVehicleAvatarHandle", "GetVehicleCommon", "GetVehicleUserComponent", "VehicleUserComponent", "OwnerVehicle", "VehicleCommon", "VehicleSeatIdx", "VehicleUserState", "GetVehicleOfCharacter"],
+  "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle"],
   "property_regions": [
     {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
     {"label": "vehicle avatar candidate", "start": "0x10fc58000", "end": "0x10fc59b00"},
@@ -55,5 +56,6 @@
     ,{"label": "avatar base component tick", "offset": "0xa314ef0", "length": "0x600"}
     ,{"label": "vehicle avatar OnRep initialization", "offset": "0x47ebb2c", "length": "0x800"}
     ,{"label": "vehicle avatar OnRep tail", "offset": "0x47ef090", "length": "0x380"}
+    ,{"label": "vehicle master handle indexed lookup", "offset": "0x47fad00", "length": "0x600"}
   ]
 }
