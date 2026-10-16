@@ -12,9 +12,10 @@
   ],
   "field_regions": [
     {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]},
-    {"offset": "0x5a3c000", "length": "0x68000", "displacements": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc", "0x1ed8"]}
+    {"offset": "0x5a30000", "length": "0x74000", "displacements": ["0x20a0", "0x20a8", "0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc", "0x1ed8"]}
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
+  "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
   "call_targets": ["0x47ee7c8", "0x5a403e4"],
   "strings": [
     {"label": "resolved source class name from native getter", "address": "0x10ceac05a"},

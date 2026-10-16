@@ -72,6 +72,7 @@ def main():
     report['field_references'] = fields
     global_references = []
     wanted = {int(value, 16) for value in config.get('global_field_loads', [])}
+    field_constants = {int(value, 16) for value in config.get('global_field_constants', [])}
     call_targets = {0x100000000 + int(value, 16) for value in config.get('call_targets', [])}
     code_offset, code_size = image.text['offset'], image.text['length']
     code = image.data[code_offset:code_offset + (code_size & ~3)]
@@ -83,6 +84,13 @@ def main():
         if scale and displacement in wanted:
             global_references.append(dict(address=hex(pc), displacement=hex(displacement)))
             windows.append(('vehicle field load ' + hex(displacement), pc - 0x100, 0x300))
+        # Large member offsets are also materialized with MOVZ before a
+        # register-indexed load/store; immediate-LDR-only review misses them.
+        if word & 0x7F800000 == 0x52800000 and ((word >> 21) & 3) == 0:
+            value = (word >> 5) & 0xFFFF
+            if value in field_constants:
+                global_references.append(dict(address=hex(pc), field_constant=hex(value)))
+                windows.append(('vehicle field offset constant ' + hex(value), pc - 0x100, 0x400))
         if word & 0xFC000000 in (0x14000000, 0x94000000):
             relative = word & 0x3FFFFFF
             if relative & (1 << 25):
