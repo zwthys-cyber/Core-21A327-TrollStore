@@ -20,6 +20,7 @@
     {"label": "avatar readiness and wait setters", "offset": "0x6395280", "length": "0x120"},
     {"label": "character concrete constructor", "offset": "0x439ff50", "length": "0x500"},
     {"label": "weapon concrete constructor", "offset": "0x481e4ec", "length": "0x500"},
-    {"label": "UAE table concrete constructor", "offset": "0xadd1d50", "length": "0x400"}
+    {"label": "UAE table concrete constructor", "offset": "0xadd1d50", "length": "0x400"},
+    {"label": "UAE table native object initialization", "offset": "0xadd1b50", "length": "0x200"}
   ]
 }

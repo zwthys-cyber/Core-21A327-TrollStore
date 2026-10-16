@@ -286,6 +286,19 @@ def main():
                 references.append(dict(name=targets[target], instruction=hex(pc), target=hex(target)))
     (args.output / "serialization-code-references.json").write_text(json.dumps(references, indent=2) + "\n")
     windows = []
+    virtual_tables = []
+    for label, address, length in [("character avatar", 0x10E6189A8, 0x13A8),
+                                    ("weapon avatar", 0x10E6DEAB0, 0x1008)]:
+        slots = []
+        for slot in range(0, length, 8):
+            function = game.qword(game.offset(address + slot))
+            slots.append(dict(slot=hex(slot), function=hex(function), executable=game.code_address(function)))
+            if label == 'character avatar' and slot == 0x1320:
+                if not game.code_address(function):
+                    raise ValueError('Unreviewed character OnRep table entry')
+                windows.append(('character OnRep implementation', game, function, 0x1800))
+        virtual_tables.append(dict(label=label, table=hex(address), slots=slots))
+    (args.output / 'avatar-virtual-tables.json').write_text(json.dumps(virtual_tables, indent=2) + '\n')
     for record in references:
         windows.append((f"game serialization reference: {record['name']}", game,
                         max(game.text['address'], int(record['instruction'], 16) - 0x80), 0x300))
