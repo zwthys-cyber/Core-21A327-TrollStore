@@ -136,7 +136,7 @@ class CosmeticsMenuTests(unittest.TestCase):
     def test_reviewed_ui_helpers_match_the_pinned_original(self):
         header = (ROOT / 'patch/CoreCosmeticsUIProfile.h').read_text()
         entries = re.findall(r'\{0x([A-F0-9]+), "([0-9a-f]+)"\}', header)
-        self.assertEqual(len(entries), 5)
+        self.assertEqual(len(entries), 6)
         for rva, prefix in entries:
             offset = int(rva, 16)
             self.assertEqual(self.original[offset:offset + 32], bytes.fromhex(prefix))

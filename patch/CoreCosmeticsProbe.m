@@ -32,6 +32,7 @@ static CCPCoatTrial TrialState;
 static atomic_int MenuStatus = CCPMenuIdle;
 static atomic_bool MenuBusy = false;
 static atomic_bool MenuOwned = false;
+static atomic_uint MenuPresetIndex = 0;
 static const uint8_t CoreUUID[16] = {
     0x4e,0xd1,0xfd,0x29,0xa4,0x6a,0x36,0xb3,
     0x8d,0xfc,0x36,0xf6,0x7e,0xa9,0x29,0xd1
@@ -177,7 +178,7 @@ static CCPNativeWriteResult TrialTargetWrite(void *context, uint64_t address, co
 }
 static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     NSArray *statuses = @[@"applied", @"restored", @"already-restored", @"binding-changed",
-        @"layout-changed", @"initial-white-shirt-required", @"refresh-mode-unsupported", @"native-write-failed",
+        @"layout-changed", @"matching-equipped-item-required", @"refresh-mode-unsupported", @"native-write-failed",
         @"readback-failed", @"slot-changed-by-game", @"no-active-change"];
     return @{@"status": statuses[result.status], @"native_status": @(result.nativeStatus),
         @"written_bytes": @(result.writtenBytes), @"id_write_confirmed": @(result.idConfirmed),
@@ -194,9 +195,13 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 @property(nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 @property(nonatomic) BOOL capturing;
 @property(nonatomic) uint32_t generation;
+@property(nonatomic) NSUInteger presetIndex;
+@property(nonatomic) NSUInteger trialPresetIndex;
+@property(nonatomic) NSUInteger pendingPresetIndex;
 - (void)startTrial;
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)restoreTrial;
+- (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled;
 - (void)finishTrialOnQueue:(uint32_t)generation reason:(NSString *)reason;
 - (void)finishGeneration:(uint32_t)generation;
 @end
@@ -215,9 +220,12 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 }
 - (void)startTrial {
     if (self.capturing) return;
+    if (self.presetIndex >= CCP_PRESET_COUNT) return;
+    NSUInteger presetIndex = self.presetIndex;
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuWaiting);
+    atomic_store(&MenuPresetIndex, (unsigned)presetIndex);
     uint32_t generation = ++self.generation;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
     self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core cosmetics trial"
@@ -233,13 +241,16 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
             return; // Preserve the journal of an earlier change until restored.
         }
-        self.trialReport = [@{@"schema_version": @4, @"trial_revision": @4, @"mode": @"single-coat-trial",
+        self.trialPresetIndex = presetIndex;
+        CCPAppearancePreset preset = CCPAppearancePresets[presetIndex];
+        self.trialReport = [@{@"schema_version": @5, @"trial_revision": @5, @"mode": @"single-slot-appearance-trial",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @YES,
-            @"preset_visual_effect_previously_verified": @YES, @"current_trial_visual_confirmed": @NO,
-            @"ui_location": @"native-menu-below-position", @"preset": @"至尊金龙外套", @"original_id": @(CCP_ORIGINAL_COAT),
-            @"target_id": @(CCP_TRIAL_COAT), @"automatic_restore_seconds": @15} mutableCopy];
+            @"preset_visual_effect_previously_verified": @(preset.slot == 5 && preset.target == CCP_TRIAL_COAT),
+            @"current_trial_visual_confirmed": @NO, @"ui_location": @"native-menu-below-position",
+            @"preset": [NSString stringWithUTF8String:preset.label], @"category": [NSString stringWithUTF8String:preset.category],
+            @"slot_index": @(preset.slot), @"target_id": @(preset.target), @"automatic_restore_seconds": @15} mutableCopy];
         [self prepareTrialOnQueue:generation attempt:0];
     });
 }
@@ -261,10 +272,13 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         // binding and object chain at the actual point of use.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), self.captureQueue, ^{
             if (self.trialGeneration != generation || self.trialFinishing) return;
-            TrialState = (CCPCoatTrial){.game = TrialContext.game, .pawn = TrialContext.pawn, .avatar = TrialContext.avatar};
+            CCPAppearancePreset preset = CCPAppearancePresets[self.trialPresetIndex];
+            TrialState = (CCPCoatTrial){.game = TrialContext.game, .pawn = TrialContext.pawn, .avatar = TrialContext.avatar,
+                .slot = preset.slot, .target = preset.target};
             CCPReader reader = {TargetRead, &TrialContext.target};
             CCPTrialResult applied = CCPApplyCoat(reader, TrialTargetWrite, &TrialContext, TrialBindingValid, &TrialState);
             self.trialReport[@"apply"] = TrialResultJSON(applied);
+            self.trialReport[@"original_id"] = @(TrialState.original);
             atomic_store(&MenuOwned, TrialState.active);
             atomic_store(&MenuStatus, applied.idConfirmed ? CCPMenuApplied :
                 (applied.status == CCPTrialWrongOutfit ? CCPMenuWrongOutfit : CCPMenuFailed));
@@ -286,7 +300,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
                     BOOL sameLayout = bound && CCPTrialLayout(reader, &TrialState, &current);
                     BOOL flagRead = sameLayout && CCPReadBytes(reader, TrialState.avatar + CCP_REFRESH_PENDING, &pending, 1);
                     [self.samples addObject:@{@"binding_matches": @(bound), @"layout_matches": @(sameLayout),
-                        @"current_coat_id": @(current), @"refresh_flag_read": @(flagRead), @"refresh_pending": @(pending)}];
+                        @"current_item_id": @(current), @"refresh_flag_read": @(flagRead), @"refresh_pending": @(pending)}];
                     self.trialReport[@"observations"] = self.samples.copy;
                     [self writeTrialReport];
                     if (!bound || !sameLayout || self.samples.count >= 5)
@@ -303,6 +317,21 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         if (TrialState.active) self.trialFinishing = NO;
         [self finishTrialOnQueue:generation reason:@"manual-restore"];
     });
+}
+- (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index >= CCP_PRESET_COUNT) return;
+    if (!enabled) {
+        if (index != self.presetIndex) return;
+        self.pendingPresetIndex = NSNotFound;
+        [self restoreTrial];
+    } else if (self.capturing || atomic_load(&MenuOwned)) {
+        self.pendingPresetIndex = index;
+        [self restoreTrial];
+    } else {
+        self.presetIndex = index;
+        self.pendingPresetIndex = NSNotFound;
+        [self startTrial];
+    }
 }
 - (void)finishTrialOnQueue:(uint32_t)generation reason:(NSString *)reason {
     if (self.trialGeneration != generation || self.trialFinishing) return;
@@ -321,21 +350,25 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
 - (void)finishGeneration:(uint32_t)generation {
-    if (self.generation != generation || !self.capturing) return;
+    if (self.generation != generation) return;
     self.capturing = NO;
     atomic_store(&MenuBusy, false);
     if (self.backgroundTask != UIBackgroundTaskInvalid) {
         [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];
         self.backgroundTask = UIBackgroundTaskInvalid;
     }
+    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex < CCP_PRESET_COUNT) {
+        self.presetIndex = self.pendingPresetIndex;
+        self.pendingPresetIndex = NSNotFound;
+        [self startTrial];
+    }
 }
 @end
 
 static CCPCosmeticsController *CosmeticsController;
-static void NativeMenuAction(bool enabled) {
+static void NativeMenuAction(uint32_t index, bool enabled) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (enabled) [CosmeticsController startTrial];
-        else [CosmeticsController restoreTrial];
+        [CosmeticsController selectPreset:index enabled:enabled];
     });
 }
 __attribute__((visibility("default"))) void CoreCosmeticsRenderPage(void) {
@@ -364,13 +397,16 @@ __attribute__((visibility("default"))) void CoreCosmeticsRenderPage(void) {
         .end = (void (*)(void))SignedEntry(base + 0x12E620),
         .space = (void (*)(const CCPUIVec *))SignedEntry(base + 0x14F980),
         .checkbox = (bool (*)(const char *, bool *, float))SignedEntry(base + 0xC8928),
+        .button = (bool (*)(const char *, const char *, bool))SignedEntry(base + 0xC7A60),
     };
+    static unsigned category, page;
     CCPDrawCosmeticsPage(ui, scale, (CCPMenuStatus)atomic_load(&MenuStatus),
-        atomic_load(&MenuBusy) || atomic_load(&MenuOwned), NativeMenuAction);
+        atomic_load(&MenuBusy) || atomic_load(&MenuOwned), atomic_load(&MenuPresetIndex), &category, &page, NativeMenuAction);
 }
 __attribute__((constructor)) static void StartCosmeticsProbe(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         CosmeticsController = [CCPCosmeticsController new];
         CosmeticsController.backgroundTask = UIBackgroundTaskInvalid;
+        CosmeticsController.pendingPresetIndex = NSNotFound;
     });
 }

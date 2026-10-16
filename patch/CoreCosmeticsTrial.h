@@ -10,6 +10,7 @@
 typedef bool (*CCPBindingValid)(void *context);
 typedef struct {
     uint64_t game, pawn, avatar;
+    uint32_t slot, target, original;
     CCPArray array;
     uint8_t instance[16];
     bool active;
@@ -26,6 +27,17 @@ typedef struct {
     bool idConfirmed, refreshQueued;
 } CCPTrialResult;
 
+static inline bool CCPItemFitsSlot(uint32_t slot, uint32_t item) {
+    switch (slot) {
+        case 2: return item >= 40600000 && item < 40700000;
+        case 5: return item >= 403000 && item < 404000;
+        case 6: return item >= 404000 && item < 405000;
+        case 7: return item >= 405000 && item < 406000;
+        case 11: return item >= 703000 && item < 704000;
+        default: return false;
+    }
+}
+
 static inline bool CCPNativeCommitted(CCPNativeWriteResult result, size_t length) {
     return (uint32_t)result.state == 1 && ((result.state >> 32) & 255) == length &&
         ((result.state >> 40) & 255) == 1;
@@ -33,7 +45,8 @@ static inline bool CCPNativeCommitted(CCPNativeWriteResult result, size_t length
 static inline bool CCPTrialLayout(CCPReader reader, CCPCoatTrial *trial, uint32_t *item) {
     uint64_t owner = 0, table = 0, onrep = 0, update = 0, tick = 0;
     CCPArray array = {0}; uint8_t entry[CCP_ITEM_STRIDE];
-    if (!CCPPointer(trial->pawn) || !CCPPointer(trial->avatar) ||
+    if (!CCPItemFitsSlot(trial->slot, trial->target) ||
+        !CCPPointer(trial->pawn) || !CCPPointer(trial->avatar) ||
         !CCPReadBytes(reader, trial->avatar + 0x20, &owner, sizeof(owner)) || owner != trial->pawn ||
         !CCPReadBytes(reader, trial->pawn + CCP_AVATAR_OFFSET, &owner, sizeof(owner)) || owner != trial->avatar ||
         !CCPReadBytes(reader, trial->avatar, &table, sizeof(table)) || !CCPPointer(table) ||
@@ -43,7 +56,7 @@ static inline bool CCPTrialLayout(CCPReader reader, CCPCoatTrial *trial, uint32_
         !CCPReadBytes(reader, trial->avatar + CCP_SYNC_OFFSET, &array, sizeof(array)) ||
         array.count != 30 || array.capacity < 30 || array.capacity > 512 || !CCPPointer(array.data)) return false;
     if (trial->array.data && memcmp(&trial->array, &array, sizeof(array))) return false;
-    if (!CCPReadBytes(reader, array.data + CCP_COAT_SLOT * CCP_ITEM_STRIDE, entry, sizeof(entry)) ||
+    if (!CCPReadBytes(reader, array.data + trial->slot * CCP_ITEM_STRIDE, entry, sizeof(entry)) ||
         CCPU32(entry) != 4) return false;
     if (trial->array.data && memcmp(trial->instance, entry + 8, sizeof(trial->instance))) return false;
     if (!trial->array.data) {
@@ -70,9 +83,15 @@ static inline CCPTrialResult CCPTrialSetID(CCPReader reader, CCPCompareWrite wri
     if (!write || !valid || !valid(context)) return result;
     uint32_t current = 0;
     if (!CCPTrialLayout(reader, trial, &current)) { result.status = CCPTrialLayoutChanged; return result; }
-    uint32_t expected = restore ? CCP_TRIAL_COAT : CCP_ORIGINAL_COAT;
-    uint32_t replacement = restore ? CCP_ORIGINAL_COAT : CCP_TRIAL_COAT;
-    if (restore && current == CCP_ORIGINAL_COAT) {
+    if (!restore && !trial->original) {
+        if (!CCPItemFitsSlot(trial->slot, current)) { result.status = CCPTrialWrongOutfit; return result; }
+        if (current == trial->target) { result.status = CCPTrialNoActiveChange; return result; }
+        trial->original = current;
+    }
+    if (!CCPItemFitsSlot(trial->slot, trial->original)) { result.status = CCPTrialWrongOutfit; return result; }
+    uint32_t expected = restore ? trial->target : trial->original;
+    uint32_t replacement = restore ? trial->original : trial->target;
+    if (restore && current == trial->original) {
         trial->active = false; result.idConfirmed = true; result.status = CCPTrialAlreadyRestored; return result;
     }
     if (current != expected) {
@@ -85,7 +104,7 @@ static inline CCPTrialResult CCPTrialSetID(CCPReader reader, CCPCompareWrite wri
         result.status = CCPTrialUnsupportedRefresh; return result;
     }
     if (!valid(context)) return result;
-    uint64_t address = trial->array.data + CCP_COAT_SLOT * CCP_ITEM_STRIDE + 4;
+    uint64_t address = trial->array.data + trial->slot * CCP_ITEM_STRIDE + 4;
     if (!restore) trial->active = true; // Preserve a possible change across failed verification.
     CCPNativeWriteResult native = write(context, address, &expected, &replacement, 4);
     result.nativeStatus = (uint32_t)native.state;

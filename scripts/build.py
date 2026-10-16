@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-menu-r4.ipa"
-COSMETICS_BUNDLE_BUILD = "20.4"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-catalog-r5.ipa"
+COSMETICS_BUNDLE_BUILD = "20.5"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -253,8 +253,8 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="4",
-                    CoreCosmeticsMode="single-coat-trial", CoreCosmeticsUILocation="native-menu-below-position")
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="5",
+                    CoreCosmeticsMode="single-slot-appearance-trial", CoreCosmeticsUILocation="native-menu-below-position")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -301,14 +301,16 @@ def main():
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False,
                   cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=args.cosmetics_probe,
-                  cosmetics_trial_preset="golden-dragon-coat" if args.cosmetics_probe else None,
-                  cosmetics_visual_effect_verified=args.cosmetics_probe,
+                  cosmetics_trial_preset="five-category-catalog" if args.cosmetics_probe else None,
+                  cosmetics_visual_effect_verified=False,
+                  cosmetics_device_verified_targets=[403188] if args.cosmetics_probe else [],
                   cosmetics_visual_verified_revision=3 if args.cosmetics_probe else None,
                   cosmetics_ui_location="native-menu-below-position" if args.cosmetics_probe else None,
                   cosmetics_menu_device_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     if args.cosmetics_probe:
         shutil.copyfile(ROOT / "analysis/cosmetics/采集版使用说明.txt", dist / "采集版使用说明.txt")
+        shutil.copyfile(ROOT / "analysis/cosmetics/selected-avatar-catalog.json", dist / "外观候选目录.json")
     print(json.dumps(report, indent=2))
 
 

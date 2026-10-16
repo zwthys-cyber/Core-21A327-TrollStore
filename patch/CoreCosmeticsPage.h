@@ -1,6 +1,8 @@
 #ifndef CORE_COSMETICS_PAGE_H
 #define CORE_COSMETICS_PAGE_H
 #include <stdbool.h>
+#include <stdio.h>
+#include "CoreCosmeticsCatalog.h"
 typedef struct { float x, y; } CCPUIVec;
 typedef struct {
     void (*cursor)(const CCPUIVec *);
@@ -8,27 +10,45 @@ typedef struct {
     void (*end)(void);
     void (*space)(const CCPUIVec *);
     bool (*checkbox)(const char *, bool *, float);
+    bool (*button)(const char *, const char *, bool);
 } CCPUI;
 typedef enum { CCPMenuIdle, CCPMenuWaiting, CCPMenuApplied, CCPMenuRestored,
                CCPMenuWrongOutfit, CCPMenuFailed, CCPMenuRestorePending } CCPMenuStatus;
 static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus status,
-                                        bool enabled, void (*action)(bool)) {
-    const char *titles[] = {
-        "内核美化 · 15 秒试穿",
-        "内核美化 · 等待 Core 和角色就绪",
-        "内核美化 · 试穿中，关闭开关可恢复",
-        "内核美化 · 已恢复白 T 恤",
-        "内核美化 · 请先穿回初始白 T 恤",
-        "内核美化 · 未执行成功，请查看报告",
-        "内核美化 · 等待恢复，请关闭开关重试"
+    bool enabled, uint32_t selected, unsigned *category, unsigned *page, void (*action)(uint32_t, bool)) {
+    const char *states[] = {
+        "15 秒试穿", "等待角色", "试穿中", "已恢复原外观",
+        "请先穿戴对应物品", "请查看报告", "等待恢复"
     };
-    if ((unsigned)status >= sizeof(titles) / sizeof(titles[0])) status = CCPMenuFailed;
+    static const uint32_t slots[] = {5,2,6,7,11};
+    static const char *categories[] = {"外套", "头发", "裤子", "鞋子", "降落伞"};
+    *category %= 5;
+    unsigned count = 0;
+    for (unsigned i = 0; i < CCP_PRESET_COUNT; i++) count += CCPAppearancePresets[i].slot == slots[*category];
+    unsigned pages = count ? (count + 3) / 4 : 1;
+    *page %= pages;
+    if ((unsigned)status >= sizeof(states) / sizeof(states[0])) status = CCPMenuFailed;
+    char title[192];
+    snprintf(title, sizeof(title), "%s · %u/%u · %s", categories[*category], *page + 1, pages, states[status]);
     CCPUIVec origin = {170 * scale, 38 * scale}, size = {476 * scale, 225 * scale};
     ui.cursor(&origin);
-    bool visible = ui.begin(titles[status], &size, 0, 0x10);
+    bool visible = ui.begin(title, &size, 0, 0x10);
     if (visible) {
         CCPUIVec gap = {0, 8 * scale}; ui.space(&gap);
-        if (ui.checkbox("试穿至尊金龙外套（15 秒自动恢复）", &enabled, 0)) action(enabled);
+        unsigned index = 0;
+        for (unsigned i = 0; i < CCP_PRESET_COUNT; i++) {
+            if (CCPAppearancePresets[i].slot != slots[*category]) continue;
+            unsigned position = index++;
+            if (position < *page * 4 || position >= (*page + 1) * 4) continue;
+            bool checked = enabled && selected == i;
+            if (ui.checkbox(CCPAppearancePresets[i].label, &checked, 0)) action(i, checked);
+        }
+        CCPUIVec nav = {8 * scale, 167 * scale}; ui.cursor(&nav);
+        if (ui.button("p", "上一页", false)) *page = (*page + pages - 1) % pages;
+        nav.x = 155 * scale; ui.cursor(&nav);
+        if (ui.button("n", "下一页", false)) *page = (*page + 1) % pages;
+        nav.x = 302 * scale; ui.cursor(&nav);
+        if (ui.button("c", "换分类", false)) { *category = (*category + 1) % 5; *page = 0; }
     }
     // Native BeginChild/EndChild must remain balanced even for a clipped page.
     ui.end();
