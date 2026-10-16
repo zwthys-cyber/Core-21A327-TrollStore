@@ -86,20 +86,37 @@ static NSArray *ItemsJSON(const CCPItems *items) {
     }
     return result;
 }
-static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t pawn) {
+static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t pawn, uint64_t controller) {
     CCPVehicleSample sample = {0};
-    BOOL sampled = CCPReadVehicle(remote, game, pawn, &sample);
+    BOOL sampled = CCPReadVehicle(remote, game, pawn, controller, &sample);
     NSArray *statuses = @[@"vehicle-layout-candidate-sampled", @"current-vehicle-unavailable",
         @"vehicle-avatar-owner-unconfirmed", @"vehicle-refresh-methods-unconfirmed",
         @"vehicle-sync-array-unconfirmed", @"vehicle-changed-during-sample",
         @"vehicle-user-read-failed", @"vehicle-user-component-unavailable", @"vehicle-user-owner-unconfirmed",
-        @"current-vehicle-read-failed", @"current-vehicle-pointer-invalid"];
-    NSDictionary *path = @{@"vehicle_user_field_read": @(sample.userFieldRead),
+        @"current-vehicle-read-failed", @"current-vehicle-pointer-invalid",
+        @"character-resolver-unconfirmed", @"controller-class-unavailable", @"source-controller-unconfirmed",
+        @"vehicle-user-class-unavailable", @"component-set-read-failed", @"component-set-layout-unconfirmed",
+        @"component-set-changed", @"vehicle-user-components-ambiguous", @"vehicle-user-character-unconfirmed"];
+    NSArray *lookupStatuses = @[@"found", @"not-found", @"read-failed", @"layout-unconfirmed", @"changed", @"ambiguous"];
+    NSDictionary *path = @{@"source_resolver_matches": @(sample.resolverMatches),
+        @"controller_class_available": @(sample.controllerClassAvailable), @"vehicle_user_class_available": @(sample.userClassAvailable),
+        @"pawn_controller_field_read": @(sample.primaryRead), @"pawn_controller_nonzero": @(sample.primaryNonzero),
+        @"pawn_controller_class_matches": @(sample.primaryClassMatches), @"fallback_controller_field_read": @(sample.fallbackRead),
+        @"fallback_controller_used": @(sample.usedFallback), @"source_matches_core_controller": @(sample.sourceMatchesController),
+        @"controller_pawn_field_read": @(sample.controllerPawnRead), @"controller_pawn_matches": @(sample.controllerPawnMatches),
+        @"component_lookup_attempted": @(sample.lookupAttempted),
+        @"component_lookup_status": sample.lookupAttempted ? lookupStatuses[sample.components.status] : @"not-attempted",
+        @"component_set_header_read": @(sample.components.headerRead), @"component_bitmap_read": @(sample.components.bitmapRead),
+        @"component_set_stable": @(sample.components.stable), @"component_bitmap_on_heap": @(sample.components.heapBitmap),
+        @"component_slots": @(sample.components.slots), @"occupied_component_slots": @(sample.components.occupied),
         @"vehicle_user_available": @(sample.userAvailable), @"vehicle_user_owner_matches": @(sample.userOwnerMatches),
+        @"vehicle_user_character_field_read": @(sample.userCharacterRead), @"vehicle_user_character_matches": @(sample.userCharacterMatches),
         @"current_vehicle_field_read": @(sample.vehicleFieldRead), @"current_vehicle_nonzero": @(sample.vehicleNonzero),
         @"current_vehicle_pointer_valid": @(sample.vehiclePointerValid)};
     if (!sampled) return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
-        @"vehicle_path": @"character-vehicle-user-component", @"path_diagnostics": path,
+        @"vehicle_path": @"controller-owned-vehicle-user-component", @"path_diagnostics": path,
+        @"source_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.sourceTableRVA],
+        @"source_resolver_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.resolverRVA],
         @"vehicle_user_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.userTableRVA],
         @"vehicle_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.vehicleTableRVA],
         @"avatar_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.avatarTableRVA],
@@ -112,7 +129,9 @@ static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t 
             @"native_update_counter": @(item.updateCounter)}];
     }
     return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
-        @"vehicle_path": @"character-vehicle-user-component", @"path_diagnostics": path,
+        @"vehicle_path": @"controller-owned-vehicle-user-component", @"path_diagnostics": path,
+        @"source_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.sourceTableRVA],
+        @"source_resolver_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.resolverRVA],
         @"vehicle_user_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.userTableRVA],
         @"component_owner_matches": @YES, @"sync_array_stable": @YES,
         @"vehicle_skin_id": @(sample.skin), @"previous_skin_id": @(sample.previousSkin),
@@ -166,8 +185,11 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
         @"core_controller_available": @(CCPPointer(CCPU64(config + 0x390))),
         @"core_world_available": @(CCPPointer(CCPU64(config + 0x370)))};
     if (vehicleOnly) {
-        NSDictionary *vehicle = VehicleCandidate(remote, game, pawn);
         uint64_t controller = CCPU64(config + 0x390), controllerPawn = 0, pawnTable = 0, getter = 0;
+        uint8_t binding[0x30], bindingAfter[sizeof(binding)];
+        if (!CCPReadBytes(local, base + 0xC288B0, binding, sizeof(binding)) || CCPU32(binding + 0x28) != target.pid)
+            return @{@"status": @"vehicle-binding-unconfirmed"};
+        NSDictionary *vehicle = VehicleCandidate(remote, game, pawn, controller);
         uint64_t characterAvatar = 0, characterOwner = 0;
         BOOL controllerRead = CCPPointer(controller) && CCPReadBytes(remote, controller + 0x3540, &controllerPawn, 8);
         BOOL characterOwnerMatches = CCPReadBytes(remote, pawn + CCP_AVATAR_OFFSET, &characterAvatar, 8) &&
@@ -177,7 +199,10 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
             getter >= game && getter - game < 0xAF23BE4;
         if (!snapshot(&after) || memcmp(&before, &after, 0x28) ||
             !CCPReadBytes(local, base + 0xC54270, configAfter, sizeof(configAfter)) ||
-            CCPU64(configAfter + 0x18) != game || CCPU64(configAfter + 0x3A0) != pawn)
+            CCPU64(configAfter + 0x18) != game || CCPU64(configAfter + 0x3A0) != pawn ||
+            CCPU64(configAfter + 0x390) != controller ||
+            !CCPReadBytes(local, base + 0xC288B0, bindingAfter, sizeof(bindingAfter)) ||
+            memcmp(binding, bindingAfter, sizeof(binding)))
             return @{@"status": @"session-or-character-changed"};
         return @{@"status": @"vehicle-session-sampled", @"vehicle_candidate": vehicle,
             @"core_context": @{@"controller_pawn_field_read": @(controllerRead),
@@ -208,7 +233,7 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
         @"sync_item_count": @(sync.count), @"client_item_count": @(client.count), @"zero_slots_omitted": @YES,
         @"sync_items": ItemsJSON(&sync), @"client_items": ItemsJSON(&client)} mutableCopy];
     result[@"weapon_candidate"] = WeaponCandidate(remote, game, pawn);
-    result[@"vehicle_candidate"] = VehicleCandidate(remote, game, pawn);
+    result[@"vehicle_candidate"] = VehicleCandidate(remote, game, pawn, CCPU64(config + 0x390));
     uint64_t onrep = 0;
     if (CCPReadBytes(remote, vtable + 0x1320, &onrep, sizeof(onrep)) && onrep >= game && onrep - game < 0xAF23BE4)
         result[@"avatar_onrep_rva"] = [NSString stringWithFormat:@"0x%llx", (unsigned long long)(onrep - game)];
@@ -486,7 +511,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         self.trialFinishing = NO;
         self.samples = [NSMutableArray array];
         self.vehicleAttempts = [NSMutableArray array];
-        self.trialReport = [@{@"schema_version": @7, @"probe_revision": @7, @"mode": @"vehicle-read-adaptation",
+        self.trialReport = [@{@"schema_version": @8, @"probe_revision": @8, @"mode": @"vehicle-read-adaptation",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"vehicle_writes_implemented": @NO, @"vehicle_appearance_changes_implemented": @NO,

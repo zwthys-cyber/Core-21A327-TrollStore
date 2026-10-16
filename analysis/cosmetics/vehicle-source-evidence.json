@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
   "runtime_validated": false,
   "device_r6_feedback": {
@@ -21,6 +21,38 @@
     "character_cached_vehicle_user_offset": "0x47f8",
     "vehicle_user_current_vehicle_offset": "0x158",
     "r6_direct_character_candidate_offset": "0x3710"
+  },
+  "device_r7_feedback": {
+    "seat_confirmed_by_user": "driver",
+    "attempt_count": 30,
+    "samples": 0,
+    "status": "vehicle-user-component-unavailable",
+    "vehicle_user_field_read": true,
+    "vehicle_user_available": false,
+    "pawn_vtable_rva": "0xe7b1108",
+    "character_resolver_rva": "0x4c1158c",
+    "controller_pawn_matches_cached": true,
+    "limitation": "r7 read the pawn cache directly, skipping native controller resolution and component lookup"
+  },
+  "r8_reviewed_source": {
+    "iterator_actions_run": 38933859383,
+    "class_name_actions_run": 38934153584,
+    "source_class": "STExtraPlayerController",
+    "source_class_getter_rva": "0x6f37508",
+    "source_class_cache_rva": "0x11c5a650",
+    "resolver_primary_field": "pawn+0x608 with native IsA check",
+    "resolver_fallback_field": "pawn+0x60c8; accepted only when equal to Core cached controller",
+    "controller_pawn_field": "0x3540",
+    "component_class": "VehicleUserComponent",
+    "component_class_cache_rva": "0x11ccb6e8",
+    "component_lookup_rva": "0xa149148",
+    "owned_components": "actor+0x440 sparse set, 16-byte entries",
+    "bitmap": "inline at +0x450 or heap pointer at +0x460; bit count +0x468",
+    "bitmap_iterator_rvas": ["0x27026c8", "0x2702724"],
+    "native_IsA": "object Class+0x10; class ancestry pointer+0x88 and depth+0x90",
+    "user_character_field": "0x168",
+    "legacy_cache_used": false,
+    "device_validated": false
   },
   "scope": "Read-only vehicle adaptation. Native refresh and vehicle appearance writes remain unimplemented."
 }

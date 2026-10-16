@@ -1,4 +1,4 @@
-Core 车辆适配采集 r7（保留 r5 分类试穿）
+Core 车辆适配采集 r8（保留 r5 分类试穿）
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
 r2 已在你的手机上确认内核写入与回读成功。
@@ -10,25 +10,29 @@ r5 增加分类与翻页：外套 60 项、头发 53 项、裤子 14 项、鞋�
 枪械、头盔、背包、大厅及包内自定义模型/材质/特效尚未接入。
 r6 在“美化”的分类中加入“车辆适配”，独立采集当前乘坐车辆的外观数组和皮肤字段。
 本版车辆是只读采集，尚未实现车辆换肤。不会把衣服的刷新开关套到车辆上。
-r7 修正 r6 在驾驶位仍无法取得车辆对象的读取路径，改走原生“角色→载具使用组件→当前车辆”。
-报告增加 path_diagnostics、core_context 和最近 12 次 attempt_history，区分组件未就绪、空车辆及读取失败。
+r7 尝试读取角色的载具使用组件缓存，但用户坐驾驶位仍未取得样本。
+r8 根据原生代码确认来源为 STExtraPlayerController，先核对角色与 Core 控制器，再按占用位图查找控制器所属的 VehicleUserComponent。
+不再依赖角色 +0x47F8 缓存；组件类型、归属、Character 指向和读取稳定性均须匹配。
+报告增加控制器解析、类型缓存、组件集合、占用数量和查找阶段；保留最近 12 次 attempt_history。
+这是修正读取路径的新包，是否在手机上取得车辆样本仍需实际报告确认。
 采集普通车不需要账号拥有车辆皮肤，也不需要操作游戏里的车辆换肤按钮。
 使用游戏现有资源，未安装或替换 PAK 文件。
 
 车辆采集方法：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r7.ipa，按原有流程初始化 Core 和游戏采集。
+1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r8.ipa，按原有流程初始化 Core 和游戏采集。
 2. 进入训练场，坐进一辆轿车。保持在车内，不要切换座位或换车。
 3. Core 原生菜单 →“位置”下面的“美化”→ 点“换分类”直到“车辆适配”→“采集车辆”。
-4. 等待约 8 秒，标题显示“车辆报告已保存”。如果尚未上车，会等待最多约 60 秒。
+4. 取得 8 个成功样本后显示“车辆报告已保存”；未取得足够样本时最多等待约 60 秒，也可手动停止。
 5. 在“文件→我的 iPhone→Core”找到 Core-cosmetics-probe.json，将该报告发回。
-   报告 mode 应为 vehicle-read-adaptation，schema_version 应为 7。
+   报告 mode 应为 vehicle-read-adaptation，schema_version 和 probe_revision 应为 8。
+   vehicle_path 应为 controller-owned-vehicle-user-component。
    主要内容是 latest_vehicle、samples、path_diagnostics、core_context 和 attempt_history。
-   如显示 current-vehicle-unavailable，重新上车后再采集；如显示其他未确认状态，也请保留报告。
+   已坐在驾驶位仍失败时直接保留并发回报告，不必反复用同一版本重新采集。
 6. “停止采集”只停止车辆读取。采集期间选衣服项目，会先结束采集再开始试穿。
    如果仍有服装试穿进行中，先关闭试穿，再开始车辆采集。
 
 原有服装试穿方法：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r7.ipa。
+1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r8.ipa。
 2. 穿戴需要试换部位的普通物品，进入训练场。
 3. 返回 Core，等待原有初始化完成，并启动原有游戏采集。
 4. 回到游戏，在 Core 悬浮菜单中点“位置”下面的“美化”。
