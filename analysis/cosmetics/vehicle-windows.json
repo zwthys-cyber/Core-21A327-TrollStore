@@ -7,7 +7,11 @@
     {"label": "vehicle avatar candidate", "start": "0x10fc58000", "end": "0x10fc59b00"},
     {"label": "vehicle-user component candidate", "start": "0x10fcdd000", "end": "0x10fcde800"},
     {"label": "current vehicle skin owner metadata", "start": "0x10fc6c000", "end": "0x10fc6d000"},
-    {"label": "vehicle entity owner metadata", "start": "0x10fc91000", "end": "0x10fc92800"}
+    {"label": "vehicle entity owner metadata", "start": "0x10fc91000", "end": "0x10fc92800"},
+    {"label": "master vehicle avatar entity metadata", "start": "0x10f3f1000", "end": "0x10f3f4000"},
+    {"label": "base vehicle avatar entity metadata", "start": "0x10fc5b000", "end": "0x10fc5d000"},
+    {"label": "base avatar entity metadata", "start": "0x10edd0000", "end": "0x10edd2000"},
+    {"label": "master vehicle getter return metadata", "start": "0x10fc54000", "end": "0x10fc55000"}
   ],
   "pointer_tables": [
     {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xa58", "0xc68", "0xd18"]},
@@ -67,5 +71,9 @@
     ,{"label": "avatar handle mapping find", "offset": "0x3796f3c", "length": "0x500"}
     ,{"label": "vehicle avatar install loaded entity", "offset": "0x47ed4f8", "length": "0x1000"}
     ,{"label": "avatar handle mapping fallback", "offset": "0x42e3290", "length": "0x600"}
+    ,{"label": "master vehicle entity constructor wrapper", "offset": "0x68b4074", "length": "0x180"}
+    ,{"label": "master vehicle entity native registration", "offset": "0x68ad16c", "length": "0x500"}
+    ,{"label": "vehicle entity constructor wrapper", "offset": "0x72419ec", "length": "0x180"}
+    ,{"label": "base avatar entity constructor wrapper", "offset": "0x6118550", "length": "0x180"}
   ]
 }
