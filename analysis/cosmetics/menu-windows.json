@@ -1,4 +1,8 @@
 [
   {"label": "native sidebar and page dispatch", "rva": "0xd04a0", "length": "0x640"},
-  {"label": "native position page", "rva": "0xcd680", "length": "0x220"}
+  {"label": "native position page", "rva": "0xcd680", "length": "0x220"},
+  {"label": "native sidebar button", "rva": "0xc7a60", "length": "0x650"},
+  {"label": "native child and checkbox wrappers", "rva": "0xc88b0", "length": "0x600"},
+  {"label": "native initialization page", "rva": "0xcb874", "length": "0x550"},
+  {"label": "native cursor position setter", "rva": "0x133168", "length": "0x34"}
 ]

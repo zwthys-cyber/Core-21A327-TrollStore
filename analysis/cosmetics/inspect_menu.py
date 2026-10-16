@@ -55,5 +55,9 @@ for name, address, length, reserved1, reserved2 in sections:
             records.append(dict(symbol=symbol, rva=hex(address + index * reserved2 - 0x100000000),
                                 instructions=disassemble(core, address + index * reserved2, reserved2)))
 (output / 'native-menu-symbols.json').write_text(json.dumps(dict(stubs=records, symbols=[name for name in names
-    if any(term in name for term in ['ImGui', 'Button', 'TextUnformatted', 'Selectable'])]), indent=2))
+    if any(term in name for term in ['ImGui', 'Button', 'TextUnformatted', 'Selectable'])],
+    prefixes={window['rva']: data[core.offset(0x100000000 + int(window['rva'], 16)):
+        core.offset(0x100000000 + int(window['rva'], 16)) + 32].hex() for window in windows},
+    strings={hex(rva): core.string(0x100000000 + rva) for rva in [0x744522, 0x744529, 0x744530]},
+    removed_tabs_sha256=hashlib.sha256(data[0xD07E0:0xD097C]).hexdigest()), indent=2))
 binary.unlink()
