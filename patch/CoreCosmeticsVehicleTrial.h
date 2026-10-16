@@ -18,11 +18,16 @@ typedef enum {
 } CCPVehicleTrialStatus;
 typedef struct {
     uint32_t master, counter, pending, skin, previous, real, defaultSkin, cachedCounter;
+    bool cachedCounterRead;
 } CCPVehicleView;
+typedef enum { CCPVehiclePrepareNone, CCPVehiclePrepareSource, CCPVehiclePrepareMembership, CCPVehiclePrepareIdentity,
+    CCPVehiclePrepareSync, CCPVehiclePrepareCache, CCPVehiclePrepareMaster, CCPVehiclePrepareStable,
+    CCPVehiclePrepareCounter, CCPVehiclePrepareReady } CCPVehiclePrepareStage;
 typedef struct {
     uint64_t game, pawn, controller, user, vehicle, avatar;
     CCPArray sync, cached;
     uint32_t componentIndex, originalCounter, appliedCounter, restoreCounter;
+    CCPVehiclePrepareStage prepareStage;
     uint8_t membership[0x30], objectIdentity[3][0x1C], entryIdentity[CCP_VEHICLE_STRIDE];
     unsigned owned;
     bool active, prepared, requestSent, restoring, counterRestored, restoreRequested, engineApplyObserved;
@@ -73,35 +78,45 @@ static inline bool CCPVehicleTrialLayout(CCPReader reader, const CCPVehicleTrial
         !CCPReadBytes(reader, t->vehicle + 0x20AC, skin, sizeof(skin)) ||
         !CCPReadBytes(reader, t->vehicle + 0x20AC, skinAgain, sizeof(skinAgain)) || memcmp(skin, skinAgain, sizeof(skin)) ||
         !CCPReadBytes(reader, t->avatar + 0x10A4, &view->defaultSkin, 4) ||
-        !CCPReadBytes(reader, cached.data, &view->cachedCounter, 4) ||
+        (cached.count && !CCPReadBytes(reader, cached.data, &view->cachedCounter, 4)) ||
         !CCPReadBytes(reader, t->avatar + 0x11E8, &repeated, sizeof(repeated)) || memcmp(&sync, &repeated, sizeof(sync)) ||
         !CCPReadBytes(reader, t->avatar + 0x1208, &repeated, sizeof(repeated)) || memcmp(&cached, &repeated, sizeof(cached))) return false;
     view->master = CCPU32(entry + 4); view->counter = CCPU32(entry + 0x1C);
     view->pending = skin[0]; view->skin = skin[1]; view->previous = skin[2]; view->real = skin[3];
+    view->cachedCounterRead = cached.count > 0;
     return true;
 }
 
 static inline bool CCPVehicleTrialPrepare(CCPReader reader, CCPVehicleTrial *t) {
     uint64_t actor = 0; CCPVehicleSample source = {0};
+    t->prepareStage = CCPVehiclePrepareSource;
     if (!CCPVehicleSource(reader, t->game, t->pawn, t->controller, &actor, &t->user, &t->vehicle, &source) ||
         !CCPVehicleOwner(reader, t->vehicle, &t->avatar)) return false;
     t->componentIndex = source.components.selectedIndex;
+    t->prepareStage = CCPVehiclePrepareMembership;
     if (!CCPReadBytes(reader, actor + 0x440, t->membership, sizeof(t->membership))) return false;
     const uint64_t objects[] = {t->user, t->vehicle, t->avatar};
+    t->prepareStage = CCPVehiclePrepareIdentity;
     for (unsigned i = 0; i < 3; i++)
         if (!CCPReadBytes(reader, objects[i] + 0xC, t->objectIdentity[i], sizeof(t->objectIdentity[i]))) return false;
+    t->prepareStage = CCPVehiclePrepareSync;
     if (!CCPReadBytes(reader, t->avatar + 0x11E8, &t->sync, sizeof(t->sync)) ||
-        t->sync.count != 11 || t->sync.capacity < 11 || t->sync.capacity > 128 || !CCPPointer(t->sync.data) ||
-        !CCPReadBytes(reader, t->avatar + 0x1208, &t->cached, sizeof(t->cached)) ||
-        t->cached.count < t->sync.count || t->cached.count > 16 || t->cached.capacity < t->cached.count ||
-        t->cached.capacity > 128 || !CCPPointer(t->cached.data) ||
-        !CCPReadBytes(reader, t->sync.data, t->entryIdentity, sizeof(t->entryIdentity)) || CCPU32(t->entryIdentity) != 33) return false;
+        t->sync.count != 11 || t->sync.capacity < 11 || t->sync.capacity > 128 || !CCPPointer(t->sync.data)) return false;
+    t->prepareStage = CCPVehiclePrepareCache;
+    if (!CCPReadBytes(reader, t->avatar + 0x1208, &t->cached, sizeof(t->cached)) ||
+        t->cached.count < 0 || t->cached.count > 16 || t->cached.capacity < t->cached.count ||
+        t->cached.capacity > 128 || (t->cached.count && !CCPPointer(t->cached.data))) return false;
+    t->prepareStage = CCPVehiclePrepareMaster;
+    if (!CCPReadBytes(reader, t->sync.data, t->entryIdentity, sizeof(t->entryIdentity)) || CCPU32(t->entryIdentity) != 33) return false;
     CCPVehicleView view;
+    t->prepareStage = CCPVehiclePrepareStable;
     if (!CCPVehicleTrialLayout(reader, t, &view)) return false;
     t->originalCounter = view.counter;
+    t->prepareStage = CCPVehiclePrepareCounter;
     if (t->originalCounter > UINT32_MAX - 2) return false;
     t->appliedCounter = t->originalCounter + 1; t->restoreCounter = t->originalCounter + 2;
     t->prepared = true;
+    t->prepareStage = CCPVehiclePrepareReady;
     return true;
 }
 

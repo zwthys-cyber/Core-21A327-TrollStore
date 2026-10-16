@@ -99,7 +99,10 @@ int main(void) {
     t = Setup(); Put32(Entries, 16); r = Apply(&t); assert(r.status == CCPVehicleTrialLayoutChanged && !f.writes);
     t = Setup(); f.onrep = Base + 0x43D2EB0; r = Apply(&t); assert(r.status == CCPVehicleTrialLayoutChanged && !f.writes);
     t = Setup(); Put32(Vehicle + 0x20AC, 123); r = Apply(&t); assert(r.status == CCPVehicleTrialWrongVehicle && !f.writes);
-    t = Setup(); Put32(Avatar + 0x1210, 0); r = Apply(&t); assert(r.status == CCPVehicleTrialLayoutChanged && !f.writes);
+    t = Setup(); Put32(Avatar + 0x1210, 0); r = Apply(&t); assert(r.requestWritten);
+    assert(CCPVehicleTrialLayout((CCPReader){Read, &f}, &t, &view) && !view.cachedCounterRead);
+    t = Setup(); Put32(Avatar + 0x1210, 17); r = Apply(&t);
+    assert(r.status == CCPVehicleTrialLayoutChanged && !f.writes && t.prepareStage == CCPVehiclePrepareCache);
     t = Setup(); Put32(Cached, 2); r = Apply(&t); assert(r.requestWritten && f.writes == 3);
     t = Setup(); Put32(Entries + 0x1C, UINT32_MAX); r = Apply(&t); assert(r.status == CCPVehicleTrialLayoutChanged && !f.writes);
     t = Setup(); f.bound = false; r = Apply(&t); assert(r.status == CCPVehicleTrialBindingChanged && !f.writes);

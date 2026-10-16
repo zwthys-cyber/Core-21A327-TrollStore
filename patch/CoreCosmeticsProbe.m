@@ -312,10 +312,14 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         @"refresh_queued": @(result.refreshQueued), @"change_still_owned": @(TrialState.active)};
 }
 static NSDictionary *VehicleTrialResultJSON(CCPVehicleTrialResult result) {
+    NSArray *stages = @[@"not-started", @"source", @"membership", @"object-identity", @"sync-array", @"counter-cache",
+        @"master-slot", @"stable-layout", @"counter-range", @"ready"];
     NSArray *statuses = @[@"request-written-awaiting-engine", @"restoring-awaiting-engine", @"original-fields-observed",
         @"memory-restored-refresh-unconfirmed", @"binding-changed", @"vehicle-layout-changed", @"matching-vehicle-required",
         @"earlier-change-still-owned", @"native-write-failed", @"vehicle-changed-by-game", @"no-active-change"];
     return @{@"status": statuses[result.status], @"native_status": @(result.nativeStatus),
+        @"prepare_stage": stages[VehicleState.prepareStage], @"sync_item_count": @(VehicleState.sync.count),
+        @"cached_counter_count": @(VehicleState.cached.count),
         @"written_bytes": @(result.writtenBytes), @"total_written_bytes": @(result.totalWrittenBytes),
         @"id_write_confirmed": @(result.idConfirmed), @"pending_request_written": @(result.requestWritten),
         @"memory_restored": @(result.dataRestored), @"native_restore_observed": @(result.nativeRestoreObserved),
@@ -331,6 +335,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     return @{@"binding_matches": @(bound), @"layout_matches": @(layout),
         @"master_item_id": @(view.master), @"native_update_counter": @(view.counter),
         @"cached_update_counter": @(view.cachedCounter), @"pending_skin_id": @(view.pending),
+        @"cached_update_counter_read": @(layout && view.cachedCounterRead),
         @"vehicle_skin_id": @(view.skin), @"previous_skin_id": @(view.previous),
         @"real_skin_id": @(view.real), @"default_skin_id": @(view.defaultSkin),
         @"pending_request_consumed": @(layout && VehicleState.requestSent && view.pending == 0),
