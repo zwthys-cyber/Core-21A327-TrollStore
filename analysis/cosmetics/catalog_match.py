@@ -96,6 +96,41 @@ def main():
                   usable_as_kernel_configuration=False, source=source, summary=summary,
                   device_initial_outfit=device_matches, trial_target=target_rows[0], recipes=recipes)
     (args.output / 'recipe-id-candidates.json').write_text(json.dumps(output, ensure_ascii=False, indent=2) + '\n')
+    # Menu candidates use only exact, unique target labels from the pinned
+    # catalog that also occur in the supplied Item name map. They are grouped
+    # solely into the five character slots already observed on this device.
+    groups = [('外套', 5, 403000, 404000), ('头发', 2, 40600000, 40700000),
+              ('裤子', 6, 404000, 405000), ('鞋子', 7, 405000, 406000),
+              ('降落伞', 11, 703000, 704000)]
+    presets = {}
+    for recipe in recipes:
+        match = recipe['target_candidates']
+        if match['method'] != 'normalized-exact' or len(match['candidates']) != 1:
+            continue
+        row = match['candidates'][0]
+        if any(ord(c) < 32 for c in row['label']):
+            continue
+        for category, slot, lower, upper in groups:
+            if lower <= row['item_id'] < upper:
+                presets.setdefault(row['item_id'], dict(category=category, slot=slot, target_id=row['item_id'],
+                    label=row['label'], exact_label_and_item_row_confirmed=True,
+                    device_visual_verified=row['item_id'] == trial['target_id'],
+                    source_recipe=dict(archive=recipe['archive'], text=recipe['text'], line=recipe['line'])))
+    order = {category: index for index, (category, *_) in enumerate(groups)}
+    presets = sorted(presets.values(), key=lambda p: (order[p['category']], p['target_id'] != trial['target_id'], p['target_id']))
+    catalog = dict(schema_version=1, status='character-menu-candidates', source=source, presets=presets,
+        scope='Five character appearance slots; weapon and custom PAK effects are not implemented by this catalog.',
+        category_counts={category: sum(p['category'] == category for p in presets) for category, *_ in groups})
+    (args.output / 'selected-avatar-catalog.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + '\n')
+    header = ['#ifndef CORE_COSMETICS_CATALOG_H', '#define CORE_COSMETICS_CATALOG_H', '#include <stdint.h>',
+              'typedef struct { uint32_t slot, target; const char *category, *label; } CCPAppearancePreset;',
+              'static const CCPAppearancePreset CCPAppearancePresets[] = {']
+    for preset in presets:
+        header.append('    {%du, %du, %s, %s},' % (preset['slot'], preset['target_id'],
+            json.dumps(preset['category'], ensure_ascii=False), json.dumps(preset['label'], ensure_ascii=False)))
+    header += ['};', '#define CCP_PRESET_COUNT (sizeof(CCPAppearancePresets) / sizeof(CCPAppearancePresets[0]))', '#endif', '']
+    (args.output / 'CoreCosmeticsCatalog.h').write_text('\n'.join(header))
+    print(json.dumps(catalog['category_counts'], ensure_ascii=False))
     print(json.dumps(summary))
 
 

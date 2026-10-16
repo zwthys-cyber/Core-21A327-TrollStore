@@ -10,6 +10,9 @@
     {"label": "object-chain helper", "offset": "0xd5e60", "length": "0x400"}
   ],
   "game": [
+    {"label": "lobby character getter implementation", "offset": "0x43f959c", "length": "0x300"},
+    {"label": "lobby character reflected class", "offset": "0xab27020", "length": "0x280"},
+    {"label": "lobby pawn reflected class", "offset": "0x6e608ec", "length": "0x280"},
     {"label": "character avatar static class", "offset": "0x6395420", "length": "0x300"},
     {"label": "weapon avatar static class", "offset": "0x7314b1c", "length": "0x300"},
     {"label": "character avatar OnRep wrapper", "offset": "0x6391994", "length": "0x100"},
