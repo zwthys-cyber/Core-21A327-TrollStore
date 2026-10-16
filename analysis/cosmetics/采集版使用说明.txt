@@ -14,6 +14,8 @@ Core 美化适配写入检测版 r2
 5. 等约 24 秒，返回 Core，点“美化适配”→“导出报告”。
 6. 将 Core-cosmetics-probe.json 发回。
    write_check 中的状态用于确认当前 Core 会话是否具备实际写入能力。
+   也可以只复制 write_check 段和 latest_layout.avatar_onrep_rva。
+   r2 仅保留一份外观明细，并省略空槽，报告比 r1 更短。
 
 若没有成功采集，也请保留报告中的状态，便于定位原因。
 报告也会保存在 Core 的 Documents/Core-cosmetics-probe.json，

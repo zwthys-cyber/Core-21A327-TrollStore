@@ -60,7 +60,8 @@ static NSArray *ItemsJSON(const CCPItems *items) {
     NSMutableArray *result = [NSMutableArray arrayWithCapacity:items->count];
     for (uint32_t i = 0; i < items->count; i++) {
         CCPItem item = items->items[i];
-        [result addObject:@{@"type": @(item.type), @"type_specific_id": @(item.item),
+        if (item.type == 0 && item.item == 0) continue;
+        [result addObject:@{@"slot_index": @(i), @"type": @(item.type), @"type_specific_id": @(item.item),
             @"gender": @(item.gender), @"operation": @(item.operation), @"version": @(item.version)}];
     }
     return result;
@@ -100,6 +101,7 @@ static NSDictionary *Sample(BOOL writeCheck) {
     NSMutableDictionary *result = [@{@"status": syncOK || clientOK ? @"candidate-layout-sampled" : @"avatar-arrays-unconfirmed",
         @"game_uuid_matches": @YES, @"component_owner_matches": @YES,
         @"sync_array_stable": @(syncOK), @"client_array_stable": @(clientOK),
+        @"sync_item_count": @(sync.count), @"client_item_count": @(client.count), @"zero_slots_omitted": @YES,
         @"sync_items": ItemsJSON(&sync), @"client_items": ItemsJSON(&client)} mutableCopy];
     uint64_t onrep = 0;
     if (CCPReadBytes(remote, vtable + 0x1320, &onrep, sizeof(onrep)) && onrep >= game && onrep - game < 0xAF23BE4)
@@ -133,6 +135,7 @@ static NSDictionary *Sample(BOOL writeCheck) {
 @property(nonatomic, strong) dispatch_queue_t captureQueue;
 @property(nonatomic, strong) NSMutableArray *samples;
 @property(nonatomic, strong) NSDictionary *writeCheckResult;
+@property(nonatomic, strong) NSDictionary *latestLayout;
 @property(nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 @property(nonatomic) BOOL capturing;
 @property(nonatomic) uint32_t generation;
@@ -219,6 +222,7 @@ static atomic_bool CaptureStopped = true;
     dispatch_async(self.captureQueue, ^{
         self.samples = [NSMutableArray array];
         self.writeCheckResult = nil;
+        self.latestLayout = @{};
         self.captureTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.captureQueue);
         dispatch_source_set_timer(self.captureTimer, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
                                   3 * NSEC_PER_SEC, NSEC_PER_SEC / 4);
@@ -227,14 +231,17 @@ static atomic_bool CaptureStopped = true;
                 if (atomic_load(&CaptureStopped)) { dispatch_source_cancel(self.captureTimer); self.captureTimer = nil; return; }
                 NSDictionary *sample = Sample(self.writeCheckResult == nil);
                 if (sample[@"write_check"]) self.writeCheckResult = sample[@"write_check"];
-                [self.samples addObject:sample];
+                self.latestLayout = sample;
+                NSMutableDictionary *summary = [sample mutableCopy];
+                [summary removeObjectsForKeys:@[@"sync_items", @"client_items", @"write_check"]];
+                [self.samples addObject:summary];
                 NSDictionary *report = @{@"schema_version": @2, @"probe_revision": @2,
                     @"mode": @"same-value-write-adaptation", @"game_version": @"1.38.12", @"game_build": @"15915",
                     @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
                     @"captured_at_unix": @([NSDate date].timeIntervalSince1970),
                     @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @NO,
                     @"runtime_layout_validated": @NO, @"write_check": self.writeCheckResult ?: @{},
-                    @"samples": self.samples.copy};
+                    @"latest_layout": self.latestLayout, @"samples": self.samples.copy};
                 NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
                 [json writeToURL:[self reportURL] options:NSDataWritingAtomic error:NULL];
                 if (self.samples.count >= 8) {
