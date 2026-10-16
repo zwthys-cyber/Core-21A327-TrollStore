@@ -29,6 +29,8 @@ TERMS = [
     "WeaponManagerComponent", "CurrentWeaponReplicated", "LocalPlayerController",
     "AcknowledgedPawn", "CharacterAvatarComp", "NetAvatarSyncData_PushModel",
     "UAEDataTable", "UsedCompressedRowData",
+    "LobbyCharacter", "LobbyPawn", "PreviewCharacter", "LobbyAvatarComponent",
+    "GetLobbyCharacter", "GetPreviewCharacter", "LobbyPlayerController", "LobbyCharacterManager",
 ]
 
 
@@ -213,6 +215,10 @@ def main():
                   function_candidates=functions,
                   unresolved=["property ownership and ABI", "runtime object and item ID validation",
                               "reviewed Core target-process write interface", "appearance refresh semantics"])
+    cstrings = game.data[game.cstrings['offset']:game.cstrings['offset'] + game.cstrings['length']]
+    report['lobby_name_candidates'] = sorted({name.decode('ascii') for name in cstrings.split(b'\0')
+        if len(name) <= 160 and b'Lobby' in name and all(32 <= c < 127 for c in name) and
+        any(term in name for term in [b'Character', b'Avatar', b'Preview', b'PlayerController'])})[:300]
     # Evidence for the small, read-only device adapter. These bytes are checked
     # again in the final IPA in Actions and before invoking an original entry.
     report["core_adapter_evidence"] = {

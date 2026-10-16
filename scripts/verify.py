@@ -77,7 +77,9 @@ def main(ipa, cosmetics_probe=False):
         assert paths.count(LOAD_PATH[:-1]) == 1
         assert uuid == CORE_UUID
         validate_patch_dependency(main, archive.read(app + "CoreBootCache.dylib"))
-        expected_main = redirect_remote_imports(inject(minimal_core(original.read(app + "Core"))))
+        from cosmetics_menu import cosmetics_core
+        profile = cosmetics_core if cosmetics_probe else minimal_core
+        expected_main = redirect_remote_imports(inject(profile(original.read(app + "Core"))))
         # codesign may only resize __LINKEDIT and replace the signature. Check
         # every other byte, including bind records, import names, and header stubs.
         signature_offset = None
@@ -142,7 +144,7 @@ def main(ipa, cosmetics_probe=False):
             if name in original.namelist():
                 expected = original.read(name)
                 if name == app + "Core":
-                    expected = minimal_core(expected)
+                    expected = profile(expected)
                 if name == app + "CCCoreLicense.dylib":
                     expected = disable_license_startup(expected)
                 assert sections(binary) == sections(expected), f"Unexpected program section change: {name}"
@@ -155,8 +157,10 @@ def main(ipa, cosmetics_probe=False):
         assert info["CFBundleVersion"] == (COSMETICS_BUNDLE_BUILD if cosmetics_probe else BUNDLE_BUILD)
         assert info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         if cosmetics_probe:
-            assert info["CoreCosmeticsProbeVersion"] == "3" and info["CoreCosmeticsMode"] == "single-coat-trial"
+            assert info["CoreCosmeticsProbeVersion"] == "4" and info["CoreCosmeticsMode"] == "single-coat-trial"
+            assert info["CoreCosmeticsUILocation"] == "native-menu-below-position"
             assert b"CCPCosmeticsController\0" in patch_library
+            assert b"_CoreCosmeticsRenderPage" in exported
         else:
             assert "CoreCosmeticsProbeVersion" not in info and b"CCPCosmeticsController\0" not in patch_library
         assert info["CoreFeatureProfile"] == PROFILE

@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-trial-r3.ipa"
-COSMETICS_BUNDLE_BUILD = "20.3"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-menu-r4.ipa"
+COSMETICS_BUNDLE_BUILD = "20.4"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -196,7 +196,9 @@ def main():
     binary = app / "Core"
     from remote_imports import redirect_remote_imports
     from minimal_features import PROFILE, minimal_core, manifest
-    binary.write_bytes(redirect_remote_imports(inject(minimal_core(binary.read_bytes()))))
+    from cosmetics_menu import cosmetics_core
+    profile = cosmetics_core if args.cosmetics_probe else minimal_core
+    binary.write_bytes(redirect_remote_imports(inject(profile(binary.read_bytes()))))
     license_library = app / "CCCoreLicense.dylib"
     license_library.write_bytes(disable_license_startup(license_library.read_bytes()))
     dylib = app / "CoreBootCache.dylib"
@@ -251,8 +253,8 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="3",
-                    CoreCosmeticsMode="single-coat-trial")
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="4",
+                    CoreCosmeticsMode="single-coat-trial", CoreCosmeticsUILocation="native-menu-below-position")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -300,7 +302,9 @@ def main():
                   build_host=sys.platform, device_runtime_verified=False,
                   cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=args.cosmetics_probe,
                   cosmetics_trial_preset="golden-dragon-coat" if args.cosmetics_probe else None,
-                  cosmetics_visual_effect_verified=False)
+                  cosmetics_visual_effect_verified=args.cosmetics_probe,
+                  cosmetics_visual_verified_revision=3 if args.cosmetics_probe else None,
+                  cosmetics_menu_device_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     if args.cosmetics_probe:
         shutil.copyfile(ROOT / "analysis/cosmetics/采集版使用说明.txt", dist / "采集版使用说明.txt")

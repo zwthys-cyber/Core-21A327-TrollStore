@@ -4,9 +4,13 @@
 #import <mach-o/dyld.h>
 #import <ptrauth.h>
 #import <stdatomic.h>
+#import <math.h>
+#import <stdio.h>
 #import "CoreCosmeticsRead.h"
 #import "CoreCosmeticsWriteCheck.h"
 #import "CoreCosmeticsTrial.h"
+#import "CoreCosmeticsPage.h"
+#import "CoreCosmeticsUIProfile.h"
 
 // r1/r2 established the character read path and checked native writes on device.
 // r3 changes one coat and uses the game's own deferred refresh, then restores it.
@@ -25,6 +29,9 @@ typedef struct {
 } CCPResolvedTarget;
 static CCPResolvedTarget TrialContext;
 static CCPCoatTrial TrialState;
+static atomic_int MenuStatus = CCPMenuIdle;
+static atomic_bool MenuBusy = false;
+static atomic_bool MenuOwned = false;
 static const uint8_t CoreUUID[16] = {
     0x4e,0xd1,0xfd,0x29,0xa4,0x6a,0x36,0xb3,
     0x8d,0xfc,0x36,0xf6,0x7e,0xa9,0x29,0xd1
@@ -178,13 +185,8 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 }
 
 @interface CCPCosmeticsController : NSObject
-@property(nonatomic, strong) UIButton *button;
-@property(nonatomic, strong) dispatch_source_t attachmentTimer;
-@property(nonatomic, strong) dispatch_source_t captureTimer;
 @property(nonatomic, strong) dispatch_queue_t captureQueue;
 @property(nonatomic, strong) NSMutableArray *samples;
-@property(nonatomic, strong) NSDictionary *writeCheckResult;
-@property(nonatomic, strong) NSDictionary *latestLayout;
 @property(nonatomic, strong) dispatch_source_t trialTimer;
 @property(nonatomic, strong) NSMutableDictionary *trialReport;
 @property(nonatomic) BOOL trialFinishing;
@@ -192,76 +194,18 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 @property(nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 @property(nonatomic) BOOL capturing;
 @property(nonatomic) uint32_t generation;
-- (void)attach;
-- (void)panel;
-- (void)capture;
 - (void)startTrial;
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)restoreTrial;
 - (void)finishTrialOnQueue:(uint32_t)generation reason:(NSString *)reason;
 - (void)finishGeneration:(uint32_t)generation;
 @end
-static atomic_bool CaptureStopped = true;
 
 @implementation CCPCosmeticsController
 - (NSURL *)reportURL {
     NSURL *documents = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
                                                              inDomains:NSUserDomainMask].firstObject;
     return [documents URLByAppendingPathComponent:@"Core-cosmetics-probe.json"];
-}
-- (UIViewController *)presenter {
-    UIViewController *controller = self.button.window.rootViewController;
-    while (controller.presentedViewController) controller = controller.presentedViewController;
-    return controller;
-}
-- (void)attach {
-    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive || self.button.window) return;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-            if (window.hidden || !window.rootViewController || window.windowLevel != UIWindowLevelNormal) continue;
-            if (!self.button) {
-                self.button = [UIButton buttonWithType:UIButtonTypeSystem];
-                [self.button setTitle:@"内核美化" forState:UIControlStateNormal];
-                self.button.accessibilityLabel = @"内核美化试穿与恢复";
-                self.button.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.92];
-                [self.button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-                self.button.layer.cornerRadius = 10;
-                self.button.translatesAutoresizingMaskIntoConstraints = NO;
-                [self.button addTarget:self action:@selector(panel) forControlEvents:UIControlEventTouchUpInside];
-            }
-            [window addSubview:self.button];
-            [NSLayoutConstraint activateConstraints:@[
-                [self.button.trailingAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.trailingAnchor constant:-16],
-                [self.button.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-16],
-                [self.button.widthAnchor constraintEqualToConstant:104], [self.button.heightAnchor constraintEqualToConstant:44]]];
-            return;
-        }
-    }
-}
-- (void)panel {
-    UIViewController *controller = [self presenter];
-    if (!controller || [controller isKindOfClass:UIAlertController.class]) return;
-    NSString *message = self.capturing ? @"试穿处理中。请切回训练场观察外套，约 15 秒后自动恢复，也可以点“恢复原样”。结束后可导出报告。" :
-        @"先穿回刚才的初始白 T 恤，进入训练场；返回 Core 完成初始化并开启原有游戏采集，再开始试穿。\n\n测试将白 T 恤替换为包内的至尊金龙外套，约 15 秒自动恢复。实际画面效果仍需你确认。";
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Core 内核美化试穿 r3"
-        message:message preferredStyle:UIAlertControllerStyleAlert];
-    if (!self.capturing) [alert addAction:[UIAlertAction actionWithTitle:@"试穿至尊金龙外套" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *action) { [self startTrial]; }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"恢复原样" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *action) { [self restoreTrial]; }]];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:[self reportURL].path]) {
-        [alert addAction:[UIAlertAction actionWithTitle:@"导出报告" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[[self reportURL]] applicationActivities:nil];
-            share.popoverPresentationController.sourceView = self.button;
-            share.popoverPresentationController.sourceRect = self.button.bounds;
-            [controller dismissViewControllerAnimated:YES completion:^{
-                [controller presentViewController:share animated:YES completion:nil];
-            }];
-        }]];
-    }
-    [alert addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
-    [controller presentViewController:alert animated:YES completion:nil];
 }
 - (void)writeTrialReport {
     if (!self.trialReport) return;
@@ -272,6 +216,8 @@ static atomic_bool CaptureStopped = true;
 - (void)startTrial {
     if (self.capturing) return;
     self.capturing = YES;
+    atomic_store(&MenuBusy, true);
+    atomic_store(&MenuStatus, CCPMenuWaiting);
     uint32_t generation = ++self.generation;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
     self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core cosmetics trial"
@@ -283,14 +229,16 @@ static atomic_bool CaptureStopped = true;
         self.trialGeneration = generation;
         self.trialFinishing = NO;
         if (TrialState.active) {
+            atomic_store(&MenuStatus, CCPMenuRestorePending);
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
             return; // Preserve the journal of an earlier change until restored.
         }
-        self.trialReport = [@{@"schema_version": @3, @"trial_revision": @3, @"mode": @"single-coat-trial",
+        self.trialReport = [@{@"schema_version": @4, @"trial_revision": @4, @"mode": @"single-coat-trial",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @YES,
-            @"visual_effect_verified": @NO, @"preset": @"至尊金龙外套", @"original_id": @(CCP_ORIGINAL_COAT),
+            @"preset_visual_effect_previously_verified": @YES, @"current_trial_visual_confirmed": @NO,
+            @"ui_location": @"native-menu-below-position", @"preset": @"至尊金龙外套", @"original_id": @(CCP_ORIGINAL_COAT),
             @"target_id": @(CCP_TRIAL_COAT), @"automatic_restore_seconds": @15} mutableCopy];
         [self prepareTrialOnQueue:generation attempt:0];
     });
@@ -304,10 +252,6 @@ static atomic_bool CaptureStopped = true;
             self.trialReport[@"status"] = @"waiting-for-core-or-character";
             self.trialReport[@"waiting_attempts"] = @(attempt + 1);
             [self writeTrialReport];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (self.generation == generation && self.capturing)
-                    [self.button setTitle:@"等待 Core 就绪" forState:UIControlStateNormal];
-            });
             if (attempt >= 60) [self finishTrialOnQueue:generation reason:@"readiness-timeout"];
             else dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), self.captureQueue,
                 ^{ [self prepareTrialOnQueue:generation attempt:attempt + 1]; });
@@ -321,6 +265,9 @@ static atomic_bool CaptureStopped = true;
             CCPReader reader = {TargetRead, &TrialContext.target};
             CCPTrialResult applied = CCPApplyCoat(reader, TrialTargetWrite, &TrialContext, TrialBindingValid, &TrialState);
             self.trialReport[@"apply"] = TrialResultJSON(applied);
+            atomic_store(&MenuOwned, TrialState.active);
+            atomic_store(&MenuStatus, applied.idConfirmed ? CCPMenuApplied :
+                (applied.status == CCPTrialWrongOutfit ? CCPMenuWrongOutfit : CCPMenuFailed));
             self.trialReport[@"status"] = applied.idConfirmed ? @"id-applied-awaiting-visual-confirmation" : @"apply-not-confirmed";
             [self writeTrialReport];
             if (!applied.idConfirmed) {
@@ -364,64 +311,19 @@ static atomic_bool CaptureStopped = true;
     CCPReader reader = {TargetRead, &TrialContext.target};
     CCPTrialResult restored = CCPRestoreCoat(reader, TrialTargetWrite, &TrialContext, TrialBindingValid, &TrialState);
     self.trialReport[@"restore"] = TrialResultJSON(restored);
+    atomic_store(&MenuOwned, TrialState.active);
+    if (restored.idConfirmed) atomic_store(&MenuStatus, CCPMenuRestored);
+    else if (TrialState.active) atomic_store(&MenuStatus, CCPMenuRestorePending);
+    else if (![reason isEqualToString:@"apply-failed"]) atomic_store(&MenuStatus,
+        [reason isEqualToString:@"readiness-timeout"] ? CCPMenuFailed : CCPMenuIdle);
     self.trialReport[@"finish_reason"] = reason;
     [self writeTrialReport];
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
-- (void)capture {
-    if (self.capturing) return;
-    self.capturing = YES;
-    uint32_t generation = ++self.generation;
-    atomic_store(&CaptureStopped, false);
-    if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.read-only", DISPATCH_QUEUE_SERIAL);
-    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core cosmetics adaptation"
-        expirationHandler:^{
-            if (self.generation != generation || !self.capturing) return;
-            atomic_store(&CaptureStopped, true);
-            dispatch_async(self.captureQueue, ^{
-                if (self.captureTimer) { dispatch_source_cancel(self.captureTimer); self.captureTimer = nil; }
-                dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
-            });
-        }];
-    dispatch_async(self.captureQueue, ^{
-        self.samples = [NSMutableArray array];
-        self.writeCheckResult = nil;
-        self.latestLayout = @{};
-        self.captureTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.captureQueue);
-        dispatch_source_set_timer(self.captureTimer, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
-                                  3 * NSEC_PER_SEC, NSEC_PER_SEC / 4);
-        dispatch_source_set_event_handler(self.captureTimer, ^{
-            @autoreleasepool {
-                if (atomic_load(&CaptureStopped)) { dispatch_source_cancel(self.captureTimer); self.captureTimer = nil; return; }
-                NSDictionary *sample = Sample(self.writeCheckResult == nil, NULL);
-                if (sample[@"write_check"]) self.writeCheckResult = sample[@"write_check"];
-                self.latestLayout = sample;
-                NSMutableDictionary *summary = [sample mutableCopy];
-                [summary removeObjectsForKeys:@[@"sync_items", @"client_items", @"write_check"]];
-                [self.samples addObject:summary];
-                NSDictionary *report = @{@"schema_version": @2, @"probe_revision": @2,
-                    @"mode": @"same-value-write-adaptation", @"game_version": @"1.38.12", @"game_build": @"15915",
-                    @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
-                    @"captured_at_unix": @([NSDate date].timeIntervalSince1970),
-                    @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @NO,
-                    @"runtime_layout_validated": @NO, @"write_check": self.writeCheckResult ?: @{},
-                    @"latest_layout": self.latestLayout, @"samples": self.samples.copy};
-                NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
-                [json writeToURL:[self reportURL] options:NSDataWritingAtomic error:NULL];
-                if (self.samples.count >= 8) {
-                    atomic_store(&CaptureStopped, true);
-                    dispatch_source_cancel(self.captureTimer); self.captureTimer = nil;
-                    dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
-                }
-            }
-        });
-        dispatch_resume(self.captureTimer);
-    });
-}
 - (void)finishGeneration:(uint32_t)generation {
     if (self.generation != generation || !self.capturing) return;
     self.capturing = NO;
-    [self.button setTitle:@"内核美化" forState:UIControlStateNormal];
+    atomic_store(&MenuBusy, false);
     if (self.backgroundTask != UIBackgroundTaskInvalid) {
         [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];
         self.backgroundTask = UIBackgroundTaskInvalid;
@@ -429,15 +331,46 @@ static atomic_bool CaptureStopped = true;
 }
 @end
 
+static CCPCosmeticsController *CosmeticsController;
+static void NativeMenuAction(bool enabled) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (enabled) [CosmeticsController startTrial];
+        else [CosmeticsController restoreTrial];
+    });
+}
+__attribute__((visibility("default"))) void CoreCosmeticsRenderPage(void) {
+    static bool checked, valid;
+    static uintptr_t checkedBase;
+    uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+    if (!checked) {
+        checked = true; checkedBase = base;
+        valid = CCPIdentity((CCPReader){LocalRead, NULL}, base, CoreUUID);
+        for (size_t i = 0; valid && i < sizeof(CCPUIEntries) / sizeof(CCPUIEntries[0]); i++) {
+            uint8_t expected[32];
+            for (size_t j = 0; j < sizeof(expected); j++) {
+                unsigned byte = 0;
+                if (sscanf(CCPUIEntries[i].hex + j * 2, "%2x", &byte) != 1) { valid = false; break; }
+                expected[j] = (uint8_t)byte;
+            }
+            if (valid) valid = EntryMatches(base + CCPUIEntries[i].rva, expected);
+        }
+    }
+    float scale = 0;
+    if (!valid || checkedBase != base || !LocalRead(NULL, base + 0xC15A80, &scale, sizeof(scale)) ||
+        !isfinite(scale) || scale < 0.25f || scale > 8.0f) return;
+    CCPUI ui = {
+        .cursor = (void (*)(const CCPUIVec *))SignedEntry(base + 0x133168),
+        .begin = (bool (*)(const char *, const CCPUIVec *, int, int))SignedEntry(base + 0xC88B0),
+        .end = (void (*)(void))SignedEntry(base + 0x12E620),
+        .space = (void (*)(const CCPUIVec *))SignedEntry(base + 0x14F980),
+        .checkbox = (bool (*)(const char *, bool *, float))SignedEntry(base + 0xC8928),
+    };
+    CCPDrawCosmeticsPage(ui, scale, (CCPMenuStatus)atomic_load(&MenuStatus),
+        atomic_load(&MenuBusy) || atomic_load(&MenuOwned), NativeMenuAction);
+}
 __attribute__((constructor)) static void StartCosmeticsProbe(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        static CCPCosmeticsController *controller;
-        controller = [CCPCosmeticsController new];
-        controller.backgroundTask = UIBackgroundTaskInvalid;
-        controller.attachmentTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(controller.attachmentTimer, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
-                                  3 * NSEC_PER_SEC, NSEC_PER_SEC);
-        dispatch_source_set_event_handler(controller.attachmentTimer, ^{ [controller attach]; });
-        dispatch_resume(controller.attachmentTimer);
+        CosmeticsController = [CCPCosmeticsController new];
+        CosmeticsController.backgroundTask = UIBackgroundTaskInvalid;
     });
 }
