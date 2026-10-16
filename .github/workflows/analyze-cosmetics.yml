@@ -15,7 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install disassembler wheel
-        run: python3 -m pip install --only-binary=:all: capstone==5.0.6
+        run: |
+          python3 -m pip install --only-binary=:all: capstone==5.0.6
       - name: Download private draft analysis inputs
         env:
           GH_TOKEN: ${{ github.token }}
