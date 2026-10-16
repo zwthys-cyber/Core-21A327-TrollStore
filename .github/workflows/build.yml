@@ -43,6 +43,8 @@ jobs:
           /tmp/core-cosmetics-trial-test
           xcrun clang -O2 -Wall -Wextra -Werror tests/test_cosmetics_page.c -o /tmp/core-cosmetics-page-test
           /tmp/core-cosmetics-page-test
+          xcrun clang -O2 -Wall -Wextra -Werror tests/test_cosmetics_vehicle.c -o /tmp/core-cosmetics-vehicle-test
+          /tmp/core-cosmetics-vehicle-test
       - name: Build independent cache preparation app
         run: python3 scripts/build_preparation.py
       - name: Test prepared transfer identity, current boot, digest and file checks
@@ -56,12 +58,12 @@ jobs:
       - name: Validate output
         run: |
           if [ '${{ inputs.cosmetics_probe }}' = 'true' ]; then
-            python3 scripts/verify.py dist/Core-17.0-21A327-cosmetics-catalog-r5.ipa --cosmetics-probe
+            python3 scripts/verify.py dist/Core-17.0-21A327-cosmetics-vehicle-r6.ipa --cosmetics-probe
           else
             python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-v19-600m.ipa
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.cosmetics_probe && 'Core-cosmetics-catalog-r5' || 'Core-17.0-21A327-TrollStore-v19-600m' }}
+          name: ${{ inputs.cosmetics_probe && 'Core-cosmetics-vehicle-r6' || 'Core-17.0-21A327-TrollStore-v19-600m' }}
           path: dist/*
           retention-days: 14

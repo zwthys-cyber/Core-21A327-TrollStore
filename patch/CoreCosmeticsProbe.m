@@ -7,6 +7,7 @@
 #import <math.h>
 #import <stdio.h>
 #import "CoreCosmeticsRead.h"
+#import "CoreCosmeticsVehicleRead.h"
 #import "CoreCosmeticsWriteCheck.h"
 #import "CoreCosmeticsTrial.h"
 #import "CoreCosmeticsPage.h"
@@ -85,6 +86,31 @@ static NSArray *ItemsJSON(const CCPItems *items) {
     }
     return result;
 }
+static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t pawn) {
+    CCPVehicleSample sample = {0};
+    BOOL sampled = CCPReadVehicle(remote, game, pawn, &sample);
+    NSArray *statuses = @[@"vehicle-layout-candidate-sampled", @"current-vehicle-unavailable",
+        @"vehicle-avatar-owner-unconfirmed", @"vehicle-refresh-methods-unconfirmed",
+        @"vehicle-sync-array-unconfirmed", @"vehicle-changed-during-sample"];
+    if (!sampled) return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
+        @"avatar_onrep_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.onrepRVA],
+        @"avatar_tick_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.tickRVA]};
+    NSMutableArray *items = [NSMutableArray arrayWithCapacity:sample.count];
+    for (uint32_t i = 0; i < sample.count; i++) {
+        CCPVehicleItem item = sample.items[i];
+        [items addObject:@{@"slot_index": @(i), @"type": @(item.type), @"type_specific_id": @(item.item),
+            @"native_update_counter": @(item.updateCounter)}];
+    }
+    return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
+        @"component_owner_matches": @YES, @"sync_array_stable": @YES,
+        @"vehicle_skin_id": @(sample.skin), @"previous_skin_id": @(sample.previousSkin),
+        @"pending_skin_id": @(sample.pendingSkin), @"real_skin_id": @(sample.realSkin),
+        @"default_skin_id": @(sample.defaultSkin), @"sync_item_count": @(sample.count), @"sync_items": items,
+        @"master_item_matches_vehicle_skin": @(sample.items[0].item == sample.skin),
+        @"avatar_refresh_pending": @(sample.refreshPending),
+        @"avatar_onrep_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.onrepRVA],
+        @"avatar_tick_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.tickRVA]};
+}
 static NSDictionary *WeaponCandidate(CCPReader remote, uint64_t game, uint64_t pawn) {
     uint64_t manager = 0, weapon = 0, avatar = 0, owner = 0, table = 0;
     if (!CCPReadBytes(remote, pawn + 0x37A0, &manager, 8) || !CCPPointer(manager) ||
@@ -106,7 +132,7 @@ static NSDictionary *WeaponCandidate(CCPReader remote, uint64_t game, uint64_t p
         @"client_array_stable": @(clientOK), @"display_array_stable": @(displayOK),
         @"client_items": ItemsJSON(&client), @"display_items": ItemsJSON(&display)};
 }
-static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved) {
+static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL vehicleOnly) {
     CCPReader local = {LocalRead, NULL};
     uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
     if (!CCPIdentity(local, base, CoreUUID) || !EntryMatches(base + 0x64C7C, SnapshotPrefix) ||
@@ -125,6 +151,14 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved) {
     if (!CCPPointer(pawn)) return @{@"status": @"local-character-unavailable", @"game_uuid_matches": @YES,
         @"core_controller_available": @(CCPPointer(CCPU64(config + 0x390))),
         @"core_world_available": @(CCPPointer(CCPU64(config + 0x370)))};
+    if (vehicleOnly) {
+        NSDictionary *vehicle = VehicleCandidate(remote, game, pawn);
+        if (!snapshot(&after) || memcmp(&before, &after, 0x28) ||
+            !CCPReadBytes(local, base + 0xC54270, configAfter, sizeof(configAfter)) ||
+            CCPU64(configAfter + 0x18) != game || CCPU64(configAfter + 0x3A0) != pawn)
+            return @{@"status": @"session-or-character-changed"};
+        return @{@"status": @"vehicle-session-sampled", @"vehicle_candidate": vehicle};
+    }
     uint64_t avatar = 0, outer = 0, vtable = 0;
     if (!CCPReadBytes(remote, pawn + CCP_AVATAR_OFFSET, &avatar, sizeof(avatar)) || !CCPPointer(avatar))
         return @{@"status": @"avatar-component-unavailable", @"game_uuid_matches": @YES};
@@ -146,6 +180,7 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved) {
         @"sync_item_count": @(sync.count), @"client_item_count": @(client.count), @"zero_slots_omitted": @YES,
         @"sync_items": ItemsJSON(&sync), @"client_items": ItemsJSON(&client)} mutableCopy];
     result[@"weapon_candidate"] = WeaponCandidate(remote, game, pawn);
+    result[@"vehicle_candidate"] = VehicleCandidate(remote, game, pawn);
     uint64_t onrep = 0;
     if (CCPReadBytes(remote, vtable + 0x1320, &onrep, sizeof(onrep)) && onrep >= game && onrep - game < 0xAF23BE4)
         result[@"avatar_onrep_rva"] = [NSString stringWithFormat:@"0x%llx", (unsigned long long)(onrep - game)];
@@ -222,12 +257,16 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 @property(nonatomic) NSUInteger presetIndex;
 @property(nonatomic) NSUInteger trialPresetIndex;
 @property(nonatomic) NSUInteger pendingPresetIndex;
+@property(nonatomic) BOOL vehicleCapturing;
 - (void)startTrial;
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)restoreTrial;
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled;
 - (void)finishTrialOnQueue:(uint32_t)generation reason:(NSString *)reason;
 - (void)finishGeneration:(uint32_t)generation;
+- (void)startVehicleCapture;
+- (void)captureVehicleOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
+- (void)finishVehicleCaptureOnQueue:(uint32_t)generation reason:(NSString *)reason;
 @end
 
 @implementation CCPCosmeticsController
@@ -247,6 +286,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     if (self.presetIndex >= CCP_PRESET_COUNT) return;
     NSUInteger presetIndex = self.presetIndex;
     self.capturing = YES;
+    self.vehicleCapturing = NO;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuWaiting);
     atomic_store(&MenuPresetIndex, (unsigned)presetIndex);
@@ -281,7 +321,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt {
         if (self.trialGeneration != generation || self.trialFinishing) return;
         TrialContext = (CCPResolvedTarget){0};
-        NSDictionary *before = Sample(NO, &TrialContext);
+        NSDictionary *before = Sample(NO, &TrialContext, NO);
         self.trialReport[@"before"] = before;
         if (!TrialContext.avatar || !TrialBindingValid(&TrialContext)) {
             self.trialReport[@"status"] = @"waiting-for-core-or-character";
@@ -337,12 +377,21 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 - (void)restoreTrial {
     if (!self.captureQueue) return;
     uint32_t generation = self.generation;
+    if (self.vehicleCapturing) {
+        dispatch_async(self.captureQueue, ^{ [self finishVehicleCaptureOnQueue:generation reason:@"manual-stop"]; });
+        return;
+    }
     dispatch_async(self.captureQueue, ^{
         if (TrialState.active) self.trialFinishing = NO;
         [self finishTrialOnQueue:generation reason:@"manual-restore"];
     });
 }
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index == CCP_VEHICLE_CAPTURE_INDEX) {
+        if (enabled) [self startVehicleCapture];
+        else if (self.vehicleCapturing) { self.pendingPresetIndex = NSNotFound; [self restoreTrial]; }
+        return;
+    }
     if (index >= CCP_PRESET_COUNT) return;
     if (!enabled) {
         if (index != self.presetIndex) return;
@@ -376,6 +425,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 - (void)finishGeneration:(uint32_t)generation {
     if (self.generation != generation) return;
     self.capturing = NO;
+    self.vehicleCapturing = NO;
     atomic_store(&MenuBusy, false);
     if (self.backgroundTask != UIBackgroundTaskInvalid) {
         [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];
@@ -386,6 +436,57 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         self.pendingPresetIndex = NSNotFound;
         [self startTrial];
     }
+}
+- (void)startVehicleCapture {
+    if (self.capturing || atomic_load(&MenuOwned)) return;
+    self.capturing = YES;
+    self.vehicleCapturing = YES;
+    self.pendingPresetIndex = NSNotFound;
+    atomic_store(&MenuBusy, true);
+    atomic_store(&MenuPresetIndex, CCP_VEHICLE_CAPTURE_INDEX);
+    atomic_store(&MenuStatus, CCPMenuVehicleWaiting);
+    uint32_t generation = ++self.generation;
+    if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
+    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core vehicle appearance capture"
+        expirationHandler:^{
+            if (self.generation != generation || !self.capturing) return;
+            dispatch_async(self.captureQueue, ^{ [self finishVehicleCaptureOnQueue:generation reason:@"background-expiration"]; });
+        }];
+    dispatch_async(self.captureQueue, ^{
+        self.trialGeneration = generation;
+        self.trialFinishing = NO;
+        self.samples = [NSMutableArray array];
+        self.trialReport = [@{@"schema_version": @6, @"mode": @"vehicle-read-adaptation",
+            @"game_version": @"1.38.12", @"game_build": @"15915",
+            @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
+            @"vehicle_writes_implemented": @NO, @"vehicle_appearance_changes_implemented": @NO,
+            @"runtime_layout_validated": @NO, @"ui_location": @"native-menu-below-position"} mutableCopy];
+        [self captureVehicleOnQueue:generation attempt:0];
+    });
+}
+- (void)captureVehicleOnQueue:(uint32_t)generation attempt:(unsigned)attempt {
+    if (self.trialGeneration != generation || self.trialFinishing) return;
+    NSDictionary *sample = Sample(NO, NULL, YES);
+    NSDictionary *vehicle = sample[@"vehicle_candidate"] ?: @{@"status": sample[@"status"] ?: @"core-session-unavailable"};
+    self.trialReport[@"latest_vehicle"] = vehicle;
+    self.trialReport[@"capture_attempts"] = @(attempt + 1);
+    if ([vehicle[@"sync_array_stable"] boolValue]) [self.samples addObject:vehicle];
+    self.trialReport[@"samples"] = self.samples.copy;
+    self.trialReport[@"status"] = self.samples.count ? @"sampling-current-vehicle" : @"waiting-for-current-vehicle";
+    [self writeTrialReport];
+    if (self.samples.count >= 8 || attempt >= 60) {
+        [self finishVehicleCaptureOnQueue:generation reason:self.samples.count >= 8 ? @"capture-complete" : @"readiness-timeout"];
+    } else dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), self.captureQueue,
+        ^{ [self captureVehicleOnQueue:generation attempt:attempt + 1]; });
+}
+- (void)finishVehicleCaptureOnQueue:(uint32_t)generation reason:(NSString *)reason {
+    if (self.trialGeneration != generation || self.trialFinishing) return;
+    self.trialFinishing = YES;
+    self.trialReport[@"finish_reason"] = reason;
+    self.trialReport[@"status"] = self.samples.count ? @"vehicle-candidates-saved" : @"vehicle-not-sampled";
+    atomic_store(&MenuStatus, self.samples.count ? CCPMenuVehicleCaptured : CCPMenuFailed);
+    [self writeTrialReport];
+    dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
 @end
 
