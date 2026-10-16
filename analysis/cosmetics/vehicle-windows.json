@@ -6,7 +6,8 @@
     {"label": "vehicle-user component candidate", "start": "0x10fcdd000", "end": "0x10fcde800"}
   ],
   "pointer_tables": [
-    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xc68", "0xd18"]}
+    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xc68", "0xd18"]},
+    {"label": "device r7 local character vtable", "address": "0x10e7b1108", "length": "0x1600", "disassemble_slots": ["0x8b8", "0x1528"]}
   ],
   "field_regions": [
     {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]}
@@ -27,5 +28,7 @@
     ,{"label": "vehicle-user component helper", "offset": "0x4c86960", "length": "0x300"}
     ,{"label": "vehicle-user helper owner resolution", "offset": "0x58acd9c", "length": "0x200"}
     ,{"label": "vehicle-user native class", "offset": "0x72ca9a4", "length": "0x200"}
+    ,{"label": "vehicle-user reflected constructor", "offset": "0x72cb3ec", "length": "0x200"}
+    ,{"label": "device character resolver", "offset": "0x4c1158c", "length": "0x200"}
   ]
 }
