@@ -1,6 +1,6 @@
 # Core 17.0 / 21A327 巨魔适配补丁
 
-接手项目先读 [AI 项目交接文档](docs/AI_HANDOFF_ZH.md)：包含用户目标、完整经过、输入与构建路径、实机证据和当前车辆卡点。[r8](docs/cosmetics-r8.md) 已实机确认 8/8 次成功采集车辆 3349001；[r9](docs/cosmetics-r9.md) 新增该车到宾利 3349002 的 15 秒数据请求试换及恢复。请求独立消费、画面换肤和可见恢复尚待手机报告。
+接手项目先读 [AI 项目交接文档](docs/AI_HANDOFF_ZH.md)：包含用户目标、完整经过、输入与构建路径、实机证据和当前车辆卡点。[r8](docs/cosmetics-r8.md) 已实机确认车辆读取；[r9](docs/cosmetics-r9.md) 写入成功但请求未消费，用户确认画面完全没变。[r10](docs/cosmetics-r10.md) 增加只读实体、已加载物品和模型状态诊断，已通过 GitHub 构建，等待手机报告；目标宾利资源是否下载仍未检查。
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 

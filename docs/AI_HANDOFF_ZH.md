@@ -2,13 +2,13 @@
 
 更新时间：2026-10-16 UTC。本文记录用户目标、已完成工作、实机证据、失败经过和接手位置。
 
-**当前结论：金龙外套已实机确认；r8 已有 8/8 次车辆 3349001 的成功读取，使用 pawn+0x60C8 控制器回退。r9 实机已确认三字段写入成功，但 5 次观察中 Pending 未消费、缓存计数停在 1、原生皮肤均保持原车；恢复主槽并清理 Pending 后无待恢复记录，计数递增至 3。下一步调查真正的原生刷新入口，不要重复 r9 请求或宣称车辆换肤完成。**
+**当前结论：金龙外套已实机确认；r8 车辆读取成立；r9 写入成功但 Pending 未消费，用户明确确认画面“完全没有变化”。资源包未下载只是用户假设，未验证。r10 已在 GitHub 编译和检查通过，新增当前车辆实体 / LoadedHandle / 模型记录的只读诊断，关闭无效的 r9 新试换入口；等待手机报告。目标宾利资源是否下载仍为 not-checked，车辆换肤尚未完成。**
 
 ## 1. 接手必须先知道的约束
 
 1. 用户明确要求：**不要在这台服务器上验证、编译或运行测试，容易卡死。所有编译、自动化测试、签名核验、游戏二进制分析和反汇编都放在 GitHub Actions。**
 2. 本机只做文本编辑、Git 操作、读取云端分析报告和 CI 日志、下载产物、轻量版本与摘要查看。不要在本机运行 `scripts/build.py`、`scripts/verify.py`、`analysis/cosmetics/analyze.py`、`vehicle_review.py`、PAK 解析、clang、Unicorn 或 unittest。仓库 `AGENTS.md` 已记录此限制。
-3. 用户于 2026-10-16 明确要求将仓库公开以恢复 Actions，已执行并确认 `visibility=PUBLIC`。仓库代码、历史、已发布 Release 及被 Git 跟踪的 `input/Core.ipa` 因此可公开访问。游戏主程序和美化包所在 Release `414807300` 仍保持草稿；不要把该素材草稿发布。账号计费阻碍已解除，专项分析和 r9 完整重新构建均已成功。
+3. 用户于 2026-10-16 明确要求将仓库公开以恢复 Actions，已执行并确认 `visibility=PUBLIC`。仓库代码、历史、已发布 Release 及被 Git 跟踪的 `input/Core.ipa` 因此可公开访问。游戏主程序和美化包所在 Release `414807300` 仍保持草稿；不要把该素材草稿发布。账号计费阻碍已解除，专项分析、r9 重新构建及 r10 构建均已成功。
 4. 用户希望直接推进工作，不反复询问已授权的常规操作。原生菜单位置已经指定：**Core 的“位置”栏目下面添加“美化”**，不能另做一个与 Core 分离的悬浮面板。
 5. 游戏版本固定为 **和平精英 1.38.12 / build 15915**；手机为 **iOS 17.0 / 21A327、已装 TrollStore（巨魔）**。更换游戏 UUID、版本、Core 输入或系统条件后，旧地址不能直接沿用。
 6. 用户问过哪种方式不易被检测。当前没有“防检测”或“保证不封号”的验证结果，不要作这种承诺。当前美化路线使用已有游戏资源和进程内外观数据，不替换游戏 PAK。
@@ -39,6 +39,7 @@
 - 在训练场车辆驾驶位操作过车辆采集。
 - 游戏有换车辆皮肤的按钮，但账号没有车辆皮肤。
 - 采集普通车不需要买车皮，也不需要点游戏内换肤按钮。r8 已取得普通车辆的稳定样本；r9 写入已成功，但本次请求未被原生流程消费。
+- 用户对 r9 最终画面确认：“完全没有变化，有可能是我的游戏里面的资源包没有下载”。不要把后半句假设当作已证实原因，也不要把前半句改写成画面待确认。
 
 ## 3. 工作区、分支和当前代码状态
 
@@ -49,10 +50,12 @@
 | GitHub | `https://github.com/zwthys-cyber/Core-21A327-TrollStore`，用户已明确授权改为公开 |
 | 开发分支 | `feat/kernel-cosmetics` |
 | 主分支基线 | `e258037c8341f6290859fd310b4f6a09b2fe7ee4`，v19-600m |
-| 最新试换代码 | `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`，r9 |
+| 最新安装包代码 | `061d253cccfed672a4047f5bafd8705ced30917a`，r10 只读车辆实体诊断 |
+| 最近车辆试换代码 | `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`，r9 |
 | 最近有用户实机报告的代码 | `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`，r9，写入确认、请求未消费 |
 | r8 | **只读取车路径及当前车辆布局已有实机样本；尚未修改车辆外观** |
-| r9 | **实机确认数据写入和未消费请求清理；原生刷新未触发，画面效果未确认** |
+| r9 | **实机确认数据写入和未消费请求清理；原生刷新未触发，用户确认画面完全没变** |
+| r10 | **CI 成功；等待实体 / 当前模型状态手机报告，目标资源下载状态未检查** |
 
 本文提交之后，HEAD 会再多出文档提交；识别最新可安装包时，以构建对应的 `headSha` 为准，不要把分析或文档提交当成新安装包。
 
@@ -72,7 +75,7 @@
 - v8 曾确认 SpringBoard 远程打开及悬浮菜单成功，但 launchd 远程初始化的接收超时仍有未解决记录。
 - 后续主分支保留 v19 显示基线。美化任务不应顺带改动这些历史基础模块或启用已关闭的输入工作线程。
 
-### 4.2 美化 r1～r9
+### 4.2 美化 r1～r10
 
 | 阶段 | 做了什么 | 实际证据 / 限制 |
 |---|---|---|
@@ -85,7 +88,8 @@
 | r6 | 新增“车辆适配 → 采集车辆”，尝试从角色 `+0x3710` 取得当前车 | 用户坐驾驶位仍失败，39 次和 17 次采样都无车辆；该直接候选路径未成立 |
 | r7 | 改读“载具使用组件”缓存，再取组件中的 Vehicle；增加阶段诊断、上下文和最近 12 次历史 | 用户最新报告 30 次仍失败；缓存字段可读，但未取得有效组件；车辆采集仍未成功 |
 | r8 | 云端确认中间对象为 STExtraPlayerController；核对当前角色与控制器，按原生稀疏位图查找控制器所属组件；允许原皮车辆的空外观数组 | 用户报告 8/8 次成功：3349001、11 槽位、控制器及组件归属一致；车辆写入仍未实现 |
-| r9 | 固定 3349001→3349002，提交主槽 / 更新计数 / Pending 数据请求，约 15 秒后恢复并记录原生字段 | 用户报告三项写入成功；5 次观察 Pending 未消费、缓存计数始终 1；最后还原主槽并清理请求，没有换肤成功证据 |
+| r9 | 固定 3349001→3349002，提交主槽 / 更新计数 / Pending 数据请求，约 15 秒后恢复并记录原生字段 | 三项写入成功，Pending 未消费、缓存计数始终 1；最后还原主槽并清理请求；用户确认画面完全没变 |
+| r10 | 从 Avatar 的原生映射读取 Slot 0 实体，核对类和归属，采集 LoadedHandle / 模型记录 / 刷新标记；关闭 r9 新试换入口 | GitHub 完整构建和检查成功；尚无手机报告，不检查目标资源文件，也没有新增车辆换肤实现 |
 
 实机证据文件：
 
@@ -111,11 +115,12 @@
 - 会话、目标、角色、数组、物品实例与预期值检查；失败时停止写入。
 - 服装报告、只读武器候选、车辆采集入口和车辆失败诊断。
 - r8 控制器解析和稀疏组件查找已有实机确认：8 次采集成功，当前车 3349001。
-- r9 单车三字段比较写、主槽还原及未消费请求清理已有实机报告；没有真实画面成功结果。
+- r9 单车三字段比较写、主槽还原及未消费请求清理已有实机报告；用户确认画面完全没变。
+- r10 已实现有边界的只读实体 / 加载状态诊断；已通过云端回归，尚无手机验证。
 
 ### 尚未完成
 
-- **车辆请求消费、画面换肤及可见恢复尚未实机验证；r9 的数据写入不能当作完整换肤完成。**
+- **车辆换肤尚未完成。r9 实机画面无变化；r10 仅诊断当前实体状态，不开放新的车辆试换。目标宾利资源是否下载尚未检查。**
 - 大厅换装尚未适配。
 - 头盔、背包、枪械换肤尚未实现；武器部分只是只读候选读取。
 - ZIP 中自定义模型、材质、发光、特效、检视等内容未整体转换。
@@ -146,7 +151,7 @@
 - Core 主程序 UUID：`4ED1FD29-A46A-36B3-8DFC-36F67EA929D1`，arm64e。
 - 原 Core 主程序 SHA-256：`ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58`。
 
-私有草稿 Release：
+素材草稿 Release（仓库已公开，草稿仍未发布）：
 
 - tag：`analysis-cosmetics-1.38.12-15915`。
 - Release ID：`414807300`。
@@ -196,8 +201,10 @@ PAK 配料中存在跨车型替换，不能把每条文字关系直接当成原�
 | `patch/CoreCosmeticsPage.h` | 原生分类、分页、控件和车辆采集按钮 |
 | `patch/CoreCosmeticsUIProfile.h` | 原生 UI 函数 RVA 与入口字节保护 |
 | `patch/CoreCosmeticsVehicleRead.h` | r8 控制器来源解析、组件归属与 Character 核对、稳定车辆外观读取 |
+| `patch/CoreCosmeticsVehicleEntity.h` | r10 只读 TMap / 位图 / 哈希链查找、实体与 LoadedHandle 类及归属、模型记录和刷新标记；不接受写接口 |
 | `patch/CoreCosmeticsComponents.h` | r8 新增；原生类继承核对、内联 / 堆位图和有界稀疏组件查找 |
 | `patch/CoreCosmeticsVehicleTrial.h` | r9 固定车型 / 实例 / 数组门槛、三字段比较写、修改记录和恢复观察；不调用游戏函数 |
+| `tests/test_cosmetics_vehicle_entity.c` | r10 实体映射、类 / 归属 / 身份、模型字段边界及并发变化的模拟读取测试，仅在云端执行 |
 | `scripts/build.py` | 固定输入 IPA、编译适配库、打包与元数据 |
 | `scripts/cosmetics_menu.py` | 在 v19 允许范围内增加原生菜单入口和导出函数桥 |
 | `scripts/verify.py` | 最终 IPA 的修改范围、ABI、资源、签名等检查；只在云端执行 |
@@ -423,7 +430,7 @@ r8 使用 `pawn+0x608` 并做原生 IsA 核对；必要时只接受与 Core 缓�
 
 报告中的 `runtime_layout_validated=false` 是 r8 固定写入的适配阶段标记，不否定这八次真实读取结果；但也不能凭当前样本宣布所有车型、刷新及写入均已验证。衣服的 F50 刷新机制仍不能直接套到车辆。
 
-### 11.8 r9 单车请求试换：当前最新产物
+### 11.8 r9 单车请求试换：历史产物
 
 代码 `feb99d1`，构建 `38959705176` 成功。用户已给出匹配车辆的 r9 手机报告，见下节。仅接受实机已读到的车辆 / Avatar vtable、type 33 和 11 个同步槽位，固定 `3349001→3349002`。原始配料对应来自新 ZIP 的衣服枪械配料表第 542 行。
 
@@ -440,6 +447,8 @@ r9 只写主槽 ID、递增主槽 `+0x1C` 计数、Vehicle.PendingVehicleSkinID�
 恢复请求也是 12 字节；7 次观察中主槽为 `3349001`、计数 3、Pending `3349001`、缓存仍为 1。最后清理本次未消费 Pending（4 字节），`restore_check.memory_restored=true`、`change_still_owned=false`、`native_restore_observed=false`。这里“恢复”指主槽 / 请求数据，计数按照设计只递增，不回退；不能表述成车皮先成功切换再可见恢复。
 
 证据摘要：`analysis/cosmetics/device-evidence-r9.json`。不要让用户再次找同款车重复相同试换来代替代码修正；下一步在云端查车辆 Handle / 原生刷新调度。
+
+用户后来明确补充画面“完全没有变化”。因此 `visual_effect_verified=false` 应理解为未生效的实机反馈，不能继续写成尚未询问用户。用户提出可能未下载资源包；没有资源检测证据支持或排除该假设。
 
 ### 11.10 云端分析曾被账号计费阻止，已按用户指示公开仓库并重跑
 
@@ -460,24 +469,54 @@ r9 构建 `38959705176` 第二次执行成功（2026-10-16 20:34 UTC），同一
 SHA256 8c69736d6de541170a1f02db2e68074e083086984f8ed6ecf7af851271cbd132
 ```
 
-新增分析工具支持有界 ASCII 名称发现（最多 256 个名称，仅云端执行）。报告目录均位于 `/root/和平精英/Core美化映射分析/`：`r9原生刷新调度/`、`r9外观Handle索引/`、`r9车辆实体与完成回调/`。本轮没有修改运行时代码，没有生成 r10。
+新增分析工具支持有界 ASCII 名称发现（最多 256 个名称，仅云端执行），随后增加 UTF-16 类名称与有界 ADRP / ADD 引用定位。早期报告目录均位于 `/root/和平精英/Core美化映射分析/`：`r9原生刷新调度/`、`r9外观Handle索引/`、`r9车辆实体与完成回调/`；随后沿实体类和字段继续分析，见下节。
 
-新的静态调用链：`GetMasterVehicleAvatarHandle` 包装 `0x723A754` → `0x47F5F9C`（slot 0）→ `0x47FAD00` → `0x42DD238`（使用组件 `+0x8B8` 的映射，条目步长 0x18，值位于条目 +8），随后 `0x42D9824` 读取映射值 `+0x30` 得到实体。不要将这个内部映射值直接当成 UObject；映射布局、占用位与实例归属还未完成适配。
+新的静态调用链：`GetMasterVehicleAvatarHandle` 包装 `0x723A754` → `0x47F5F9C`（slot 0）→ `0x47FAD00` → `0x42DD238` → `0x3796F3C`（使用 Avatar `+0x8B8` 的映射，条目步长 0x18，值位于条目 +8）。**后续类注册和属性元数据纠正了早期解释：映射值本身就是 AvatarEntity UObject，`0x42D9824` 读取该实体 `+0x30` 得到 LoadedHandle，并不是另一层实体。** 不要继续使用旧交接文档的“非 UObject 节点 → +0x30 实体”解释。r10 已实现有界映射和类归属读取，实机布局仍待报告。
 
 `VehicleUseDoRepOnce` 原生 `0x5AAC7F4` 是读取全局控制台配置的判断，不是每车可写刷新标记。反射名称 `OnVehicleAvatarChange` 中的一组包装 `0x726ED70` 调用 `0x5BD7FB4`，后者仅 RET，不能仅凭名称当作刷新实现。车辆 Actor vtable 的 `+0x600` 指向 `0x5A40BDC`（RET），不能将它与紧邻的 `0x5A40BE0` 函数体混为同一个入口；`+0x4C0` 的 `0xA14443C` 也没有证据可当作车辆专属 Tick。下一步应核对实体实际的类、处理函数和刷新调度；现阶段不增加未经证明的写入。
 
-重新构建的 `build-metadata.json` 仍继承旧通用键 `cosmetics_vehicle_writes_implemented=false`，与已实现且实机确认的 r9 事务写入不一致。以 `device-evidence-r9.json`、源代码和手机报告判断运行时写入；后续实际更新版本时应一并修正该通用构建元数据，不能据此否定已有写入证据。
+重新构建的 r9 `build-metadata.json` 仍继承旧通用键 `cosmetics_vehicle_writes_implemented=false`，与已实现且实机确认的 r9 事务写入不一致。r10 已修正构建元数据：包含旧车辆写入代码为 true，车辆试换可用为 false，车辆采集只读为 true；手机只读采集报告的 `vehicle_writes_implemented=false` 描述此次采集，不表示旧事务代码被删除。
+
+### 11.12 r10 的静态来源和只读实体诊断
+
+专项分析均在 GitHub Actions，下载到 `Core美化映射分析` 下的文字 / JSON 目录：
+
+| Run | 目录 | 结果 |
+|---|---|---|
+| `38963556220` | `r10实体类与映射查找/` | 类名引用与映射调用链 |
+| `38963790359` | `r10实体构造与字段/` | 类注册、构造和反射字段 |
+| `38963996828` | `r10实体Tick和资源字段/` | 实体虚表和模型属性；目录名称不证明其中函数就是 Tick |
+| `38964451486` | `r10渲染标记与物品类型/` | 渲染标记及 LoadedHandle 类型来源 |
+| `38964761443` | `r10已加载物品原生类型/` | 已加载物品类缓存与类型构造 |
+
+以下仍是固定版本静态依据，不是 r10 实机验证：
+
+- AvatarEntity 的类 getter `0x611795C`、类缓存 `0x11ABCB40`，大小 `0x3E8`；VehicleAvatarEntity getter `0x7240118`、缓存 `0x11CBB860`，大小 `0x3F0`；MasterVehicleAvatarEntity getter `0x68AE040`、缓存 `0x11BA1780`，大小 `0x4A0`，构造写入虚表 `0xE67A9B8`。
+- LoadedHandle 属性的类型构造 `0x74BB1DC→0x74BB434`，类缓存 `0x11CEAAC0`、大小 `0x1D8`。r10 只在类继承确认后读取 key `+0xA8`：type `+0xA8`、物品 ID `+0xAC`；不根据指针非零猜物品类型。
+- Avatar `+0x8B8` 的 TMap 头长 `0x50`，数据 / count / capacity 在 `0 / 8 / C`，占用位内联 `+0x10` 或堆指针 `+0x20`，bit count / capacity 在 `+0x28 / +0x2C`，free count `+0x34`，哈希桶内联 `+0x38` 或堆指针 `+0x40`，hash size `+0x48`。条目 stride `0x18`，key `0`，实体指针 `8`，下一哈希索引 `0x10`。
+- r10 同时检查占用位线性唯一查找和 slot 0 原生桶链，二者必须命中同一条目；限制槽位 128、容量 256、位图容量 4096、桶 512，检测环、越界、重复 key、已删除槽位和读取变化。
+- 实体 slot / subslot `+0x28 / +0x2C`；LoadedHandle / CachedLoadedHandle / DelayRenderCachedLoadedHandle `+0x30 / +0x38 / +0x40`；AvatarComponent `+0x48` 必须等于采样 Avatar；MeshComponent `+0x50`。核对 UObject 身份及 AvatarEntity / VehicleAvatarEntity 继承，Master 类型单独报告。
+- DelayRenderDirtyFlag / RenderDirtyFlag / 性别刷新字节 `+0x1B8 / +0x1B9 / +0x1BA`；MeshAssetPath `+0x258`、LastUseMeshPath `+0x3B8` 均为 `FSoftObjectPath`，只报告记录是否存在，不导出名称。Avatar `+0x1208` 缓存计数为空时允许采样，并明确标记未读取。
+- 实体虚表 `+0x3C0→0x45DABBC` 接收已加载句柄，写实体 `+0x30`、槽位并复制 key；`+0x478→0x45E012C` 涉及材质，`+0x4E0→0x42F1AF4` 涉及车型 / 行为。它们不是已证明可独立调用的完整换肤入口；`+0x3A0` / `+0x3A8` 均返回 false，不能仅凭位置称为 Tick。
+- `CurVehicleSkinID +0xD08` 所属元数据是车辆 UI 类；`OwnerVehicleAvatarComp +0x7C0` 属于另一动画 / 移动组件。不能把它们套到当前实体。
+
+r10 的 `CCPReadVehicleEntity` 不接受写入回调，不调用游戏函数、不写渲染标志、不修改共享 LoadedHandle。路径、位图、哈希桶、UObject 身份、句柄 key、字段均重复读取；未确认原因保留在 `refresh_diagnostics.status`，不把可选诊断失败改报成“没有上车”。导出相对 vtable / 方法位置，不导出堆地址。
+
+报告 mode 为 `vehicle-entity-resource-diagnostics`，schema / probe 为 10。`refresh_diagnostics.target_resource_availability=not-checked`，仅描述当前实体加载状态，不扫描游戏磁盘，不主动加载目标宾利，也不保证路径记录对应的资源可用。用户怀疑未下载资源，仍需实际资源就绪证据；不要把 r10 空句柄 / 路径直接解释为缺包。
+
+r10 控制器拒绝新的车辆试换请求，菜单移除“宾利试换15秒”，保留采集 / 停止及已有修改记录的恢复处理；服装试穿不变。完整代码 `061d253`，构建 `38965497830` 成功，43 项 Python 回归、原生实体及既有测试、最终 IPA 修改边界和签名检查均通过。**尚无 r10 手机报告。下一步先取报告定位实际实体 / 加载状态，再研究真正的刷新调度，不能声称已经修复。**
 
 ## 12. 下一位 AI 的建议接手顺序
 
 1. 先读 `AGENTS.md`、本文，查看分支与工作区状态。不要重跑本机编译或分析。
-2. r8 采集已经成功，不必让用户重复发同一辆车的只读报告；先读 `device-evidence-r8.json`。
-3. 先读 `device-evidence-r9.json`：当前写入成功，但 Pending 未消费、缓存计数一直 1。用户已授权公开仓库恢复 Actions，分析与完整构建已成功；下一步沿 11.11 节的内部映射 → 实体路径核对真正刷新入口。
+2. 先读 `device-evidence-r8.json` 和 `device-evidence-r9.json`：取车已成功；r9 写入成功，但 Pending 未消费、缓存计数一直 1，用户确认画面没变。不要再重复 r6～r9 的同一失败流程。
+3. 最新包为 r10，只读采集新增实体 / LoadedHandle / 模型状态。交付路径见第 14 节；先取得 schema / probe 10 的手机报告，关注 `latest_vehicle.refresh_diagnostics`。这是新增证据，不是再做一次无修改的 r8 采集。
 4. 在云端分析中以实机 Vehicle vtable `0x10EBC1680` 为依据，不能直接套用角色 F50、调用未经确认的函数或修改能力标志。
 5. 若 r9 主槽 / Pending 写成 3349002、原生 Skin / Real 却一直为 3349001，不能宣称生效；下一步核对真实消费者。静态主程序未证明 Pending 字段单独可驱动完整刷新，不能盲目重复相同请求或套用衣服的 F50。
 6. r9 已写入主槽 ID、主槽计数（递增）和 Vehicle.PendingVehicleSkinID；原生 Skin / Real / Default 只读。保持修改范围，且未恢复的记录会阻止新试换。退出或换车导致归属改变时不能强写旧地址。
-7. 既有回归覆盖 r8 来源与位图、r9 部分失败恢复、计数范围、被消费 / 未消费请求、空缓存及游戏接管。测试的消费者是模拟器。新增修改补充具体失败案例，仅在 Actions 执行。
-8. 当前只开放 4 座敞篷 3349001→宾利 3349002。未验证这组之前不要开放所有配料目标；跨车型 PAK 替换不证明原生 ID 兼容。
+7. 既有回归覆盖 r8 来源与位图、r9 部分失败恢复及模拟消费者、r10 映射 / 原生哈希 / 类型归属 / 句柄 / 模型字段和变化。测试不能证明目标资源存在或原生刷新已执行；新增修改仅在 Actions 验证。
+8. r9 曾仅开放 4 座敞篷 3349001→宾利 3349002；r10 暂不开放新的车辆写入。未验证这组之前不要开放所有配料目标；跨车型 PAK 替换不证明原生 ID 兼容。
+9. 资源未下载只是用户假设，r10 明确 not-checked。沿第 11.12 节类与归属正确的实体分析；不要盲写 RenderDirty、调用猜测函数、改共享句柄物品 ID，或要求下载所有资源后才继续调查。
 
 不要再让用户重复用 r6、r7 采集相同失败状态。用户已经提供了足够说明“坐驾驶位仍失败”的证据；新请求反馈应建立在具体修正和可安装的新包上。
 
@@ -493,7 +532,7 @@ SHA256 8c69736d6de541170a1f02db2e68074e083086984f8ed6ecf7af851271cbd132
 
 全量分析已排除 `vehicle_review.py` 和 `vehicle-windows.json` 的改动，车辆窗口小改不必重复跑全量 PAK 解析。
 
-云端测试通过 43 项 Python 回归，以及角色读取、同值写、单槽位事务、分页、车辆来源 / 稀疏组件 / 空数组、r9 数据请求事务与恢复、Mach 转发、环境准备等原生测试，以及最终 IPA 的修改边界和签名核验。
+最新 r10 云端测试通过 43 项 Python 回归，以及角色读取、同值写、单槽位事务、分页、车辆来源 / 稀疏组件 / 空数组、r9 数据请求事务与恢复、r10 实体 / 哈希链 / 类和加载记录、Mach 转发、环境准备等原生测试，以及最终 IPA 的修改边界和签名核验。
 
 这些测试不会模拟手机真实游戏对象、账号资源或游戏画面；r7 的模拟回归通过并没有发现其来源对象选择不完整，实机反馈才暴露了问题。
 
@@ -512,13 +551,23 @@ gh run download RUN_ID --repo zwthys-cyber/Core-21A327-TrollStore --name ARTIFAC
 
 | 版本 | GitHub run | 代码 / 产物 |
 |---|---:|---|
+| r10 | `38965497830` | 代码 `061d253cccfed672a4047f5bafd8705ced30917a`；artifact `Core-cosmetics-vehicle-r10` |
 | r9 | `38959705176` | 代码 `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`；artifact `Core-cosmetics-vehicle-r9` |
 | r8 | `38935444227` | 代码 `b49e157b7249a9500bbc78626bcd5d1c60108e6c`；artifact `Core-cosmetics-vehicle-r8` |
 | r5 | `38922744774` | 代码 `fa2c0634a21bd0dc4bb0cba0a0c2ef2cbddd7811`；artifact `Core-cosmetics-catalog-r5` |
 | r6 | `38928395631` | 代码 `277dc7b0463bf9b025edf3f066d202eb7cd5ae4a`；artifact `Core-cosmetics-vehicle-r6` |
 | r7 | `38930863902` | 代码 `efecabbd0fdf0acbbe75f93b496bf575ddf3867b`；artifact `Core-cosmetics-vehicle-r7` |
 
-最新可安装 r9（build 20.9，ProbeVersion 9，手机已确认数据写入但请求未消费；后续尚无新包）：
+最新可安装 r10（build 20.10，ProbeVersion 10；只读当前实体诊断，等待手机报告）：
+
+```text
+/root/和平精英/Core车辆刷新诊断-r10/Core-17.0-21A327-cosmetics-vehicle-r10.ipa
+SHA256 d96ba86adfb99a3cab0bd5fe363dcd614c40146077247b83715880c44c4eaa64
+```
+
+说明为同目录 `r10说明.md` 和 `采集版使用说明.txt`；构建日志 `/tmp/core-r10-build.log`。本机仅下载及计算摘要，没有执行 IPA 验证。
+
+历史 r9（build 20.9，ProbeVersion 9；写入成功但请求未消费，用户确认画面无变化）：
 
 ```text
 /root/和平精英/Core车辆试换-r9/Core-17.0-21A327-cosmetics-vehicle-r9.ipa
@@ -550,6 +599,7 @@ r5 SHA256：`878acfa7487903c228eff98aa77b8b51165c424d130982c53d290b8749875780`�
 
 GitHub 构建链接：
 
+- r10：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38965497830
 - r9：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38959705176
 - r8：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38935444227
 - r7：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38930863902
@@ -567,7 +617,7 @@ Actions 产物保留期为 14 天，安装包已下载到用户目录。日志�
 
 原生菜单：“位置”下面“美化” → “换分类”到“车辆适配” → “采集车辆”。正常设计为取得 8 个成功样本后自动结束；未就绪时最多约 60 秒，也可手动停止。r7 未成功，r8 已取得成功样本。
 
-r9 试换入口在同一页的“宾利试换15秒” / “恢复原车”。试换报告 mode 为 `single-vehicle-request-trial`，schema / trial revision 为 9；只读采集报告为 `vehicle-read-adaptation`，schema / probe revision 为 9。
+r10 同一页只有车辆采集和停止等控件，不再提供 r9 新试换入口；有旧修改记录时保留恢复处理。r10 采集报告 mode 为 `vehicle-entity-resource-diagnostics`，schema / probe 为 10，新增 `refresh_diagnostics`。历史 r9 试换报告 mode 为 `single-vehicle-request-trial`，schema / trial 为 9；旧只读采集报告为 `vehicle-read-adaptation`。
 
 报告只导出外观标量、状态、相对方法 / vtable 位置和诊断，不导出原始进程地址、PID 或物品实例 ID。新包报告会覆盖同名旧文件，检查 `schema_version` 和 `probe_revision` 避免拿旧报告分析新包。
 
@@ -584,4 +634,4 @@ r9 试换入口在同一页的“宾利试换15秒” / “恢复原车”。试
 - 忽略主分支 v19 与美化 feature 分支的不同构建路径。
 - 在给用户的新版本说明中写“车辆已修好”，却只做了只读采集或模拟内存测试。
 
-接手时最短摘要：**r8 取车已实机成立，实际走 pawn+0x60C8 控制器回退；r9 实机写入成功，但 Pending 未消费、缓存计数停在 1，最后主槽还原并清理请求。用户明确授权公开仓库，已执行，分析与完整构建均已恢复成功。新增静态路径为 Avatar+0x8B8 内部映射 → 映射值+0x30 的实体；真正刷新调度尚未确认，无 r10。不要在本机编译分析，不要重复让用户找车，不要把数据写入成功当成换肤成功。**
+接手时最短摘要：**r8 取车已实机成立，实际走 pawn+0x60C8 控制器回退；r9 写入成功但请求未消费，用户确认画面完全没变。资源包未下载仅是假设。仓库已按用户授权公开，Actions 正常。r10 构建 38965497830 成功，新增只读实体 / 当前加载状态诊断，等待手机报告，未检查目标资源下载状态。映射值本身是 AvatarEntity UObject，+0x30 才是 LoadedHandle，旧解释已纠正。真正刷新调度未确认；不要本机验证编译、不要重复 r9 或把数据写入当成换肤成功。**
