@@ -22,14 +22,16 @@ release remain the working baseline.
 `Build Core cosmetics adaptation` calls the existing macOS build and verification
 workflow with `--cosmetics-probe`. It retains the v19 main executable, feature
 limits, signing permissions and bundle identifier. The default build remains v19.
-The optional injected module adds a “美化适配” button to the Core app.
+The optional injected module now adds an “内核美化” button to the Core app.
+The current artifact is `Core-17.0-21A327-cosmetics-trial-r3.ipa`; installation,
+cloud validation and device feedback steps are in [the r3 guide](../../docs/cosmetics-r3.md).
 
 The r1 device report contains eight identical, stable samples: 30 sync slots,
 six nonzero IDs and an empty client array. Game UUID and component ownership
 checks passed. The user confirmed that the character wore the initial outfit.
 The compact record is `device-evidence-r1.json`.
 
-r2 is a write-capability check, not a working appearance replacement.
+r2 was a write-capability check, not an appearance replacement.
 It pins Core's UUID and the original read/snapshot/write entry instructions, then
 checks the remote game's UUID before reading candidate avatar arrays. The
 original target read wrapper retains its PID, generation and binding checks.
@@ -41,20 +43,23 @@ changed. The original write backend retains all capability and binding guards.
 Success requires enum status 1, exactly four bytes completed, native readback
 availability and a separate stable readback. Status 3 or 5 must not be treated
 as success just because its low bit is set. Other outfits skip the check.
-No game files are changed, and appearance refresh remains unvalidated.
+The user's r2 report confirmed native status 1, four bytes completed and stable
+readback, with the expected OnRep RVA. The compact record is
+`device-evidence-r2.json`. Appearance refresh remains unvalidated on device.
 
-On the phone, keep the same initial outfit, enter the training ground, return
-to Core, initialize it and enable its existing game acquisition.
-Select “美化适配 → 检测写入并采集”, then
-switch back to the training ground. After about 24 seconds,
-return to Core and select “导出报告”. The file is
-`Documents/Core-cosmetics-probe.json`, also exposed through File Sharing.
-It contains statuses and numeric appearance fields, with no raw addresses,
-process IDs or item instance IDs. Background expiration stops the capture.
-The report's `write_check` establishes whether the current native backend can
-perform a checked target write. The relative OnRep method offset is also
-sampled without calling game code. These results are needed before enabling
-appearance replacement and its refresh path.
+r3 changes only slot 5 from initial white shirt 403251 to golden-dragon coat
+403188, requests the game's deferred refresh, and attempts restoration after
+15 seconds or on background expiration. The exact target name is cross-checked
+against the pinned text catalog and current package Item row names. It waits
+for Core/character readiness, checks the binding generation and instance, and
+does not overwrite later game-owned slot changes during restoration.
+`trial-profile.json` records the reviewed game-specific refresh path. GitHub
+analysis confirms the tick consumes the pending flag through its native updater,
+which clears that flag and calls the existing appearance callback. The visual
+effect still requires device feedback; the full packages are not converted.
+No game files are changed. The report remains `Documents/Core-cosmetics-probe.json`,
+with `apply`, `observations` and `restore`, without raw addresses, process IDs or
+item instance IDs.
 
 `catalog_match.py` only downloads the pinned text catalog described by
 `catalog-source.json`. It never executes third-party files. It checks the Git
