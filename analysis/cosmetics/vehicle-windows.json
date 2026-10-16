@@ -1,6 +1,6 @@
 {
   "terms": ["VehicleAvatarComponent", "VehicleAvatarComp", "VehicleSkinID", "CurrentVehicle", "ReplicatedVehicle", "GetVehicleAvatarComponent", "GetVehicleSkinID", "CurVehicleSkinID", "RealVehicleSkinID", "PreVehicleSkinID", "PendingVehicleSkinID", "VehicleAvatarItemList", "RepVehicleAvatarItemList", "OnRep_VehicleAvatarItemList", "DoReponceVehicleAvatarItemList", "VehicleUseDoRepOnce", "OnRep_AvatarMeshChanged", "AvatarMeshChangedVehicle", "GetCurrentVehicle", "GetVehicleAvatarSyncDataIDBySlot", "GetVehicleAvatarSyncDataBySlot", "GetMasterVehicleAvatarHandle", "GetVehicleCommon", "GetVehicleUserComponent", "VehicleUserComponent", "OwnerVehicle", "VehicleCommon", "VehicleSeatIdx", "VehicleUserState", "GetVehicleOfCharacter"],
-  "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle", "VehicleAvatarEntity"],
+  "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle", "VehicleAvatarEntity", "RenderDirty", "DelayRender"],
   "utf16_terms": ["MasterVehicleAvatarEntity", "VehicleAvatarEntity", "VehicleAvatarHandle", "AvatarEntity"],
   "property_regions": [
     {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
@@ -21,7 +21,9 @@
   ],
   "field_regions": [
     {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]},
-    {"offset": "0x5a30000", "length": "0x74000", "displacements": ["0x20a0", "0x20a8", "0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc", "0x1ed8"]}
+    {"offset": "0x5a30000", "length": "0x74000", "displacements": ["0x20a0", "0x20a8", "0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc", "0x1ed8"]},
+    {"offset": "0x42f0000", "length": "0x10000", "displacements": ["0x1b8", "0x1b9", "0x1ba"]},
+    {"offset": "0x45d0000", "length": "0x18000", "displacements": ["0x1b8", "0x1b9", "0x1ba"]}
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
   "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
@@ -80,5 +82,7 @@
     ,{"label": "vehicle avatar entity native constructor", "offset": "0x42f0644", "length": "0x200"}
     ,{"label": "master getter return class", "offset": "0x611b984", "length": "0x180"}
     ,{"label": "vehicle pendant getter return class", "offset": "0x61f6afc", "length": "0x180"}
+    ,{"label": "loaded item handle native class getter", "offset": "0x74bb1dc", "length": "0x180"}
+    ,{"label": "base avatar entity native method registration", "offset": "0x61142e8", "length": "0x500"}
   ]
 }
