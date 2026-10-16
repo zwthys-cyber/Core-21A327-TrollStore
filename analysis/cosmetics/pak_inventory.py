@@ -73,7 +73,7 @@ def entries(data):
                 raise ValueError("Too many compression blocks")
             for _ in range(block_count):
                 block_start, block_end = index.number("<Q"), index.number("<Q")
-                if block_end < block_start or offset + block_end > index_offset:
+                if block_end < block_start or block_start < offset or block_end > index_offset:
                     raise ValueError("Invalid compression block")
                 blocks.append([block_start, block_end])
         block_size = index.number("<I")
@@ -133,7 +133,7 @@ def extract(data, entry):
         output = bytearray()
         for start, end in entry["blocks"]:
             decoder = zlib.decompressobj()
-            part = decoder.decompress(data[offset + start:offset + end], size - len(output) + 1)
+            part = decoder.decompress(data[start:end], size - len(output) + 1)
             if not decoder.eof or decoder.unconsumed_tail or len(output) + len(part) > size:
                 raise ValueError("Invalid or oversized Zlib block")
             output.extend(part)

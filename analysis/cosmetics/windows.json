@@ -2,7 +2,8 @@
   "core": [
     {"label": "configuration initialization", "offset": "0xd32d0", "length": "0x180"},
     {"label": "acquisition context", "offset": "0xd4a08", "length": "0x1800"},
-    {"label": "native acquisition read interface", "offset": "0x64c00", "length": "0x1500"},
+    {"label": "native acquisition read interface", "offset": "0x60000", "length": "0x6000"},
+    {"label": "native target readiness", "offset": "0x5e600", "length": "0x300"},
     {"label": "object-chain helper", "offset": "0xd5e60", "length": "0x400"}
   ],
   "game": [
