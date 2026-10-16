@@ -222,6 +222,17 @@ def main():
                     for name, rva in [("snapshot", 0x64C7C), ("read", 0x64D04), ("compare_write", 0x620B8)]},
         "static_configuration": [hex(core.qword(core.offset(0x100AC83F0) + 8 * i)) for i in range(75)],
     }
+    menu_symbols = []
+    symoff, count, stroff, strsize = core.symbols
+    for index in range(count):
+        name_offset, kind, section, desc, value = struct.unpack_from('<IBBHQ', core.data, symoff + index * 16)
+        if name_offset >= strsize:
+            raise ValueError('Invalid Core symbol name offset')
+        end = core.data.find(b'\0', stroff + name_offset, stroff + strsize)
+        name = core.data[stroff + name_offset:end].decode('utf-8', errors='replace')
+        if any(term in name for term in ['dlsym', 'ImGui', 'Button', 'TextUnformatted', 'Selectable']):
+            menu_symbols.append(dict(name=name, kind=kind, section=section, value=hex(value)))
+    report['core_menu_symbols'] = menu_symbols
     report["reviewed_struct_candidates"] = []
     trial_profile = json.loads(Path(__file__).with_name('trial-profile.json').read_text())
     trial_profile['refresh_mode_static_default'] = game.data[game.offset(0x111069CD5)]
