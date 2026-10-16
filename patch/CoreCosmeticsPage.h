@@ -47,11 +47,13 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
                 action(CCP_VEHICLE_CAPTURE_INDEX, true);
             row.x = 155 * scale; ui.cursor(&row);
             if (ui.button("s", "停止采集", false)) action(CCP_VEHICLE_CAPTURE_INDEX, false);
-            row.x = 8 * scale; row.y = 70 * scale; ui.cursor(&row);
-            if (ui.button("t", "宾利试换15秒", enabled && selected == CCP_VEHICLE_TRIAL_INDEX))
-                action(CCP_VEHICLE_TRIAL_INDEX, true);
-            row.x = 250 * scale; ui.cursor(&row);
-            if (ui.button("r", "恢复原车", false)) action(CCP_VEHICLE_TRIAL_INDEX, false);
+            // r9 confirmed request writes without native consumption. Keep
+            // recovery available for an owned journal; do not offer that
+            // ineffective request as a new appearance trial.
+            if (enabled && selected == CCP_VEHICLE_TRIAL_INDEX) {
+                row.x = 8 * scale; row.y = 70 * scale; ui.cursor(&row);
+                if (ui.button("r", "恢复原车", false)) action(CCP_VEHICLE_TRIAL_INDEX, false);
+            }
         }
         unsigned index = 0;
         for (unsigned i = 0; i < CCP_PRESET_COUNT; i++) {

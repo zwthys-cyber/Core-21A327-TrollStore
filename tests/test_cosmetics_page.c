@@ -71,14 +71,15 @@ int main(void) {
     }
     category = 5; page = 0; clickedButton = 'v'; unsigned previousActions = actions;
     Draw(1, CCPMenuVehicleWaiting, false, 0, &category, &page);
-    assert(controls == 0 && buttons == 5 && actions == previousActions + 1);
+    assert(controls == 0 && buttons == 3 && actions == previousActions + 1);
     assert(requested && requestedPreset == CCP_VEHICLE_CAPTURE_INDEX && strstr(title, "车辆适配"));
     clickedButton = 's';
     Draw(1, CCPMenuVehicleWaiting, true, CCP_VEHICLE_CAPTURE_INDEX, &category, &page);
     assert(!requested && requestedPreset == CCP_VEHICLE_CAPTURE_INDEX);
     clickedButton = 't';
+    previousActions = actions;
     Draw(1, CCPMenuVehicleTrialApplied, true, CCP_VEHICLE_TRIAL_INDEX, &category, &page);
-    assert(requested && requestedPreset == CCP_VEHICLE_TRIAL_INDEX && strstr(title, "车辆限时试换"));
+    assert(actions == previousActions && buttons == 4); // Removed ineffective r9 apply action.
     clickedButton = 'r';
     Draw(1, CCPMenuVehicleRestoring, true, CCP_VEHICLE_TRIAL_INDEX, &category, &page);
     assert(!requested && requestedPreset == CCP_VEHICLE_TRIAL_INDEX && strstr(title, "正在恢复原车"));

@@ -23,7 +23,9 @@
     "restore_observations": {"count": 7, "all_identical": true, "binding_matches": true, "layout_matches": true, "master_item_id": 3349001, "native_update_counter": 3, "cached_update_counter": 1, "pending_skin_id": 3349001, "vehicle_skin_id": 3349001, "real_skin_id": 3349001, "previous_skin_id": 3349001, "default_skin_id": 3349001, "pending_request_consumed": 0},
     "restore_check": {"status": "memory-restored-refresh-unconfirmed", "native_status": 1, "total_written_bytes": 4, "memory_restored": true, "change_still_owned": false, "native_restore_observed": false},
     "native_refresh_consumption_verified": false,
-    "visual_effect_verified": false
+    "visual_effect_verified": false,
+    "user_visual_observation": "Completely no visible change; explicitly confirmed in the next user reply",
+    "missing_target_resources": "User hypothesis, not established by the r9 report"
   },
   "conclusion": "The matching vehicle was resolved and all three request writes were confirmed. During five observations the native cache stayed at 1 and native skin fields stayed original; neither target nor restore Pending request was consumed. Original master ID and owned pending request were restored/cleared; the counter intentionally advanced to 3. No successful vehicle refresh or visual effect is established. Do not repeat r9 as a refresh fix."
 }

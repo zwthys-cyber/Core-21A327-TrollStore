@@ -89,6 +89,39 @@ static NSArray *ItemsJSON(const CCPItems *items) {
     }
     return result;
 }
+static NSDictionary *VehicleEntityJSON(CCPVehicleEntityDiagnostic entity) {
+    NSArray *statuses = @[@"not-attempted", @"vehicle-entity-state-sampled", @"entity-map-read-failed",
+        @"entity-map-layout-unconfirmed", @"master-entity-not-found", @"master-entity-ambiguous",
+        @"entity-class-unavailable", @"entity-class-unconfirmed", @"entity-owner-unconfirmed",
+        @"entity-state-read-failed", @"entity-state-layout-unconfirmed", @"entity-changed-during-sample"];
+    return @{@"status": statuses[entity.status], @"diagnostic_revision": @10,
+        @"read_only": @YES, @"target_resource_availability": @"not-checked",
+        @"resource_scope": @"current-entity-loaded-state",
+        @"entity_map_header_read": @(entity.headerRead), @"entity_bitmap_read": @(entity.bitmapRead),
+        @"entity_bitmap_on_heap": @(entity.heapBitmap), @"entity_map_slots": @(entity.mapSlots),
+        @"entity_map_occupied": @(entity.mapOccupied), @"master_entity_matches": @(entity.masterMatches),
+        @"native_hash_lookup_matches": @(entity.hashMatches), @"entity_state_stable": @(entity.stable),
+        @"base_entity_class_available": @(entity.baseClassAvailable), @"vehicle_entity_class_available": @(entity.vehicleClassAvailable),
+        @"master_entity_class_available": @(entity.masterClassAvailable), @"base_entity_class_matches": @(entity.baseClassMatches),
+        @"vehicle_entity_class_matches": @(entity.vehicleClassMatches), @"master_entity_class_matches": @(entity.masterClassMatches),
+        @"entity_owner_field_read": @(entity.ownerRead), @"entity_avatar_matches": @(entity.ownerMatches),
+        @"entity_slot": @(entity.slot), @"entity_subslot": @(entity.subslot),
+        @"loaded_handle_available": @(entity.handleAvailable), @"loaded_handle_class_available": @(entity.handleClassAvailable),
+        @"loaded_handle_class_matches": @(entity.handleClassMatches), @"loaded_handle_key_read": @(entity.handleKeyRead),
+        @"loaded_handle_item_type": @(entity.loadedType), @"loaded_handle_item_id": @(entity.loadedID),
+        @"loaded_handle_matches_trial_target": @(entity.handleKeyRead && entity.loadedID == 3349002),
+        @"cached_handle_available": @(entity.cachedHandleAvailable), @"delay_render_handle_available": @(entity.delayedHandleAvailable),
+        @"cached_handle_matches_loaded": @(entity.cachedMatchesLoaded), @"mesh_component_available": @(entity.meshComponentAvailable),
+        @"mesh_asset_path_present": @(entity.meshPathPresent), @"last_mesh_path_present": @(entity.lastMeshPathPresent),
+        @"render_flags_read": @(entity.renderFlagsRead), @"render_dirty": @(entity.renderDirty),
+        @"delay_render_dirty": @(entity.delayedRenderDirty), @"appearance_gender_dirty": @(entity.appearanceDirty),
+        @"cached_counter_count": @(entity.cachedCounterCount), @"cached_update_counter_read": @(entity.cachedCounterRead),
+        @"cached_update_counter": @(entity.cachedCounter),
+        @"entity_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)entity.tableRVA],
+        @"entity_install_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)entity.installRVA],
+        @"entity_material_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)entity.materialRVA],
+        @"entity_behavior_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)entity.behaviorRVA]};
+}
 static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t pawn, uint64_t controller) {
     CCPVehicleSample sample = {0};
     BOOL sampled = CCPReadVehicle(remote, game, pawn, controller, &sample);
@@ -145,7 +178,7 @@ static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t 
         @"pending_skin_id": @(sample.pendingSkin), @"real_skin_id": @(sample.realSkin),
         @"default_skin_id": @(sample.defaultSkin), @"sync_item_count": @(sample.count), @"sync_items": items,
         @"master_item_matches_vehicle_skin": @(sample.count > 0 && sample.items[0].item == sample.skin),
-        @"avatar_refresh_pending": @(sample.refreshPending),
+        @"avatar_refresh_pending": @(sample.refreshPending), @"refresh_diagnostics": VehicleEntityJSON(sample.entity),
         @"vehicle_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.vehicleTableRVA],
         @"avatar_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.avatarTableRVA],
         @"avatar_onrep_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.onrepRVA],
@@ -505,13 +538,11 @@ static NSDictionary *VehicleTrialObservation(void) {
         return;
     }
     if (index == CCP_VEHICLE_TRIAL_INDEX) {
-        if (!enabled) {
-            if (!self.vehicleTrialMode && !(atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == index)) return;
-            self.pendingPresetIndex = NSNotFound; [self restoreTrial];
-        }
-        else if (self.capturing || atomic_load(&MenuOwned)) {
-            self.pendingPresetIndex = index; [self restoreTrial];
-        } else { self.pendingPresetIndex = NSNotFound; [self startVehicleTrial]; }
+        // r10 collects the native entity/load state. The r9 request alone
+        // failed to advance the engine, so no new vehicle trial is offered.
+        if (enabled) return;
+        if (!self.vehicleTrialMode && !(atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == index)) return;
+        self.pendingPresetIndex = NSNotFound; [self restoreTrial];
         return;
     }
     if (index >= CCP_PRESET_COUNT) return;
@@ -554,10 +585,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];
         self.backgroundTask = UIBackgroundTaskInvalid;
     }
-    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex == CCP_VEHICLE_TRIAL_INDEX) {
-        self.pendingPresetIndex = NSNotFound;
-        [self startVehicleTrial];
-    } else if (!atomic_load(&MenuOwned) && self.pendingPresetIndex < CCP_PRESET_COUNT) {
+    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex < CCP_PRESET_COUNT) {
         self.presetIndex = self.pendingPresetIndex;
         self.pendingPresetIndex = NSNotFound;
         [self startTrial];
@@ -583,11 +611,12 @@ static NSDictionary *VehicleTrialObservation(void) {
         self.trialFinishing = NO;
         self.samples = [NSMutableArray array];
         self.vehicleAttempts = [NSMutableArray array];
-        self.trialReport = [@{@"schema_version": @9, @"probe_revision": @9, @"mode": @"vehicle-read-adaptation",
+        self.trialReport = [@{@"schema_version": @10, @"probe_revision": @10, @"mode": @"vehicle-entity-resource-diagnostics",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"vehicle_writes_implemented": @NO, @"vehicle_appearance_changes_implemented": @NO,
-            @"vehicle_trial_available": @YES,
+            @"vehicle_trial_available": @NO, @"target_resource_availability": @"not-checked",
+            @"diagnostic_scope": @"current-vehicle-entity-and-loaded-handle",
             @"runtime_layout_validated": @NO, @"ui_location": @"native-menu-below-position"} mutableCopy];
         [self captureVehicleOnQueue:generation attempt:0];
     });

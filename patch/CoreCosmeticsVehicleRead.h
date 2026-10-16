@@ -1,6 +1,7 @@
 #ifndef CORE_COSMETICS_VEHICLE_READ_H
 #define CORE_COSMETICS_VEHICLE_READ_H
 #include "CoreCosmeticsComponents.h"
+#include "CoreCosmeticsVehicleEntity.h"
 
 // Reviewed only against the pinned 1.38.12/15915 binary in Actions. Vehicle
 // SynData has a different stride and refresh path from character MeshSynData.
@@ -32,6 +33,7 @@ typedef struct {
     bool userAvailable, userOwnerMatches, userCharacterRead, userCharacterMatches, userCharacterNonzero, userCharacterPointerValid;
     bool vehicleFieldRead, vehicleNonzero, vehiclePointerValid;
     CCPComponentDiagnostic components;
+    CCPVehicleEntityDiagnostic entity;
     uint8_t refreshPending;
     CCPVehicleItem items[CCP_MAX_VEHICLE_SLOTS];
 } CCPVehicleSample;
@@ -157,6 +159,7 @@ static inline bool CCPReadVehicle(CCPReader reader, uint64_t game, uint64_t pawn
         out->status = CCPVehicleArrayUnconfirmed; return false;
     }
     size_t length = (size_t)first.count * CCP_VEHICLE_STRIDE;
+    CCPReadVehicleEntity(reader, game, avatar, CCP_ENTITY_ITEM_CLASS_RVA, &out->entity);
     if (!CCPReadBytes(reader, vehicle + 0x20AC, skin, sizeof(skin)) ||
         !CCPReadBytes(reader, avatar + 0x10A0 + 4, &defaultSkin, 4) ||
         !CCPReadBytes(reader, avatar + 0xF50, &pending, 1) ||
