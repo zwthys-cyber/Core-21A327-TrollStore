@@ -85,6 +85,27 @@ static NSArray *ItemsJSON(const CCPItems *items) {
     }
     return result;
 }
+static NSDictionary *WeaponCandidate(CCPReader remote, uint64_t game, uint64_t pawn) {
+    uint64_t manager = 0, weapon = 0, avatar = 0, owner = 0, table = 0;
+    if (!CCPReadBytes(remote, pawn + 0x37A0, &manager, 8) || !CCPPointer(manager) ||
+        !CCPReadBytes(remote, manager + 0x990, &weapon, 8) || !CCPPointer(weapon))
+        return @{@"status": @"held-weapon-unavailable", @"writes_implemented": @NO};
+    if (!CCPReadBytes(remote, weapon + 0xA50, &avatar, 8) || !CCPPointer(avatar) ||
+        !CCPReadBytes(remote, avatar + 0x20, &owner, 8) || owner != weapon ||
+        !CCPReadBytes(remote, avatar, &table, 8) || table < game || table - game >= 0x120E0000)
+        return @{@"status": @"weapon-avatar-owner-unconfirmed", @"writes_implemented": @NO};
+    CCPItems client = {0}, display = {0};
+    bool clientOK = CCPReadItems(remote, avatar + 0x1400, &client);
+    bool displayOK = CCPReadItems(remote, avatar + 0x1418, &display);
+    uint64_t weaponAfter = 0, avatarAfter = 0;
+    if (!CCPReadBytes(remote, manager + 0x990, &weaponAfter, 8) || weaponAfter != weapon ||
+        !CCPReadBytes(remote, weapon + 0xA50, &avatarAfter, 8) || avatarAfter != avatar)
+        return @{@"status": @"held-weapon-changed", @"writes_implemented": @NO};
+    return @{@"status": @"weapon-layout-candidate-sampled", @"writes_implemented": @NO,
+        @"component_owner_matches": @YES, @"vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)(table - game)],
+        @"client_array_stable": @(clientOK), @"display_array_stable": @(displayOK),
+        @"client_items": ItemsJSON(&client), @"display_items": ItemsJSON(&display)};
+}
 static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved) {
     CCPReader local = {LocalRead, NULL};
     uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
@@ -101,7 +122,9 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved) {
     if (!CCPReadBytes(local, base + 0xC54270, config, sizeof(config))) return @{@"status": @"core-context-unavailable"};
     uint64_t game = CCPU64(config + 0x18), pawn = CCPU64(config + 0x3A0);
     if (!CCPIdentity(remote, game, CCPGameUUID)) return @{@"status": @"game-identity-unconfirmed"};
-    if (!CCPPointer(pawn)) return @{@"status": @"local-character-unavailable", @"game_uuid_matches": @YES};
+    if (!CCPPointer(pawn)) return @{@"status": @"local-character-unavailable", @"game_uuid_matches": @YES,
+        @"core_controller_available": @(CCPPointer(CCPU64(config + 0x390))),
+        @"core_world_available": @(CCPPointer(CCPU64(config + 0x370)))};
     uint64_t avatar = 0, outer = 0, vtable = 0;
     if (!CCPReadBytes(remote, pawn + CCP_AVATAR_OFFSET, &avatar, sizeof(avatar)) || !CCPPointer(avatar))
         return @{@"status": @"avatar-component-unavailable", @"game_uuid_matches": @YES};
@@ -122,6 +145,7 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved) {
         @"sync_array_stable": @(syncOK), @"client_array_stable": @(clientOK),
         @"sync_item_count": @(sync.count), @"client_item_count": @(client.count), @"zero_slots_omitted": @YES,
         @"sync_items": ItemsJSON(&sync), @"client_items": ItemsJSON(&client)} mutableCopy];
+    result[@"weapon_candidate"] = WeaponCandidate(remote, game, pawn);
     uint64_t onrep = 0;
     if (CCPReadBytes(remote, vtable + 0x1320, &onrep, sizeof(onrep)) && onrep >= game && onrep - game < 0xAF23BE4)
         result[@"avatar_onrep_rva"] = [NSString stringWithFormat:@"0x%llx", (unsigned long long)(onrep - game)];
