@@ -14,6 +14,9 @@
     {"label": "avatar sync array type", "offset": "0x6102e4c", "length": "0x100"},
     {"label": "character avatar object constructor", "offset": "0x6398a90", "length": "0x1000"},
     {"label": "weapon avatar object constructor", "offset": "0x73156ec", "length": "0x800"},
-    {"label": "character native registration", "offset": "0x6375718", "length": "0x300"}
+    {"label": "character native registration", "offset": "0x6375718", "length": "0x300"},
+    {"label": "character constructor implementation", "offset": "0x43a159c", "length": "0x500"},
+    {"label": "weapon constructor implementation", "offset": "0x482100c", "length": "0x500"},
+    {"label": "avatar readiness and wait setters", "offset": "0x6395280", "length": "0x120"}
   ]
 }

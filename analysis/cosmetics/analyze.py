@@ -27,6 +27,7 @@ TERMS = [
     "BackpackSkinID", "HelmetSkinID", "WeaponAvatarData", "WeaponEntityComp",
     "WeaponManagerComponent", "CurrentWeaponReplicated", "LocalPlayerController",
     "AcknowledgedPawn", "CharacterAvatarComp", "NetAvatarSyncData_PushModel",
+    "UAEDataTable", "UsedCompressedRowData",
 ]
 
 
@@ -254,6 +255,12 @@ def main():
     for term in ["UAEDataTable", "UsedCompressedRowData", "CompressedRowData", "OnRep_AvatarMeshChanged"]:
         for address in game.string_addresses(term):
             targets[address] = term
+    for term in ["UAEDataTable"]:
+        needle = term.encode('utf-16-le') + b'\0\0'
+        cursor = 0
+        while (hit := game.data.find(needle, cursor)) >= 0:
+            targets[game.address(hit)] = term + ' (UTF16)'
+            cursor = hit + len(needle)
     pages = {address & ~4095 for address in targets}
     references = []
     code = game.data[game.text['offset']:game.text['offset'] + game.text['length']]
