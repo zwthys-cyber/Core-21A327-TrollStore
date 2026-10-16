@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-probe-r1.ipa"
-COSMETICS_BUNDLE_BUILD = "20.1"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-probe-r2.ipa"
+COSMETICS_BUNDLE_BUILD = "20.2"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -251,8 +251,8 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="1",
-                    CoreCosmeticsMode="read-only-adaptation")
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="2",
+                    CoreCosmeticsMode="same-value-write-adaptation")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -298,7 +298,8 @@ def main():
                                            retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False,
-                  cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=False)
+                  cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=False,
+                  cosmetics_same_value_write_check=args.cosmetics_probe)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     if args.cosmetics_probe:
         shutil.copyfile(ROOT / "analysis/cosmetics/采集版使用说明.txt", dist / "采集版使用说明.txt")

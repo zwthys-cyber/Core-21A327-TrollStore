@@ -5,13 +5,15 @@
 #import <ptrauth.h>
 #import <stdatomic.h>
 #import "CoreCosmeticsRead.h"
+#import "CoreCosmeticsWriteCheck.h"
 
-// Deliberately no reference to Core's compare/write entry in this build.
-// Device evidence is required before any appearance change can be enabled.
+// r1 established the character read path. r2 checks the original write backend
+// once against the SAME captured item value; appearance changes stay disabled.
 typedef struct { uint64_t words[17]; } CCPSnapshot;
 typedef bool (*CCPSnapshotFunction)(CCPSnapshot *);
 typedef bool (*CCPReadFunction)(uint32_t, uint64_t, size_t, void *);
-typedef struct { uint32_t pid; CCPReadFunction read; } CCPTarget;
+typedef CCPNativeWriteResult (*CCPWriteFunction)(uint32_t, uint64_t, const void *, const void *, size_t);
+typedef struct { uint32_t pid; CCPReadFunction read; CCPWriteFunction write; } CCPTarget;
 static const uint8_t CoreUUID[16] = {
     0x4e,0xd1,0xfd,0x29,0xa4,0x6a,0x36,0xb3,
     0x8d,0xfc,0x36,0xf6,0x7e,0xa9,0x29,0xd1
@@ -24,6 +26,10 @@ static const uint8_t ReadPrefix[32] = {
     0xc5,0xee,0xff,0x17,0x7f,0x23,0x03,0xd5,0xf6,0x57,0xbd,0xa9,0xf4,0x4f,0x01,0xa9,
     0xfd,0x7b,0x02,0xa9,0xfd,0x83,0x00,0x91,0xf3,0x03,0x00,0xaa,0x40,0x00,0x00,0xb4
 };
+static const uint8_t WritePrefix[32] = {
+    0x7f,0x23,0x03,0xd5,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
+    0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
+};
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
     return vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)length,
@@ -32,6 +38,11 @@ static bool LocalRead(void *context, uint64_t address, void *out, size_t length)
 static bool TargetRead(void *context, uint64_t address, void *out, size_t length) {
     CCPTarget *target = context;
     return target->read(target->pid, address, length, out);
+}
+static CCPNativeWriteResult TargetWrite(void *context, uint64_t address, const void *expected,
+                                        const void *replacement, size_t length) {
+    CCPTarget *target = context;
+    return target->write(target->pid, address, expected, replacement, length);
 }
 static void *SignedEntry(uintptr_t address) {
 #if __has_feature(ptrauth_calls)
@@ -54,7 +65,7 @@ static NSArray *ItemsJSON(const CCPItems *items) {
     }
     return result;
 }
-static NSDictionary *Sample(void) {
+static NSDictionary *Sample(BOOL writeCheck) {
     CCPReader local = {LocalRead, NULL};
     uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
     if (!CCPIdentity(local, base, CoreUUID) || !EntryMatches(base + 0x64C7C, SnapshotPrefix) ||
@@ -62,8 +73,8 @@ static NSDictionary *Sample(void) {
     CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
     CCPSnapshot before = {0}, after = {0};
     if (!snapshot(&before) || !before.words[1]) return @{@"status": @"core-session-not-ready"};
-    CCPTarget target = {CCPU32((const uint8_t *)&before + 0x18),
-                        (CCPReadFunction)SignedEntry(base + 0x64D04)};
+    CCPTarget target = {.pid = CCPU32((const uint8_t *)&before + 0x18),
+                        .read = (CCPReadFunction)SignedEntry(base + 0x64D04), .write = NULL};
     if (!target.pid || target.pid > INT32_MAX) return @{@"status": @"target-not-bound"};
     CCPReader remote = {TargetRead, &target};
     uint8_t config[0x3A8], configAfter[sizeof(config)];
@@ -86,10 +97,33 @@ static NSDictionary *Sample(void) {
         CCPU64(configAfter + 0x18) != game || CCPU64(configAfter + 0x3A0) != pawn ||
         !CCPReadBytes(remote, pawn + CCP_AVATAR_OFFSET, &avatarAfter, sizeof(avatarAfter)) || avatarAfter != avatar)
         return @{@"status": @"session-or-character-changed"};
-    return @{@"status": syncOK || clientOK ? @"candidate-layout-sampled" : @"avatar-arrays-unconfirmed",
+    NSMutableDictionary *result = [@{@"status": syncOK || clientOK ? @"candidate-layout-sampled" : @"avatar-arrays-unconfirmed",
         @"game_uuid_matches": @YES, @"component_owner_matches": @YES,
         @"sync_array_stable": @(syncOK), @"client_array_stable": @(clientOK),
-        @"sync_items": ItemsJSON(&sync), @"client_items": ItemsJSON(&client)};
+        @"sync_items": ItemsJSON(&sync), @"client_items": ItemsJSON(&client)} mutableCopy];
+    uint64_t onrep = 0;
+    if (CCPReadBytes(remote, vtable + 0x1320, &onrep, sizeof(onrep)) && onrep >= game && onrep - game < 0xAF23BE4)
+        result[@"avatar_onrep_rva"] = [NSString stringWithFormat:@"0x%llx", (unsigned long long)(onrep - game)];
+    if (writeCheck && syncOK) {
+        if (!EntryMatches(base + 0x620B8, WritePrefix)) {
+            result[@"write_check"] = @{@"attempted": @NO, @"status": @"core-write-entry-unconfirmed"};
+        } else {
+            target.write = (CCPWriteFunction)SignedEntry(base + 0x620B8);
+            uint8_t capabilityA = 0, capabilityB = 0, primitiveReady = 0;
+            BOOL capabilitiesRead = CCPReadBytes(local, base + 0xC27B2C, &capabilityA, 1) &&
+                CCPReadBytes(local, base + 0xC27CA4, &capabilityB, 1) &&
+                CCPReadBytes(local, base + 0xC3D59D, &primitiveReady, 1);
+            CCPWriteCheck check = CCPCheckInitialOutfitWrite(remote, TargetWrite, &target, avatar + CCP_SYNC_OFFSET);
+            result[@"write_check"] = @{@"attempted": @(check.attempted),
+                @"status": !check.attempted ? @"initial-outfit-required" :
+                    (check.nativeCommitted && check.readbackStable ? @"same-value-write-confirmed" : @"native-write-not-confirmed"),
+                @"native_status": @(check.nativeStatus), @"written_bytes": @(check.writtenBytes),
+                @"readback_stable": @(check.readbackStable), @"appearance_value_changed": @NO,
+                @"capability_snapshot_read": @(capabilitiesRead), @"capability_a": @(capabilityA),
+                @"capability_b": @(capabilityB), @"primitive_ready_bit": @(primitiveReady & 1)};
+        }
+    }
+    return result;
 }
 
 @interface CCPCosmeticsController : NSObject
@@ -98,6 +132,7 @@ static NSDictionary *Sample(void) {
 @property(nonatomic, strong) dispatch_source_t captureTimer;
 @property(nonatomic, strong) dispatch_queue_t captureQueue;
 @property(nonatomic, strong) NSMutableArray *samples;
+@property(nonatomic, strong) NSDictionary *writeCheckResult;
 @property(nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 @property(nonatomic) BOOL capturing;
 @property(nonatomic) uint32_t generation;
@@ -148,10 +183,10 @@ static atomic_bool CaptureStopped = true;
     UIViewController *controller = [self presenter];
     if (!controller || [controller isKindOfClass:UIAlertController.class]) return;
     NSString *message = self.capturing ? @"正在采集。请切回和平精英训练场，约 24 秒后返回导出报告。" :
-        @"适用于和平精英 1.38.12。先进入训练场，返回 Core 完成初始化并启动原有游戏采集，再点开始并切回训练场，约 24 秒后返回导出报告。\n\n此版采集角色外观 ID，用于完成美化适配，尚未启用换装。";
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"美化适配采集版 r1"
+        @"请保持上次采集的初始套装。先进入训练场，返回 Core 初始化并启动原有游戏采集，再点开始并切回训练场，约 24 秒后返回导出报告。\n\n此版会检查一次内核写入接口，写回相同的外观 ID，外观数值保持原样。尚未启用换装。";
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"美化适配写入检测版 r2"
         message:message preferredStyle:UIAlertControllerStyleAlert];
-    if (!self.capturing) [alert addAction:[UIAlertAction actionWithTitle:@"开始采集" style:UIAlertActionStyleDefault
+    if (!self.capturing) [alert addAction:[UIAlertAction actionWithTitle:@"检测写入并采集" style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *action) { [self capture]; }]];
     if ([[NSFileManager defaultManager] fileExistsAtPath:[self reportURL].path]) {
         [alert addAction:[UIAlertAction actionWithTitle:@"导出报告" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -183,18 +218,22 @@ static atomic_bool CaptureStopped = true;
         }];
     dispatch_async(self.captureQueue, ^{
         self.samples = [NSMutableArray array];
+        self.writeCheckResult = nil;
         self.captureTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.captureQueue);
         dispatch_source_set_timer(self.captureTimer, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
                                   3 * NSEC_PER_SEC, NSEC_PER_SEC / 4);
         dispatch_source_set_event_handler(self.captureTimer, ^{
             @autoreleasepool {
                 if (atomic_load(&CaptureStopped)) { dispatch_source_cancel(self.captureTimer); self.captureTimer = nil; return; }
-                [self.samples addObject:Sample()];
-                NSDictionary *report = @{@"schema_version": @1, @"probe_revision": @1,
-                    @"mode": @"read-only-adaptation", @"game_version": @"1.38.12", @"game_build": @"15915",
+                NSDictionary *sample = Sample(self.writeCheckResult == nil);
+                if (sample[@"write_check"]) self.writeCheckResult = sample[@"write_check"];
+                [self.samples addObject:sample];
+                NSDictionary *report = @{@"schema_version": @2, @"probe_revision": @2,
+                    @"mode": @"same-value-write-adaptation", @"game_version": @"1.38.12", @"game_build": @"15915",
                     @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
                     @"captured_at_unix": @([NSDate date].timeIntervalSince1970),
-                    @"kernel_writes_implemented": @NO, @"runtime_layout_validated": @NO,
+                    @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @NO,
+                    @"runtime_layout_validated": @NO, @"write_check": self.writeCheckResult ?: @{},
                     @"samples": self.samples.copy};
                 NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
                 [json writeToURL:[self reportURL] options:NSDataWritingAtomic error:NULL];

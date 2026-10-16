@@ -13,7 +13,7 @@ class CosmeticsProfileTests(unittest.TestCase):
         source = (ROOT / 'patch/CoreCosmeticsProbe.m').read_text()
         with zipfile.ZipFile(ROOT / 'input/Core.ipa') as archive:
             original = archive.read('Payload/Core.app/Core')
-        for name, rva in [('SnapshotPrefix', 0x64C7C), ('ReadPrefix', 0x64D04)]:
+        for name, rva in [('SnapshotPrefix', 0x64C7C), ('ReadPrefix', 0x64D04), ('WritePrefix', 0x620B8)]:
             body = re.search(rf'{name}\[32\] = \{{(.*?)\}};', source, re.S).group(1)
             expected = bytes(int(value, 16) for value in re.findall(r'0x([a-f0-9]{2})', body))
             self.assertEqual(expected, original[rva:rva + 32])
