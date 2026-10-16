@@ -1,0 +1,40 @@
+name: Analyze Core cosmetics inputs
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/kernel-cosmetics]
+    paths:
+      - 'analysis/cosmetics/**'
+      - '.github/workflows/analyze-cosmetics.yml'
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install disassembler wheel
+        run: python3 -m pip install --only-binary=:all: capstone==5.0.6
+      - name: Download private draft analysis inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p analysis-input analysis-output
+          gh release download analysis-cosmetics-1.38.12-15915 --repo "$GITHUB_REPOSITORY" --pattern ShadowTrackerExtra --pattern Info.plist --dir analysis-input
+      - name: Inspect pinned binaries and appearance metadata
+        run: python3 analysis/cosmetics/analyze.py --inputs analysis-input --core-ipa input/Core.ipa --output analysis-output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Core-cosmetics-static-analysis
+          path: analysis-output/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Core-cosmetics-disassembly
+          path: analysis-output/*.txt
+          if-no-files-found: warn
+          retention-days: 14
