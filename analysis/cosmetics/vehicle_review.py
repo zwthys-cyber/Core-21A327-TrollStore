@@ -62,6 +62,20 @@ def main():
         end = next((i for i in range(0, len(data) - 1, 2) if data[i:i + 2] == b'\0\0'), None)
         value = data[:end].decode('utf-16-le') if end is not None else None
         report['reviewed_strings'].append(dict(label=entry['label'], address=entry['address'], value=value))
+    literal_terms = []
+    for name in config.get('utf16_terms', []):
+        needle = name.encode('utf-16-le') + b'\0\0'
+        cursor = 0
+        while True:
+            hit = image.data.find(needle, cursor)
+            if hit < 0:
+                break
+            literal_terms.append(dict(name=name, address=hex(image.address(hit))))
+            if len(literal_terms) > 64:
+                raise ValueError('UTF-16 literal discovery exceeded its bound')
+            cursor = hit + len(needle)
+    report['utf16_literals'] = literal_terms
+    literal_addresses = {int(row['address'], 16) for row in literal_terms}
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]
@@ -91,6 +105,26 @@ def main():
     code = image.data[code_offset:code_offset + (code_size & ~3)]
     for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
         pc = image.text['address'] + index * 4
+        # Reviewed class registration names use ADRP + ADD and UTF-16 strings.
+        # Keep raw references as candidates; the surrounding function still
+        # needs manual review before assigning a class or constructor identity.
+        if word & 0x9F000000 == 0x90000000 and literal_addresses:
+            relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
+            if relative & (1 << 20):
+                relative -= 1 << 21
+            page = (pc & ~0xFFF) + relative * 4096
+            register = word & 31
+            if any(0 <= address - page < 4096 for address in literal_addresses):
+                for delta in range(1, 9):
+                    position = (index + delta) * 4
+                    if position + 4 > len(code):
+                        break
+                    following = struct.unpack_from('<I', code, position)[0]
+                    if following & 0xFFC00000 == 0x91000000 and ((following >> 5) & 31) == register:
+                        address = page + ((following >> 10) & 4095)
+                        if address in literal_addresses:
+                            global_references.append(dict(address=hex(pc), literal=hex(address), add_address=hex(pc + delta * 4)))
+                            windows.append(('native class literal reference', pc - 0x100, 0x500))
         kind = word & 0xFFC00000
         scale = 4 if kind == 0xB9400000 else 8 if kind == 0xF9400000 else 0
         displacement = ((word >> 10) & 4095) * scale
