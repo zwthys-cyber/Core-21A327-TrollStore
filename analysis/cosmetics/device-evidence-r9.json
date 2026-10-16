@@ -1,0 +1,29 @@
+{
+  "source": "Summary of the user's pasted r9 reports, 2026-10-16; repeated observations condensed",
+  "reported_schema_version": 9,
+  "reported_trial_revision": 9,
+  "game_version": "1.38.12",
+  "game_build": "15915",
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "rejected_vehicle_trials": [
+    {"captured_at_unix": 1792181879.818152, "actual_id": 3336001, "status": "matching-vehicle-required", "reported_restore_total_written_bytes": 0},
+    {"captured_at_unix": 1792182119.870337, "actual_id": 3306001, "status": "matching-vehicle-required", "reported_restore_total_written_bytes": 0}
+  ],
+  "matching_vehicle_trial": {
+    "captured_at_unix": 1792182343.3586221,
+    "mode": "single-vehicle-request-trial",
+    "original_id": 3349001,
+    "target_id": 3349002,
+    "finish_reason": "automatic-restore",
+    "status": "original-data-restored-awaiting-visual-confirmation",
+    "before": {"master_id": 3349001, "skin_id": 3349001, "real_skin_id": 3349001, "default_skin_id": 3349001, "pending_skin_id": 0, "native_update_counter": 1, "sync_item_count": 11},
+    "apply": {"status": "request-written-awaiting-engine", "prepare_stage": "ready", "native_status": 1, "total_written_bytes": 12, "id_write_confirmed": true, "pending_request_written": true, "cached_counter_count": 11},
+    "apply_observations": {"count": 5, "all_identical": true, "binding_matches": true, "layout_matches": true, "master_item_id": 3349002, "native_update_counter": 2, "cached_update_counter": 1, "pending_skin_id": 3349002, "vehicle_skin_id": 3349001, "real_skin_id": 3349001, "previous_skin_id": 3349001, "default_skin_id": 3349001, "pending_request_consumed": 0},
+    "restore": {"status": "restoring-awaiting-engine", "native_status": 1, "total_written_bytes": 12, "id_write_confirmed": true, "pending_request_written": true},
+    "restore_observations": {"count": 7, "all_identical": true, "binding_matches": true, "layout_matches": true, "master_item_id": 3349001, "native_update_counter": 3, "cached_update_counter": 1, "pending_skin_id": 3349001, "vehicle_skin_id": 3349001, "real_skin_id": 3349001, "previous_skin_id": 3349001, "default_skin_id": 3349001, "pending_request_consumed": 0},
+    "restore_check": {"status": "memory-restored-refresh-unconfirmed", "native_status": 1, "total_written_bytes": 4, "memory_restored": true, "change_still_owned": false, "native_restore_observed": false},
+    "native_refresh_consumption_verified": false,
+    "visual_effect_verified": false
+  },
+  "conclusion": "The matching vehicle was resolved and all three request writes were confirmed. During five observations the native cache stayed at 1 and native skin fields stayed original; neither target nor restore Pending request was consumed. Original master ID and owned pending request were restored/cleared; the counter intentionally advanced to 3. No successful vehicle refresh or visual effect is established. Do not repeat r9 as a refresh fix."
+}

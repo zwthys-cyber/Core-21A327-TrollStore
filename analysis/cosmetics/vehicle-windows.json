@@ -49,5 +49,11 @@
     ,{"label": "vehicle actor skin apply", "offset": "0x5a403e4", "length": "0x1800"}
     ,{"label": "vehicle actor skin callback", "offset": "0x5a81310", "length": "0x100"}
     ,{"label": "vehicle actor native Tick body", "offset": "0x5a40be0", "length": "0x1200"}
+    ,{"label": "vehicle master avatar handle getter", "offset": "0x47f5f9c", "length": "0x500"}
+    ,{"label": "vehicle avatar handle by slot getter", "offset": "0x47f27d0", "length": "0x600"}
+    ,{"label": "vehicle use DoRepOnce native predicate", "offset": "0x5aac7f4", "length": "0x600"}
+    ,{"label": "avatar base component tick", "offset": "0xa314ef0", "length": "0x600"}
+    ,{"label": "vehicle avatar OnRep initialization", "offset": "0x47ebb2c", "length": "0x800"}
+    ,{"label": "vehicle avatar OnRep tail", "offset": "0x47ef090", "length": "0x380"}
   ]
 }
