@@ -18,7 +18,7 @@ typedef struct {
     CCPVehicleStatus status;
     uint32_t skin, previousSkin, pendingSkin, realSkin, defaultSkin;
     uint32_t count;
-    uint64_t onrepRVA, tickRVA;
+    uint64_t onrepRVA, tickRVA, vehicleTableRVA, avatarTableRVA;
     uint8_t refreshPending;
     CCPVehicleItem items[CCP_MAX_VEHICLE_SLOTS];
 } CCPVehicleSample;
@@ -33,18 +33,21 @@ static inline bool CCPVehicleChain(CCPReader reader, uint64_t pawn, uint64_t *ve
 static inline bool CCPReadVehicle(CCPReader reader, uint64_t game, uint64_t pawn, CCPVehicleSample *out) {
     if (!out) return false;
     memset(out, 0, sizeof(*out));
-    uint64_t vehicle = 0, avatar = 0, outer = 0, table = 0, onrep = 0, tick = 0;
+    uint64_t vehicle = 0, avatar = 0, outer = 0, table = 0, vehicleTable = 0, onrep = 0, tick = 0;
     if (!CCPPointer(pawn) || !CCPReadBytes(reader, pawn + CCP_VEHICLE_OFFSET, &vehicle, 8) || !CCPPointer(vehicle)) {
         out->status = CCPVehicleUnavailable; return false;
     }
     if (!CCPVehicleChain(reader, pawn, &vehicle, &avatar)) {
         out->status = CCPVehicleOwnerUnconfirmed; return false;
     }
+    if (CCPReadBytes(reader, vehicle, &vehicleTable, 8) && vehicleTable >= game && vehicleTable - game < 0x120E0000)
+        out->vehicleTableRVA = vehicleTable - game;
     if (!CCPReadBytes(reader, avatar, &table, 8) || !CCPPointer(table) || table < game || table - game >= 0x120E0000 ||
         !CCPReadBytes(reader, table + 0xD18, &onrep, 8) ||
         !CCPReadBytes(reader, table + 0x4C0, &tick, 8)) {
         out->status = CCPVehicleMethodsUnconfirmed; return false;
     }
+    out->avatarTableRVA = table - game;
     if (onrep >= game && onrep - game < 0xAF23BE4) out->onrepRVA = onrep - game;
     if (tick >= game && tick - game < 0xAF23BE4) out->tickRVA = tick - game;
     if ((onrep != game + 0x47EE7C8 && onrep != game + 0x881F248) || tick != game + 0x42E4F28) {

@@ -29,6 +29,7 @@ static void Setup(void) {
     memset(&f, 0, sizeof(f));
     Put64(Pawn + CCP_VEHICLE_OFFSET, Base + Vehicle);
     Put64(Vehicle + CCP_VEHICLE_AVATAR_OFFSET, Base + Avatar);
+    Put64(Vehicle, Base + Table + 0x2000);
     Put64(Avatar + 0x20, Base + Vehicle); Put64(Avatar + 0x10B8, Base + Vehicle);
     Put64(Avatar, Base + Table); Put64(Table + 0xD18, Base + 0x47EE7C8); Put64(Table + 0x4C0, Base + 0x42E4F28);
     CCPArray array = {Base + Entries, 2, 2}; memcpy(f.bytes + Avatar + CCP_VEHICLE_SYNC_OFFSET, &array, sizeof(array));
@@ -51,6 +52,7 @@ int main(void) {
     assert(sample.items[0].type == 16 && sample.items[0].item == 3306003 && sample.items[0].updateCounter == 7);
     assert(sample.items[1].item == 0 && sample.items[1].updateCounter == 8 && sample.defaultSkin == 3306003);
     assert(sample.onrepRVA == 0x47EE7C8 && sample.tickRVA == 0x42E4F28);
+    assert(sample.vehicleTableRVA == Table + 0x2000 && sample.avatarTableRVA == Table);
     Setup(); Put64(Table + 0xD18, Base + 0x881F248); assert(CCPReadVehicle(reader, Base, Base + Pawn, &sample));
     Setup(); Put64(Pawn + CCP_VEHICLE_OFFSET, 0); Failed(reader, CCPVehicleUnavailable);
     Setup(); Put64(Avatar + 0x20, Base + Pawn); Failed(reader, CCPVehicleOwnerUnconfirmed);

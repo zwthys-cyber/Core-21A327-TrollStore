@@ -93,6 +93,8 @@ static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t 
         @"vehicle-avatar-owner-unconfirmed", @"vehicle-refresh-methods-unconfirmed",
         @"vehicle-sync-array-unconfirmed", @"vehicle-changed-during-sample"];
     if (!sampled) return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
+        @"vehicle_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.vehicleTableRVA],
+        @"avatar_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.avatarTableRVA],
         @"avatar_onrep_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.onrepRVA],
         @"avatar_tick_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.tickRVA]};
     NSMutableArray *items = [NSMutableArray arrayWithCapacity:sample.count];
@@ -108,6 +110,8 @@ static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t 
         @"default_skin_id": @(sample.defaultSkin), @"sync_item_count": @(sample.count), @"sync_items": items,
         @"master_item_matches_vehicle_skin": @(sample.items[0].item == sample.skin),
         @"avatar_refresh_pending": @(sample.refreshPending),
+        @"vehicle_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.vehicleTableRVA],
+        @"avatar_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.avatarTableRVA],
         @"avatar_onrep_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.onrepRVA],
         @"avatar_tick_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.tickRVA]};
 }
