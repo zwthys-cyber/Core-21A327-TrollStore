@@ -34,5 +34,9 @@
     ,{"label": "base character controller resolver", "offset": "0x3da2d20", "length": "0x200"}
     ,{"label": "native object validity helper", "offset": "0x36262e4", "length": "0x200"}
     ,{"label": "vehicle-user concrete constructor", "offset": "0x4d9c69c", "length": "0x400"}
+    ,{"label": "sparse component bit iterator constructor", "offset": "0x27026c8", "length": "0x200"}
+    ,{"label": "sparse component bit iterator advance", "offset": "0x2702724", "length": "0x200"}
+    ,{"label": "resolved source object native class", "offset": "0x6f37508", "length": "0x200"}
+    ,{"label": "vehicle-user base constructor", "offset": "0x4d9c040", "length": "0x500"}
   ]
 }
