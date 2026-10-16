@@ -31,7 +31,10 @@
   "character_F50_used": false,
   "vtable_patching": false,
   "native_request_consumption_device_verified": false,
+  "device_trial_evidence": "device-evidence-r9.json",
+  "device_trial_outcome": "Writes confirmed; request remained pending in all five apply observations, cache stayed at 1, native skin fields stayed original",
+  "original_master_and_owned_pending_restoration_device_verified": true,
   "visual_effect_device_verified": false,
   "restoration_device_verified": false,
-  "limitation": "Copies an observed native data request, not the complete OnRep function. Binary-only review has not proven that this request independently triggers the game's refresh consumer."
+  "limitation": "Copies an observed native data request, not the complete OnRep function. The r9 device report confirms writes but shows no request consumption under the tested conditions. The original master and owned pending request were restored/cleared; counter advances intentionally remain. Native visual application/restoration is not established."
 }

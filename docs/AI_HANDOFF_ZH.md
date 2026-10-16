@@ -38,7 +38,7 @@
 
 - 在训练场车辆驾驶位操作过车辆采集。
 - 游戏有换车辆皮肤的按钮，但账号没有车辆皮肤。
-- 采集普通车不需要买车皮，也不需要点游戏内换肤按钮。r8 已取得普通车辆的稳定样本，尚未开始车辆外观写入。
+- 采集普通车不需要买车皮，也不需要点游戏内换肤按钮。r8 已取得普通车辆的稳定样本；r9 写入已成功，但本次请求未被原生流程消费。
 
 ## 3. 工作区、分支和当前代码状态
 
@@ -52,7 +52,7 @@
 | 最新试换代码 | `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`，r9 |
 | 最近有用户实机报告的代码 | `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`，r9，写入确认、请求未消费 |
 | r8 | **只读取车路径及当前车辆布局已有实机样本；尚未修改车辆外观** |
-| r9 | **单车待换肤数据请求和恢复已实现，尚无实机画面与消费确认** |
+| r9 | **实机确认数据写入和未消费请求清理；原生刷新未触发，画面效果未确认** |
 
 本文提交之后，HEAD 会再多出文档提交；识别最新可安装包时，以构建对应的 `headSha` 为准，不要把分析或文档提交当成新安装包。
 
@@ -85,7 +85,7 @@
 | r6 | 新增“车辆适配 → 采集车辆”，尝试从角色 `+0x3710` 取得当前车 | 用户坐驾驶位仍失败，39 次和 17 次采样都无车辆；该直接候选路径未成立 |
 | r7 | 改读“载具使用组件”缓存，再取组件中的 Vehicle；增加阶段诊断、上下文和最近 12 次历史 | 用户最新报告 30 次仍失败；缓存字段可读，但未取得有效组件；车辆采集仍未成功 |
 | r8 | 云端确认中间对象为 STExtraPlayerController；核对当前角色与控制器，按原生稀疏位图查找控制器所属组件；允许原皮车辆的空外观数组 | 用户报告 8/8 次成功：3349001、11 槽位、控制器及组件归属一致；车辆写入仍未实现 |
-| r9 | 固定 3349001→3349002，提交主槽 / 更新计数 / Pending 数据请求，约 15 秒后恢复并记录原生字段 | 属于限时实验；请求单独消费、画面变化和恢复仍需用户手机报告 |
+| r9 | 固定 3349001→3349002，提交主槽 / 更新计数 / Pending 数据请求，约 15 秒后恢复并记录原生字段 | 用户报告三项写入成功；5 次观察 Pending 未消费、缓存计数始终 1；最后还原主槽并清理请求，没有换肤成功证据 |
 
 实机证据文件：
 
@@ -111,7 +111,7 @@
 - 会话、目标、角色、数组、物品实例与预期值检查；失败时停止写入。
 - 服装报告、只读武器候选、车辆采集入口和车辆失败诊断。
 - r8 控制器解析和稀疏组件查找已有实机确认：8 次采集成功，当前车 3349001。
-- r9 单车数据请求试换、三字段比较写和恢复记录；没有真实画面结果。
+- r9 单车三字段比较写、主槽还原及未消费请求清理已有实机报告；没有真实画面成功结果。
 
 ### 尚未完成
 
@@ -295,7 +295,7 @@ arm64e 本地函数指针通过 `ptrauth_sign_unauthenticated` 与正确 C ABI �
 
 ### 11.1 车辆外观组件的静态候选
 
-这些结构尚未取得成功实机车辆样本：
+以下结构最初来自静态候选，随后已被 r8 / r9 当前车型的实机报告支持：
 
 - Vehicle actor 的 AvatarComponent 候选字段：`+0x1ED8`。
 - VehicleAvatar 的 OwnerVehicle：`+0x10B8`。
@@ -308,7 +308,7 @@ arm64e 本地函数指针通过 `ptrauth_sign_unauthenticated` 与正确 C ABI �
 - Vehicle actor 皮肤候选字段：Pending `+0x20AC`、Skin `+0x20B0`、Pre `+0x20B4`、Real `+0x20B8`。
 - VehicleAvatar `DefaultAvatarID` 位于 `+0x10A0`，当前读取它的 ID 部分 `+4`。
 
-**现有证据不足以证明把车辆组件 F50 写成 1 就能像衣服一样刷新。车辆没有实现任何外观写入。**
+**车辆组件的 C68 只清除 F50，不执行车辆 OnRep，不能套用衣服的刷新方式。r9 已实现主槽 / 计数 / Pending 写入，但本次实机未触发原生消费。**
 
 早期分析窗口中出现的 `0x5E33CE8` 曾被误标成车辆 Actor OnRep；该函数访问疑似武器组件的 `+0x1748` 等字段，归属未确认，配置现在已改名为 `unclassified actor OnRep; ownership unconfirmed`。不要拿它直接实现车辆刷新。
 
@@ -374,7 +374,7 @@ r6 把角色上的 `+0x3710` 反射候选直接用于取车。它把读取失败
 - 该表 `+0x1528` 确实为 `0x4C1158C`。
 - `0x4C1158C` 调用 `0x3DA2D20`，结果为空时取输入对象 `+0x60C8`。
 - `0x3DA2D20` 先取输入对象 `+0x608`，调用类型判断 helper `0x36262E4`，失败后另有回退流程。后续 r8 云端读取类名字面量确认：这是 `STExtraPlayerController` 类型判断，并非普通有效性函数。
-- `GetVehicleOfCharacter` 的中间对象是 controller，不能继续假设组件来源必定属于 pawn。r8 已据此实现受类型、Core 当前控制器和当前 pawn 约束的来源解析；尚未通过实机确认。
+- `GetVehicleOfCharacter` 的中间对象是 controller，不能继续假设组件来源必定属于 pawn。r8 已据此实现受类型、Core 当前控制器和当前 pawn 约束的来源解析，并由后续手机报告确认。
 - pawn vtable `+0x8B8` 为 `0xA2EE5D8`。它先检查输入对象 `+0x658` 的特殊组件，类型不匹配后跳到通用 Actor 组件查找 `0xA149148`。
 - `0xA149148` 迭代 Actor 的组件集合：相关字段 `actor+0x440`、位标记相关 `+0x450` 和 `+0x468`；组件项步长 16。类型判断读取组件 UObject 的 class `+0x10`，以及 class 的 `+0x88` / `+0x90` 继承缓存。
 - 位标记迭代 helper 是 `0x27026C8`、`0x2702724`。后续 r8 已在云端审查：内联位图 `+0x450`，堆位图指针 `+0x460`，位数量 `+0x468`，容量 `+0x46C`；不是普通 TArray。
@@ -410,7 +410,7 @@ r8 使用 `pawn+0x608` 并做原生 IsA 核对；必要时只接受与 Core 缓�
 
 构建代码 `b49e157`，Actions `38935444227` 成功。用户后续报告已确认车辆只读采集成功，见下节。具体安装和测试见 `docs/cosmetics-r8.md`。
 
-### 11.7 r8 实机采集成功：当前最新反馈
+### 11.7 r8 实机采集成功
 
 用户粘贴的报告 `captured_at_unix=1792170414.141237`，schema / probe revision 8，8 次尝试取得 8 个成功样本，`finish_reason=capture-complete`。八次数据一致，压缩摘要保存在 `analysis/cosmetics/device-evidence-r8.json`。
 
@@ -441,11 +441,19 @@ r9 只写主槽 ID、递增主槽 `+0x1C` 计数、Vehicle.PendingVehicleSkinID�
 
 证据摘要：`analysis/cosmetics/device-evidence-r9.json`。不要让用户再次找同款车重复相同试换来代替代码修正；下一步在云端查车辆 Handle / 原生刷新调度。
 
+### 11.10 后续云端分析被 GitHub 账号计费阻止
+
+提交 `5c3c868c3b8e70d9cb08ad6d9d9dfa62a21d9baa` 已记录 r9 证据，并在 `vehicle-windows.json` 增加主 Handle getter、按槽位 Handle getter、VehicleUseDoRepOnce 原生判断、基类组件 Tick 和车辆 OnRep 初始化 / 尾部六组窗口。
+
+专项分析 run `38962343474` / job `117180265753` 没有启动任何步骤，GitHub annotation 原文：`The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings`。同次触发的全量分析 `38962343486` 也未成功。本次没有新反汇编、测试或安装包。
+
+需要用户在 GitHub 账号 Billing & plans 中处理失败付款或 Actions 消费上限；不要自行更改付费设置、公开私有输入或改用本服务器执行分析。恢复云端执行后，可用 `gh run rerun 38962343474 --repo zwthys-cyber/Core-21A327-TrollStore` 重跑已提交的专项分析，再下载 `Core-vehicle-review`，重点追踪 `0x47F5F9C`、`0x47F27D0`、`0x5AAC7F4`、`0xA314EF0`、`0x47EBB2C`，核对 Handle 的实际消费与对象归属。当前没有足够证据实现新的刷新写入。
+
 ## 12. 下一位 AI 的建议接手顺序
 
 1. 先读 `AGENTS.md`、本文，查看分支与工作区状态。不要重跑本机编译或分析。
 2. r8 采集已经成功，不必让用户重复发同一辆车的只读报告；先读 `device-evidence-r8.json`。
-3. 读取 r9 `single-vehicle-request-trial` 报告及用户画面观察；先看 apply.prepare_stage，再分开看写入、Pending 消费和原生 Skin / Real 字段。
+3. 先读 `device-evidence-r9.json`：当前写入成功，但 Pending 未消费、缓存计数一直 1。下一步分析被 GitHub 计费阻止，先恢复 Actions 执行，再核对 Handle / 原生刷新入口。
 4. 在云端分析中以实机 Vehicle vtable `0x10EBC1680` 为依据，不能直接套用角色 F50、调用未经确认的函数或修改能力标志。
 5. 若 r9 主槽 / Pending 写成 3349002、原生 Skin / Real 却一直为 3349001，不能宣称生效；下一步核对真实消费者。静态主程序未证明 Pending 字段单独可驱动完整刷新，不能盲目重复相同请求或套用衣服的 F50。
 6. r9 已写入主槽 ID、主槽计数（递增）和 Vehicle.PendingVehicleSkinID；原生 Skin / Real / Default 只读。保持修改范围，且未恢复的记录会阻止新试换。退出或换车导致归属改变时不能强写旧地址。
@@ -491,7 +499,7 @@ gh run download RUN_ID --repo zwthys-cyber/Core-21A327-TrollStore --name ARTIFAC
 | r6 | `38928395631` | 代码 `277dc7b0463bf9b025edf3f066d202eb7cd5ae4a`；artifact `Core-cosmetics-vehicle-r6` |
 | r7 | `38930863902` | 代码 `efecabbd0fdf0acbbe75f93b496bf575ddf3867b`；artifact `Core-cosmetics-vehicle-r7` |
 
-最新 r9（build 20.9，ProbeVersion 9，数据请求实验尚待手机报告）：
+最新可安装 r9（build 20.9，ProbeVersion 9，手机已确认数据写入但请求未消费；后续尚无新包）：
 
 ```text
 /root/和平精英/Core车辆试换-r9/Core-17.0-21A327-cosmetics-vehicle-r9.ipa
@@ -557,4 +565,4 @@ r9 试换入口在同一页的“宾利试换15秒” / “恢复原车”。试
 - 忽略主分支 v19 与美化 feature 分支的不同构建路径。
 - 在给用户的新版本说明中写“车辆已修好”，却只做了只读采集或模拟内存测试。
 
-接手时最短摘要：**r8 取车已实机成立，实际走 pawn+0x60C8 控制器回退；r9 已实现 3349001→3349002 的三字段数据请求及 15 秒恢复，等待手机反馈。Pending 请求独立消费与画面刷新未证明；下一步依据 r9 报告和画面确认，不重做取车、不把请求回读当作换肤成功。**
+接手时最短摘要：**r8 取车已实机成立，实际走 pawn+0x60C8 控制器回退；r9 实机写入成功，但 Pending 未消费、缓存计数停在 1，最后主槽还原并清理请求。真正刷新入口仍需分析，专项分析 38962343474 因 GitHub 账号付款 / 消费上限未启动。处理计费后重跑该任务；不要在本机编译分析，不要重复让用户找车，不要把数据写入成功当成换肤成功。**
