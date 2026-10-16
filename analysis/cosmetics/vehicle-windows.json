@@ -84,5 +84,6 @@
     ,{"label": "vehicle pendant getter return class", "offset": "0x61f6afc", "length": "0x180"}
     ,{"label": "loaded item handle native class getter", "offset": "0x74bb1dc", "length": "0x180"}
     ,{"label": "base avatar entity native method registration", "offset": "0x61142e8", "length": "0x500"}
+    ,{"label": "loaded item handle actual class getter", "offset": "0x74bb434", "length": "0x180"}
   ]
 }
