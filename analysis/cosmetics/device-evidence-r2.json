@@ -1,0 +1,22 @@
+{
+  "source": "user-pasted r2 capture, 2026-10-16",
+  "game_version": "1.38.12",
+  "game_build": "15915",
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "initial_not_ready_samples": 7,
+  "successful_samples": 1,
+  "avatar_onrep_rva": "0x43d2eb0",
+  "sync_item_count": 30,
+  "client_item_count": 0,
+  "write_check": {
+    "status": "same-value-write-confirmed",
+    "native_status": 1,
+    "written_bytes": 4,
+    "readback_stable": true,
+    "capability_a": 1,
+    "capability_b": 1,
+    "primitive_ready_bit": 1
+  },
+  "write_interface_device_validated": true,
+  "appearance_refresh_device_validated": false
+}

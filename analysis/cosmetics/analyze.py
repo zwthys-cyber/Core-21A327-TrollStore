@@ -10,6 +10,7 @@ import struct
 import zipfile
 
 from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
+from capstone.arm64 import ARM64_OP_MEM
 
 GAME_SHA256 = "93e52106e465717b43ea13c65ff5ee8e5d392696f90fe3bfaa90fd9069aeb280"
 GAME_UUID = "34b785b20dab3992985d359e6bf45585"
@@ -286,6 +287,19 @@ def main():
                 references.append(dict(name=targets[target], instruction=hex(pc), target=hex(target)))
     (args.output / "serialization-code-references.json").write_text(json.dumps(references, indent=2) + "\n")
     windows = []
+    decoder = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+    decoder.detail = True
+    field_references = []
+    region = 0x10439F000
+    offset = game.offset(region)
+    for instruction in decoder.disasm(game.data[offset:offset + 0x61000], region):
+        for operand in instruction.operands:
+            if operand.type == ARM64_OP_MEM and operand.mem.disp in [0xF50, 0xF7A, 0x18C8, 0x11A0]:
+                field_references.append(dict(address=hex(instruction.address), offset=hex(operand.mem.disp),
+                    instruction=f'{instruction.mnemonic} {instruction.op_str}'))
+                windows.append((f'character appearance field {operand.mem.disp:#x}', game,
+                                instruction.address - 0x80, 0x280))
+    (args.output / 'avatar-refresh-field-references.json').write_text(json.dumps(field_references, indent=2) + '\n')
     virtual_tables = []
     for label, address, length in [("character avatar", 0x10E6189A8, 0x13A8),
                                     ("weapon avatar", 0x10E6DEAB0, 0x1008)]:
