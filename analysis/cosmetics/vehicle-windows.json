@@ -2,12 +2,14 @@
   "terms": ["VehicleAvatarComponent", "VehicleAvatarComp", "VehicleSkinID", "CurrentVehicle", "ReplicatedVehicle", "GetVehicleAvatarComponent", "GetVehicleSkinID", "CurVehicleSkinID", "RealVehicleSkinID", "PreVehicleSkinID", "PendingVehicleSkinID", "VehicleAvatarItemList", "RepVehicleAvatarItemList", "OnRep_VehicleAvatarItemList", "DoReponceVehicleAvatarItemList", "VehicleUseDoRepOnce", "OnRep_AvatarMeshChanged", "AvatarMeshChangedVehicle", "GetCurrentVehicle", "GetVehicleAvatarSyncDataIDBySlot", "GetVehicleAvatarSyncDataBySlot", "GetMasterVehicleAvatarHandle", "GetVehicleCommon", "GetVehicleUserComponent", "VehicleUserComponent", "OwnerVehicle", "VehicleCommon", "VehicleSeatIdx", "VehicleUserState", "GetVehicleOfCharacter"],
   "property_regions": [
     {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
-    {"label": "vehicle avatar candidate", "start": "0x10fc59000", "end": "0x10fc5b800"}
+    {"label": "vehicle avatar candidate", "start": "0x10fc58000", "end": "0x10fc59b00"}
   ],
   "pointer_tables": [],
   "windows": [
     {"label": "vehicle avatar native registration", "offset": "0x7238f60", "length": "0x600"},
     {"label": "vehicle avatar reflected constructor", "offset": "0x7241944", "length": "0x400"},
     {"label": "vehicle avatar getter implementation", "offset": "0x4148404", "length": "0x200"}
+    ,{"label": "vehicle avatar constructor implementation", "offset": "0x47eba30", "length": "0x1000"}
+    ,{"label": "vehicle avatar item getter implementation", "offset": "0x47f5c88", "length": "0x480"}
   ]
 }
