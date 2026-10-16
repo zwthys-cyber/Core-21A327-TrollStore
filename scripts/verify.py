@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check instruction preservation, load dependencies, architectures and TrollStore signing."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -7,7 +8,7 @@ import plistlib
 import struct
 import sys
 import zipfile
-from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup, inject, PATCH_VERSION, BUNDLE_BUILD
+from build import commands, LOAD_PATH, CORE_UUID, ROOT, validate_patch_dependency, disable_license_startup, inject, PATCH_VERSION, BUNDLE_BUILD, COSMETICS_BUNDLE_BUILD
 from remote_imports import ALIASES, redirect_remote_imports, records
 from minimal_features import PROFILE, minimal_core
 
@@ -60,7 +61,7 @@ def signature(data):
     raise AssertionError("No embedded signature")
 
 
-def main(ipa):
+def main(ipa, cosmetics_probe=False):
     with zipfile.ZipFile(ipa) as archive, zipfile.ZipFile(ROOT / "input/Core.ipa") as original:
         app = "Payload/Core.app/"
         main = archive.read(app + "Core")
@@ -151,7 +152,13 @@ def main(ipa):
             assert archive.read(name) == original.read(name), f"Resource changed: {name}"
         info = plistlib.loads(archive.read(app + "Info.plist"))
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
-        assert info["CFBundleVersion"] == BUNDLE_BUILD and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
+        assert info["CFBundleVersion"] == (COSMETICS_BUNDLE_BUILD if cosmetics_probe else BUNDLE_BUILD)
+        assert info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
+        if cosmetics_probe:
+            assert info["CoreCosmeticsProbeVersion"] == "1" and info["CoreCosmeticsMode"] == "read-only-adaptation"
+            assert b"CCPCosmeticsController\0" in patch_library
+        else:
+            assert "CoreCosmeticsProbeVersion" not in info and b"CCPCosmeticsController\0" not in patch_library
         assert info["CoreFeatureProfile"] == PROFILE
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
@@ -161,4 +168,8 @@ def main(ipa):
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("ipa", type=Path)
+    parser.add_argument("--cosmetics-probe", action="store_true")
+    args = parser.parse_args()
+    main(args.ipa, args.cosmetics_probe)

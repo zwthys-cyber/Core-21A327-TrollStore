@@ -20,6 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-probe-r1.ipa"
+COSMETICS_BUNDLE_BUILD = "20.1"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -180,6 +182,7 @@ def main():
     parser.add_argument("--clang", default="clang-21")
     parser.add_argument("--linker", default="ld64.lld-21")
     parser.add_argument("--ldid", type=Path)
+    parser.add_argument("--cosmetics-probe", action="store_true", help="Include the read-only 1.38.12 adaptation sampler")
     args = parser.parse_args()
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
     if original_hash != INPUT_SHA256:
@@ -200,6 +203,9 @@ def main():
     probe = app / "CoreBootProbe"
     source = ROOT / "patch/CoreBootCache.m"
     trace_source = ROOT / "patch/CoreRemoteTrace.c"
+    sources = [source, trace_source]
+    if args.cosmetics_probe:
+        sources.append(ROOT / "patch/CoreCosmeticsProbe.m")
     probe_source = ROOT / "patch/CoreBootProbe.m"
     common = ["-arch", "arm64e", "-miphoneos-version-min=17.0", "-O2", "-Wall", "-Wextra",
               "-Werror", "-Wno-unused-parameter", "-fobjc-arc", "-fblocks"]
@@ -208,7 +214,7 @@ def main():
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
             "-Wl,-install_name,@executable_path/CoreBootCache.dylib", "-framework", "Foundation",
             "-Wl,-current_version,1.0.0,-compatibility_version,1.0.0",
-            "-framework", "UIKit", "-framework", "IOKit", "-framework", "Security", source, trace_source, "-o", dylib)
+            "-framework", "UIKit", "-framework", "IOKit", "-framework", "Security", *sources, "-o", dylib)
         run("xcrun", "--sdk", "iphoneos", "clang", "-arch", "arm64", *common[2:],
             "-isysroot", sdk, "-framework", "Foundation", "-framework", "IOKit", probe_source, "-o", probe)
     else:
@@ -220,11 +226,17 @@ def main():
         trace_obj = work / "CoreRemoteTrace.o"
         run(args.clang, "-target", "arm64e-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
             "-c", trace_source, "-o", trace_obj)
+        objects = [obj, trace_obj]
+        if args.cosmetics_probe:
+            cosmetics_obj = work / "CoreCosmeticsProbe.o"
+            run(args.clang, "-target", "arm64e-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
+                "-c", ROOT / "patch/CoreCosmeticsProbe.m", "-o", cosmetics_obj)
+            objects.append(cosmetics_obj)
         run(args.linker, "-dylib", "-arch", "arm64e", "-platform_version", "ios", "17.0", "16.5",
             "-syslibroot", args.sdk, "-lSystem", "-lobjc", "-framework", "Foundation", "-framework",
             "UIKit", "-framework", "IOKit", "-framework", "Security", "-install_name", "@executable_path/CoreBootCache.dylib",
             "-current_version", "1.0.0", "-compatibility_version", "1.0.0",
-            "-adhoc_codesign", obj, trace_obj, "-o", dylib)
+            "-adhoc_codesign", *objects, "-o", dylib)
         probe_obj = work / "CoreBootProbe.o"
         run(args.clang, "-target", "arm64-apple-ios17.0", *common[2:], "-isysroot", args.sdk,
             "-c", probe_source, "-o", probe_obj)
@@ -238,6 +250,9 @@ def main():
                 CoreBootCachePatchVersion=str(PATCH_VERSION), CoreBootCacheSupportedBuild="21A327",
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
+    if args.cosmetics_probe:
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="1",
+                    CoreCosmeticsMode="read-only-adaptation")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -260,7 +275,7 @@ def main():
         run(args.ldid, "-S" + str(entitlements), binary)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    artifact = dist / ARTIFACT_NAME
+    artifact = dist / (COSMETICS_ARTIFACT_NAME if args.cosmetics_probe else ARTIFACT_NAME)
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -282,7 +297,8 @@ def main():
                                            backup_limit_bytes=2 * 1024 * 1024, backup_count=1,
                                            retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
-                  build_host=sys.platform, device_runtime_verified=False)
+                  build_host=sys.platform, device_runtime_verified=False,
+                  cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 

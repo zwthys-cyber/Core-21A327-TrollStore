@@ -1,0 +1,17 @@
+name: Build Core cosmetics adaptation
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/kernel-cosmetics]
+    paths:
+      - 'patch/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/build*.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      cosmetics_probe: true
