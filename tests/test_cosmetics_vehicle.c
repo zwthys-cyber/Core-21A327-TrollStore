@@ -102,6 +102,12 @@ int main(void) {
     assert(sample.components.stable && sample.components.slots == 5 && sample.components.occupied == 1);
     assert(sample.vehicleFieldRead && sample.vehicleNonzero && sample.vehiclePointerValid && sample.userCharacterMatches);
     assert(f.legacyReads == 0);
+    // A stock vehicle may have no appearance sync entries or paid skin ID.
+    // Read-only capture must still preserve its scalar fields and ownership.
+    Setup(); CCPArray empty = {0}; memcpy(f.bytes + Avatar + CCP_VEHICLE_SYNC_OFFSET, &empty, sizeof(empty));
+    memset(f.bytes + Vehicle + 0x20AC, 0, 16); Put32(Avatar + 0x10A4, 0);
+    assert(Sample(reader, &sample) && sample.count == 0 && sample.skin == 0 && sample.defaultSkin == 0);
+    assert(f.entryReads == 0 && sample.userCharacterMatches);
     // The legacy caches stay empty. Misleading nonzero values must be ignored too.
     Setup(); Put64(Pawn + 0x47F8, Base + Entries); Put64(Controller + 0x47F8, Base + Entries);
     Put64(Pawn + 0x3710, Base + Entries); assert(Sample(reader, &sample)); assert(f.legacyReads == 0);
@@ -147,7 +153,7 @@ int main(void) {
     Setup(); Put64(Avatar + 0x10B8, Base + Pawn); Failed(reader, CCPVehicleOwnerUnconfirmed);
     Setup(); Put64(Table + 0xD18, Base + 0x43D2EB0); Failed(reader, CCPVehicleMethodsUnconfirmed);
     Setup(); Put64(Table + 0x4C0, Base + 0x43D6D10); Failed(reader, CCPVehicleMethodsUnconfirmed);
-    const int32_t invalid[][2] = {{-1,2}, {0,0}, {17,17}, {2,1}, {2,129}};
+    const int32_t invalid[][2] = {{-1,2}, {0,-1}, {17,17}, {2,1}, {2,129}};
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         Setup(); CCPArray array = {Base + Entries, invalid[i][0], invalid[i][1]};
         memcpy(f.bytes + Avatar + CCP_VEHICLE_SYNC_OFFSET, &array, sizeof(array));

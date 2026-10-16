@@ -29,7 +29,7 @@ typedef struct {
     uint64_t userTableRVA, resolverRVA, sourceTableRVA;
     bool resolverMatches, controllerClassAvailable, userClassAvailable, primaryRead, primaryNonzero, primaryClassMatches;
     bool fallbackRead, usedFallback, controllerPawnRead, controllerPawnMatches, sourceMatchesController, lookupAttempted;
-    bool userAvailable, userOwnerMatches, userCharacterRead, userCharacterMatches;
+    bool userAvailable, userOwnerMatches, userCharacterRead, userCharacterMatches, userCharacterNonzero, userCharacterPointerValid;
     bool vehicleFieldRead, vehicleNonzero, vehiclePointerValid;
     CCPComponentDiagnostic components;
     uint8_t refreshPending;
@@ -104,6 +104,8 @@ static inline bool CCPVehicleSource(CCPReader reader, uint64_t game, uint64_t pa
     out->userOwnerMatches = outer == *actor;
     if (!out->userOwnerMatches) { out->status = CCPVehicleSourceOwnerUnconfirmed; return false; }
     out->userCharacterRead = CCPReadBytes(reader, *user + 0x168, &character, 8);
+    out->userCharacterNonzero = character != 0;
+    out->userCharacterPointerValid = CCPPointer(character);
     out->userCharacterMatches = out->userCharacterRead && character == pawn;
     if (!out->userCharacterMatches) { out->status = CCPVehicleCharacterUnconfirmed; return false; }
     out->vehicleFieldRead = CCPReadBytes(reader, *user + CCP_VEHICLE_USER_CURRENT_OFFSET, vehicle, 8);
@@ -150,16 +152,16 @@ static inline bool CCPReadVehicle(CCPReader reader, uint64_t game, uint64_t pawn
     uint64_t actorAfter = 0, userAfter = 0, vehicleAfter = 0, avatarAfter = 0;
     uint8_t pending = 0;
     if (!CCPReadBytes(reader, avatar + CCP_VEHICLE_SYNC_OFFSET, &first, sizeof(first)) ||
-        first.count < 1 || first.count > CCP_MAX_VEHICLE_SLOTS || first.capacity < first.count ||
-        first.capacity > 128 || !CCPPointer(first.data)) {
+        first.count < 0 || first.count > CCP_MAX_VEHICLE_SLOTS || first.capacity < first.count ||
+        first.capacity > 128 || (first.count && !CCPPointer(first.data))) {
         out->status = CCPVehicleArrayUnconfirmed; return false;
     }
     size_t length = (size_t)first.count * CCP_VEHICLE_STRIDE;
     if (!CCPReadBytes(reader, vehicle + 0x20AC, skin, sizeof(skin)) ||
         !CCPReadBytes(reader, avatar + 0x10A0 + 4, &defaultSkin, 4) ||
         !CCPReadBytes(reader, avatar + 0xF50, &pending, 1) ||
-        !CCPReadBytes(reader, first.data, entries, length) ||
-        !CCPReadBytes(reader, first.data, repeated, length) || memcmp(entries, repeated, length) ||
+        (length && (!CCPReadBytes(reader, first.data, entries, length) ||
+                    !CCPReadBytes(reader, first.data, repeated, length) || memcmp(entries, repeated, length))) ||
         !CCPReadBytes(reader, avatar + CCP_VEHICLE_SYNC_OFFSET, &after, sizeof(after)) ||
         memcmp(&first, &after, sizeof(first)) ||
         !CCPReadBytes(reader, vehicle + 0x20AC, skinAfter, sizeof(skinAfter)) ||

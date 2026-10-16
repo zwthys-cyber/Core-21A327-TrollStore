@@ -15,6 +15,7 @@ typedef enum {
 typedef struct {
     CCPComponentStatus status;
     uint32_t slots, occupied;
+    int32_t dataCount, dataCapacity, bitCount, bitCapacity;
     bool headerRead, bitmapRead, stable, heapBitmap;
 } CCPComponentDiagnostic;
 
@@ -51,6 +52,7 @@ static inline bool CCPFindOwnedComponent(CCPReader reader, uint64_t actor, uint6
     uint64_t data = CCPU64(header), heap = CCPU64(header + 0x20);
     int32_t count = (int32_t)CCPU32(header + 8), capacity = (int32_t)CCPU32(header + 12);
     int32_t bits = (int32_t)CCPU32(header + 0x28), bitCapacity = (int32_t)CCPU32(header + 0x2C);
+    out->dataCount = count; out->dataCapacity = capacity; out->bitCount = bits; out->bitCapacity = bitCapacity;
     if (count < 0 || count > CCP_MAX_COMPONENT_SLOTS || capacity < count || capacity > 1024 ||
         bits != count || bitCapacity < bits || bitCapacity > 4096 ||
         (count && !CCPPointer(data)) || (heap && !CCPPointer(heap)) || (!heap && bits > 128)) {
