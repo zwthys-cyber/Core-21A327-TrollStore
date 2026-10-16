@@ -6,7 +6,8 @@
     {"label": "vehicle-user component candidate", "start": "0x10fcdd000", "end": "0x10fcde800"}
   ],
   "pointer_tables": [
-    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xc68", "0xd18"]},
+    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xa58", "0xc68", "0xd18"]},
+    {"label": "device r8 vehicle vtable", "address": "0x10ebc1680", "length": "0x2000", "disassemble_slots": ["0x4c0", "0x8b8"]},
     {"label": "device r7 local character vtable", "address": "0x10e7b1108", "length": "0x1600", "disassemble_slots": ["0x8b8", "0x1528"]}
   ],
   "field_regions": [
@@ -43,5 +44,7 @@
     ,{"label": "sparse component bit iterator advance", "offset": "0x2702724", "length": "0x200"}
     ,{"label": "resolved source object native class", "offset": "0x6f37508", "length": "0x200"}
     ,{"label": "vehicle-user base constructor", "offset": "0x4d9c040", "length": "0x500"}
+    ,{"label": "vehicle actor skin apply", "offset": "0x5a403e4", "length": "0x1800"}
+    ,{"label": "vehicle actor skin callback", "offset": "0x5a81310", "length": "0x100"}
   ]
 }
