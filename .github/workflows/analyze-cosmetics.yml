@@ -31,9 +31,11 @@ jobs:
           assets = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/releases/{release_id}/assets']))
           for record in manifest['files']:
               name = record['name']
-              matches = [asset for asset in assets if asset['name'] == name]
+              matches = [asset for asset in assets if asset['id'] == record['asset_id']]
               if len(matches) != 1:
                   raise ValueError(f'Expected one analysis input named {name}')
+              if matches[0]['size'] != record['size'] or matches[0]['digest'] != 'sha256:' + record['sha256']:
+                  raise ValueError(f'Input asset digest changed for {name}')
               with (pathlib.Path('analysis-input') / name).open('wb') as output:
                   subprocess.run(['gh', 'api', '-H', 'Accept: application/octet-stream', matches[0]['url']], stdout=output, check=True)
           PY
