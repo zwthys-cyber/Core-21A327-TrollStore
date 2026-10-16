@@ -235,7 +235,53 @@ def main():
                                               raw_qwords=[hex(v) for v in prop]))
         report["reviewed_struct_candidates"].append(record)
     (args.output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    clusters = []
+    for label, start, end in [("character avatar", 0x10EFD4000, 0x10EFD6D00),
+                              ("weapon avatar", 0x10FD10000, 0x10FD19000)]:
+        rows = []
+        for address in range(start, end, 8):
+            offset = game.offset(address)
+            words = [game.qword(offset + 8 * i) for i in range(9)]
+            name = game.string(words[1])
+            if name and 0 < words[0] <= 0x40 and words[2] == 0x45 and 0 < words[4] <= 4096:
+                rows.append(dict(name=name, address=hex(address), tag=words[0],
+                                 offset_candidate=hex(words[6]), raw_qwords=[hex(v) for v in words]))
+        clusters.append(dict(label=label, properties=rows))
+    (args.output / "avatar-property-clusters.json").write_text(json.dumps(clusters, indent=2) + "\n")
+    # Resolve ADRP+ADD references to a small group of serialization strings.
+    # This instruction scan runs only on the Actions runner.
+    targets = {}
+    for term in ["UAEDataTable", "UsedCompressedRowData", "CompressedRowData", "OnRep_AvatarMeshChanged"]:
+        for address in game.string_addresses(term):
+            targets[address] = term
+    pages = {address & ~4095 for address in targets}
+    references = []
+    code = game.data[game.text['offset']:game.text['offset'] + game.text['length']]
+    for index, (word,) in enumerate(struct.iter_unpack('<I', code[:len(code) & ~3])):
+        if word & 0x9F000000 != 0x90000000:
+            continue
+        pc = game.text['address'] + index * 4
+        immediate = ((word >> 5) & 0x7FFFF) << 2 | ((word >> 29) & 3)
+        if immediate & (1 << 20):
+            immediate -= 1 << 21
+        page = (pc & ~4095) + (immediate << 12)
+        if page not in pages:
+            continue
+        register = word & 31
+        for distance in range(1, 5):
+            if index * 4 + distance * 4 + 4 > len(code):
+                break
+            following = struct.unpack_from('<I', code, index * 4 + distance * 4)[0]
+            if following & 0xFFC00000 != 0x91000000 or (following >> 5) & 31 != register:
+                continue
+            target = page + ((following >> 10) & 4095)
+            if target in targets:
+                references.append(dict(name=targets[target], instruction=hex(pc), target=hex(target)))
+    (args.output / "serialization-code-references.json").write_text(json.dumps(references, indent=2) + "\n")
     windows = []
+    for record in references:
+        windows.append((f"game serialization reference: {record['name']}", game,
+                        max(game.text['address'], int(record['instruction'], 16) - 0x80), 0x300))
     for record in properties:
         if "type_constructor_candidate" in record and record["name"] in ["AvatarComponent", "CharacterAvatarComponent", "WeaponAvatarComponent"]:
             windows.append((f"game constructor candidate for {record['name']}", game,

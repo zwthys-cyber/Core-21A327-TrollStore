@@ -1,0 +1,23 @@
+{
+  "source": "user-pasted r1 capture, 2026-10-16",
+  "outfit_description": "初始套装（用户确认）",
+  "game_version": "1.38.12",
+  "game_build": "15915",
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "sample_count": 8,
+  "sync_item_count": 30,
+  "client_item_count": 0,
+  "identical_samples": true,
+  "game_uuid_matches": true,
+  "component_owner_matches": true,
+  "nonzero_sync_slots": [
+    {"slot_index": 1, "type": 4, "type_specific_id": 400014},
+    {"slot_index": 2, "type": 4, "type_specific_id": 40601010},
+    {"slot_index": 5, "type": 4, "type_specific_id": 403251},
+    {"slot_index": 6, "type": 4, "type_specific_id": 404007},
+    {"slot_index": 7, "type": 4, "type_specific_id": 405011},
+    {"slot_index": 11, "type": 4, "type_specific_id": 703001}
+  ],
+  "write_interface_device_validated": false,
+  "appearance_refresh_device_validated": false
+}
