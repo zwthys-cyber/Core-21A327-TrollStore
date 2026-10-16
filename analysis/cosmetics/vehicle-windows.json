@@ -1,10 +1,12 @@
 {
   "terms": ["VehicleAvatarComponent", "VehicleAvatarComp", "VehicleSkinID", "CurrentVehicle", "ReplicatedVehicle", "GetVehicleAvatarComponent", "GetVehicleSkinID", "CurVehicleSkinID", "RealVehicleSkinID", "PreVehicleSkinID", "PendingVehicleSkinID", "VehicleAvatarItemList", "RepVehicleAvatarItemList", "OnRep_VehicleAvatarItemList", "DoReponceVehicleAvatarItemList", "VehicleUseDoRepOnce", "OnRep_AvatarMeshChanged", "AvatarMeshChangedVehicle", "GetCurrentVehicle", "GetVehicleAvatarSyncDataIDBySlot", "GetVehicleAvatarSyncDataBySlot", "GetMasterVehicleAvatarHandle", "GetVehicleCommon", "GetVehicleUserComponent", "VehicleUserComponent", "OwnerVehicle", "VehicleCommon", "VehicleSeatIdx", "VehicleUserState", "GetVehicleOfCharacter"],
-  "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle"],
+  "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle", "VehicleAvatarEntity"],
   "property_regions": [
     {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
     {"label": "vehicle avatar candidate", "start": "0x10fc58000", "end": "0x10fc59b00"},
-    {"label": "vehicle-user component candidate", "start": "0x10fcdd000", "end": "0x10fcde800"}
+    {"label": "vehicle-user component candidate", "start": "0x10fcdd000", "end": "0x10fcde800"},
+    {"label": "current vehicle skin owner metadata", "start": "0x10fc6c000", "end": "0x10fc6d000"},
+    {"label": "vehicle entity owner metadata", "start": "0x10fc91000", "end": "0x10fc92800"}
   ],
   "pointer_tables": [
     {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xa58", "0xc68", "0xd18"]},
@@ -57,5 +59,9 @@
     ,{"label": "vehicle avatar OnRep initialization", "offset": "0x47ebb2c", "length": "0x800"}
     ,{"label": "vehicle avatar OnRep tail", "offset": "0x47ef090", "length": "0x380"}
     ,{"label": "vehicle master handle indexed lookup", "offset": "0x47fad00", "length": "0x600"}
+    ,{"label": "avatar handle indexed lookup", "offset": "0x42dd238", "length": "0x600"}
+    ,{"label": "avatar handle to entity cast", "offset": "0x42d9824", "length": "0x380"}
+    ,{"label": "native vehicle avatar changed callback", "offset": "0x5bd7fb4", "length": "0xa00"}
+    ,{"label": "native vehicle avatar async completion", "offset": "0x5c272c4", "length": "0x600"}
   ]
 }
