@@ -42,6 +42,9 @@ def main():
         tables.append(dict(label=entry['label'], address=hex(address), rows=rows))
     report = dict(status='static-vehicle-candidates-only', runtime_validated=False,
                   properties=properties, functions=functions, clusters=clusters, pointer_tables=tables)
+    report['reviewed_strings'] = [dict(label=entry['label'], address=entry['address'],
+                                      value=image.string(int(entry['address'], 16)))
+                                  for entry in config.get('strings', [])]
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]

@@ -14,6 +14,11 @@
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
   "call_targets": ["0x47ee7c8"],
+  "strings": [
+    {"label": "resolved source class name from native getter", "address": "0x10ceac05a"},
+    {"label": "resolved source class qualified name", "address": "0x10ceac136"},
+    {"label": "vehicle-user class name from native getter", "address": "0x10cf76d3c"}
+  ],
   "windows": [
     {"label": "vehicle avatar native registration", "offset": "0x7238f60", "length": "0x600"},
     {"label": "vehicle avatar reflected constructor", "offset": "0x7241944", "length": "0x400"},
