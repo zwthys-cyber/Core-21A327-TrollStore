@@ -10,11 +10,15 @@
   "field_regions": [
     {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]}
   ],
+  "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
+  "call_targets": ["0x47ee7c8"],
   "windows": [
     {"label": "vehicle avatar native registration", "offset": "0x7238f60", "length": "0x600"},
     {"label": "vehicle avatar reflected constructor", "offset": "0x7241944", "length": "0x400"},
     {"label": "vehicle avatar getter implementation", "offset": "0x4148404", "length": "0x200"}
     ,{"label": "vehicle avatar constructor implementation", "offset": "0x47eac9c", "length": "0x1000"}
     ,{"label": "vehicle avatar item getter implementation", "offset": "0x47f5c88", "length": "0x480"}
+    ,{"label": "vehicle actor OnRep implementation", "offset": "0x5e33ce8", "length": "0x600"}
+    ,{"label": "vehicle base static class", "offset": "0x700b800", "length": "0x300"}
   ]
 }

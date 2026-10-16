@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import struct
 from pathlib import Path
 
 import analyze
@@ -62,6 +63,28 @@ def main():
                 fields.append(dict(address=hex(instruction.address), instruction=instruction.mnemonic + ' ' + instruction.op_str))
                 windows.append(('vehicle field access', instruction.address - 0x80, 0x200))
     report['field_references'] = fields
+    global_references = []
+    wanted = {int(value, 16) for value in config.get('global_field_loads', [])}
+    call_targets = {0x100000000 + int(value, 16) for value in config.get('call_targets', [])}
+    code_offset, code_size = image.text['offset'], image.text['length']
+    code = image.data[code_offset:code_offset + (code_size & ~3)]
+    for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
+        pc = image.text['address'] + index * 4
+        kind = word & 0xFFC00000
+        scale = 4 if kind == 0xB9400000 else 8 if kind == 0xF9400000 else 0
+        displacement = ((word >> 10) & 4095) * scale
+        if scale and displacement in wanted:
+            global_references.append(dict(address=hex(pc), displacement=hex(displacement)))
+            windows.append(('vehicle field load ' + hex(displacement), pc - 0x100, 0x300))
+        if word & 0xFC000000 in (0x14000000, 0x94000000):
+            relative = word & 0x3FFFFFF
+            if relative & (1 << 25):
+                relative -= 1 << 26
+            target = pc + relative * 4
+            if target in call_targets:
+                global_references.append(dict(address=hex(pc), target=hex(target)))
+                windows.append(('vehicle native update caller', pc - 0x100, 0x300))
+    report['global_references'] = global_references
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))
     for record in properties:
