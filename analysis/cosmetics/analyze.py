@@ -31,6 +31,12 @@ TERMS = [
     "UAEDataTable", "UsedCompressedRowData",
     "LobbyCharacter", "LobbyPawn", "PreviewCharacter", "LobbyAvatarComponent",
     "GetLobbyCharacter", "GetPreviewCharacter", "LobbyPlayerController", "LobbyCharacterManager",
+    "VehicleAvatarComponent", "VehicleAvatarComp", "VehicleAvatar", "VehicleSkinID",
+    "VehicleSkinId", "VehicleID", "VehicleId", "VehicleType", "CurrentVehicle",
+    "CurrentVehicleReplicated", "ReplicatedVehicle", "VehicleCommon", "VehicleBase",
+    "OnRep_VehicleAvatar", "OnRep_VehicleSkinID", "OnRep_VehicleSkin",
+    "GetVehicleAvatarComponent", "GetVehicleSkinID", "ChangeVehicleSkin",
+    "SetVehicleSkin", "VehicleSeatComponent", "VehicleUser", "Driver",
 ]
 
 
@@ -219,6 +225,9 @@ def main():
     report['lobby_name_candidates'] = sorted({name.decode('ascii') for name in cstrings.split(b'\0')
         if len(name) <= 160 and b'Lobby' in name and all(32 <= c < 127 for c in name) and
         any(term in name for term in [b'Character', b'Avatar', b'Preview', b'PlayerController'])})[:300]
+    report['vehicle_name_candidates'] = sorted({name.decode('ascii') for name in cstrings.split(b'\0')
+        if len(name) <= 160 and b'Vehicle' in name and all(32 <= c < 127 for c in name) and
+        any(term in name for term in [b'Avatar', b'Skin', b'Current', b'Driver', b'Rep', b'GetVehicle'])})
     # Evidence for the small, read-only device adapter. These bytes are checked
     # again in the final IPA in Actions and before invoking an original entry.
     report["core_adapter_evidence"] = {
@@ -344,7 +353,7 @@ def main():
         windows.append((f"game serialization reference: {record['name']}", game,
                         max(game.text['address'], int(record['instruction'], 16) - 0x80), 0x300))
     for record in properties:
-        if "type_constructor_candidate" in record and record["name"] in ["AvatarComponent", "CharacterAvatarComponent", "WeaponAvatarComponent"]:
+        if "type_constructor_candidate" in record and record["name"] in ["AvatarComponent", "CharacterAvatarComponent", "WeaponAvatarComponent", "VehicleAvatarComponent", "VehicleAvatarComp", "VehicleCommon", "VehicleBase", "CurrentVehicle"]:
             windows.append((f"game constructor candidate for {record['name']}", game,
                             int(record["type_constructor_candidate"], 16), 0x180))
     for record in functions:
