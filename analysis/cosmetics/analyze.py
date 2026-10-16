@@ -211,6 +211,29 @@ def main():
                   function_candidates=functions,
                   unresolved=["property ownership and ABI", "runtime object and item ID validation",
                               "reviewed Core target-process write interface", "appearance refresh semantics"])
+    # Evidence for the small, read-only device adapter. These bytes are checked
+    # again in the final IPA in Actions and before invoking an original entry.
+    report["core_adapter_evidence"] = {
+        "uuid": core.uuid,
+        "entries": {name: {"rva": hex(rva), "prefix": core.data[core.offset(0x100000000 + rva):
+                         core.offset(0x100000000 + rva) + 32].hex()}
+                    for name, rva in [("snapshot", 0x64C7C), ("read", 0x64D04), ("compare_write", 0x620B8)]},
+        "static_configuration": [hex(core.qword(core.offset(0x100AC83F0) + 8 * i)) for i in range(75)],
+    }
+    report["reviewed_struct_candidates"] = []
+    for label, address in [("MeshSynData", 0x10EDC1580), ("ItemDefineID", 0x10FDD8F98)]:
+        offset = game.offset(address)
+        words = [game.qword(offset + 8 * i) for i in range(10)]
+        record = dict(name=label, parameters=hex(address), raw_qwords=[hex(v) for v in words],
+                      runtime_validated=False, properties=[])
+        if words[8] > 32:
+            raise ValueError("Unexpected reviewed structure property count")
+        for i in range(words[8]):
+            pointer = game.qword(game.offset(words[7]) + 8 * i)
+            prop = [game.qword(game.offset(pointer) + 8 * j) for j in range(9)]
+            record["properties"].append(dict(address=hex(pointer), name=game.string(prop[1]),
+                                              raw_qwords=[hex(v) for v in prop]))
+        report["reviewed_struct_candidates"].append(record)
     (args.output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     windows = []
     for record in properties:
