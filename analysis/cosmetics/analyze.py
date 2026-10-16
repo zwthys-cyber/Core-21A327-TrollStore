@@ -222,10 +222,16 @@ def main():
     core_base = next(s["address"] for s in core.segments if s["name"] == "__TEXT")
     for relative, length in [(0xD4A08, 0x500), (0xD59D8, 0x180), (0xC1A04, 0x180)]:
         windows.append((f"original Core at {relative:#x}", core, core_base + relative, length))
+    window_config = json.loads(Path(__file__).with_name("windows.json").read_text())
+    for key, image in [("core", core), ("game", game)]:
+        base = next(s["address"] for s in image.segments if s["name"] == "__TEXT")
+        for entry in window_config[key]:
+            windows.append((f"{key}: {entry['label']}", image,
+                            base + int(entry["offset"], 16), int(entry["length"], 16)))
     lines = []
     visited = set()
     for label, image, address, length in windows:
-        key = (image is core, address)
+        key = (image is core, address, length)
         if key in visited:
             continue
         visited.add(key)

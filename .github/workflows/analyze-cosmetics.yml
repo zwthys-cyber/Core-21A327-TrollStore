@@ -26,8 +26,11 @@ jobs:
           python3 - <<'PY'
           import json, os, pathlib, subprocess
           repo = os.environ['GITHUB_REPOSITORY']
-          assets = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/releases/414807300/assets']))
-          for name in ['ShadowTrackerExtra', 'Info.plist']:
+          manifest = json.loads(pathlib.Path('analysis/cosmetics/inputs.json').read_text())
+          release_id = manifest['release_id']
+          assets = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/releases/{release_id}/assets']))
+          for record in manifest['files']:
+              name = record['name']
               matches = [asset for asset in assets if asset['name'] == name]
               if len(matches) != 1:
                   raise ValueError(f'Expected one analysis input named {name}')
@@ -36,6 +39,8 @@ jobs:
           PY
       - name: Inspect pinned binaries and appearance metadata
         run: python3 analysis/cosmetics/analyze.py --inputs analysis-input --core-ipa input/Core.ipa --output analysis-output
+      - name: Inspect cosmetic pak directories and embedded identifiers
+        run: python3 analysis/cosmetics/pak_inventory.py --inputs analysis-input --output analysis-output
       - uses: actions/upload-artifact@v4
         if: always()
         with:

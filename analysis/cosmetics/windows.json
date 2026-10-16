@@ -1,0 +1,14 @@
+{
+  "core": [
+    {"label": "configuration initialization", "offset": "0xd32d0", "length": "0x180"},
+    {"label": "acquisition context", "offset": "0xd4a08", "length": "0x1800"},
+    {"label": "native acquisition read interface", "offset": "0x64c00", "length": "0x1500"},
+    {"label": "object-chain helper", "offset": "0xd5e60", "length": "0x400"}
+  ],
+  "game": [
+    {"label": "character avatar static class", "offset": "0x6395420", "length": "0x300"},
+    {"label": "weapon avatar static class", "offset": "0x7314b1c", "length": "0x300"},
+    {"label": "character avatar OnRep wrapper", "offset": "0x6391994", "length": "0x100"},
+    {"label": "avatar sync array type", "offset": "0x6102e4c", "length": "0x100"}
+  ]
+}
