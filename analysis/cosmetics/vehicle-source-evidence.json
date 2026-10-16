@@ -1,7 +1,8 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
   "runtime_validated": false,
+  "vehicle_source_read_device_verified": true,
   "device_r6_feedback": {
     "seat_confirmed_by_user": "driver",
     "attempt_counts": [39, 17],
@@ -52,7 +53,8 @@
     "native_IsA": "object Class+0x10; class ancestry pointer+0x88 and depth+0x90",
     "user_character_field": "0x168",
     "legacy_cache_used": false,
-    "device_validated": false
+    "device_validated": true,
+    "device_evidence": "device-evidence-r8.json"
   },
-  "scope": "Read-only vehicle adaptation. Native refresh and vehicle appearance writes remain unimplemented."
+  "scope": "r8 source reading is device verified for vehicle 3349001. r9 implements a scoped pending-field request trial; native consumption, rendering and restoration still require device confirmation."
 }
