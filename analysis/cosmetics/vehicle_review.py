@@ -42,9 +42,13 @@ def main():
         tables.append(dict(label=entry['label'], address=hex(address), rows=rows))
     report = dict(status='static-vehicle-candidates-only', runtime_validated=False,
                   properties=properties, functions=functions, clusters=clusters, pointer_tables=tables)
-    report['reviewed_strings'] = [dict(label=entry['label'], address=entry['address'],
-                                      value=image.string(int(entry['address'], 16)))
-                                  for entry in config.get('strings', [])]
+    report['reviewed_strings'] = []
+    for entry in config.get('strings', []):
+        offset = image.offset(int(entry['address'], 16))
+        data = image.data[offset:offset + 512]
+        end = next((i for i in range(0, len(data) - 1, 2) if data[i:i + 2] == b'\0\0'), None)
+        value = data[:end].decode('utf-16-le') if end is not None else None
+        report['reviewed_strings'].append(dict(label=entry['label'], address=entry['address'], value=value))
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]
