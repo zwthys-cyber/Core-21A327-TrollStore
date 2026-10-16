@@ -18,7 +18,9 @@
     {"label": "vehicle avatar getter implementation", "offset": "0x4148404", "length": "0x200"}
     ,{"label": "vehicle avatar constructor implementation", "offset": "0x47eac9c", "length": "0x1000"}
     ,{"label": "vehicle avatar item getter implementation", "offset": "0x47f5c88", "length": "0x480"}
-    ,{"label": "vehicle actor OnRep implementation", "offset": "0x5e33ce8", "length": "0x600"}
+    ,{"label": "unclassified actor OnRep; ownership unconfirmed", "offset": "0x5e33ce8", "length": "0x600"}
     ,{"label": "vehicle base static class", "offset": "0x700b800", "length": "0x300"}
+    ,{"label": "native GetVehicleOfCharacter implementation", "offset": "0x3a77e8c", "length": "0x500"}
+    ,{"label": "native GetVehicleUserComponent implementation", "offset": "0x58ace78", "length": "0x400"}
   ]
 }
