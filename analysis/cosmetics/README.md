@@ -20,11 +20,14 @@ release remain the working baseline.
 ## Device evidence and current adaptation build
 
 `Build Core cosmetics adaptation` calls the existing macOS build and verification
-workflow with `--cosmetics-probe`. It retains the v19 main executable, feature
-limits, signing permissions and bundle identifier. The default build remains v19.
-The optional injected module now adds an “内核美化” button to the Core app.
-The current artifact is `Core-17.0-21A327-cosmetics-trial-r3.ipa`; installation,
-cloud validation and device feedback steps are in [the r3 guide](../../docs/cosmetics-r3.md).
+workflow with `--cosmetics-probe`. It retains the v19 feature limits, signing
+permissions and bundle identifier. The default build remains v19. r4 makes
+bounded optional native menu changes: restore one sidebar row below Position,
+label it “美化”, and route only its page to the injected C renderer through the
+original authenticated dlsym stub. Other saved page values fall back to
+initialization. There is no separate UIKit button and no runtime code patching.
+The current artifact is `Core-17.0-21A327-cosmetics-menu-r4.ipa`; see
+[the r4 guide](../../docs/cosmetics-r4.md).
 
 The r1 device report contains eight identical, stable samples: 30 sync slots,
 six nonzero IDs and an empty client array. Game UUID and component ownership
@@ -45,7 +48,7 @@ availability and a separate stable readback. Status 3 or 5 must not be treated
 as success just because its low bit is set. Other outfits skip the check.
 The user's r2 report confirmed native status 1, four bytes completed and stable
 readback, with the expected OnRep RVA. The compact record is
-`device-evidence-r2.json`. Appearance refresh remains unvalidated on device.
+`device-evidence-r2.json`.
 
 r3 changes only slot 5 from initial white shirt 403251 to golden-dragon coat
 403188, requests the game's deferred refresh, and attempts restoration after
@@ -55,11 +58,16 @@ for Core/character readiness, checks the binding generation and instance, and
 does not overwrite later game-owned slot changes during restoration.
 `trial-profile.json` records the reviewed game-specific refresh path. GitHub
 analysis confirms the tick consumes the pending flag through its native updater,
-which clears that flag and calls the existing appearance callback. The visual
-effect still requires device feedback; the full packages are not converted.
+which clears that flag and calls the existing appearance callback. The user
+confirmed the golden-dragon coat appeared and then reverted to the white shirt;
+`device-evidence-r3.json` records this report and explicit visual confirmation.
+The full packages are not converted, and the new r4 menu remains unverified on device.
 No game files are changed. The report remains `Documents/Core-cosmetics-probe.json`,
 with `apply`, `observations` and `restore`, without raw addresses, process IDs or
 item instance IDs.
+
+The lobby's character getter/property names were located in the pinned game,
+but their owner chain has not been validated. No lobby write path is enabled.
 
 `catalog_match.py` only downloads the pinned text catalog described by
 `catalog-source.json`. It never executes third-party files. It checks the Git

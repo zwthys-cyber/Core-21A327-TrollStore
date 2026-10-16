@@ -3,7 +3,8 @@
 适用输入为和平精英 1.38.12 / build 15915，UUID
 `34B785B2-0DAB-3992-985D-359E6BF45585`，以及当前 iOS 17.0 / TrollStore
 环境下的 v19 Core。此版只验证一件外套的内存替换和画面刷新；整包转换尚未完成，
-实际画面效果仍待设备反馈。
+用户随后确认金龙外套出现，并恢复为白 T 恤，见 `analysis/cosmetics/device-evidence-r3.json`。
+当前菜单整合版本见 [r4 说明](cosmetics-r4.md)。
 
 ## 安装和试穿
 
