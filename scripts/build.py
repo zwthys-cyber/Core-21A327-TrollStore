@@ -304,6 +304,7 @@ def main():
                   cosmetics_trial_preset="golden-dragon-coat" if args.cosmetics_probe else None,
                   cosmetics_visual_effect_verified=args.cosmetics_probe,
                   cosmetics_visual_verified_revision=3 if args.cosmetics_probe else None,
+                  cosmetics_ui_location="native-menu-below-position" if args.cosmetics_probe else None,
                   cosmetics_menu_device_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     if args.cosmetics_probe:

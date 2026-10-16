@@ -14,13 +14,13 @@ typedef enum { CCPMenuIdle, CCPMenuWaiting, CCPMenuApplied, CCPMenuRestored,
 static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus status,
                                         bool enabled, void (*action)(bool)) {
     const char *titles[] = {
-        "内核美化 · 15 秒试穿###CoreCosmetics",
-        "内核美化 · 等待 Core 和角色就绪###CoreCosmetics",
-        "内核美化 · 试穿中，关闭开关可恢复###CoreCosmetics",
-        "内核美化 · 已恢复白 T 恤###CoreCosmetics",
-        "内核美化 · 请先穿回初始白 T 恤###CoreCosmetics",
-        "内核美化 · 未执行成功，请查看报告###CoreCosmetics",
-        "内核美化 · 等待恢复，请关闭开关重试###CoreCosmetics"
+        "内核美化 · 15 秒试穿",
+        "内核美化 · 等待 Core 和角色就绪",
+        "内核美化 · 试穿中，关闭开关可恢复",
+        "内核美化 · 已恢复白 T 恤",
+        "内核美化 · 请先穿回初始白 T 恤",
+        "内核美化 · 未执行成功，请查看报告",
+        "内核美化 · 等待恢复，请关闭开关重试"
     };
     if ((unsigned)status >= sizeof(titles) / sizeof(titles[0])) status = CCPMenuFailed;
     CCPUIVec origin = {170 * scale, 38 * scale}, size = {476 * scale, 225 * scale};

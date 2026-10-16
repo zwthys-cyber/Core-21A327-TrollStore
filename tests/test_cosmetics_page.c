@@ -9,6 +9,7 @@ static char title[256];
 static void Cursor(const CCPUIVec *p) { position = *p; }
 static bool Begin(const char *text, const CCPUIVec *size, int childFlags, int windowFlags) {
     assert(childFlags == 0 && windowFlags == 0x10);
+    assert(!strstr(text, "###")); // This custom header draws its entire label.
     begins++; dimensions = *size; snprintf(title, sizeof(title), "%s", text); return visible;
 }
 static void End(void) { ends++; }
