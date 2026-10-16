@@ -10,11 +10,12 @@
     {"label": "vehicle entity owner metadata", "start": "0x10fc91000", "end": "0x10fc92800"},
     {"label": "master vehicle avatar entity metadata", "start": "0x10f3f1000", "end": "0x10f3f4000"},
     {"label": "base vehicle avatar entity metadata", "start": "0x10fc5b000", "end": "0x10fc5d000"},
-    {"label": "base avatar entity metadata", "start": "0x10edd0000", "end": "0x10edd2000"},
+    {"label": "base avatar entity metadata", "start": "0x10edd0000", "end": "0x10edd4000"},
     {"label": "master vehicle getter return metadata", "start": "0x10fc54000", "end": "0x10fc55000"}
   ],
   "pointer_tables": [
     {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xa58", "0xc68", "0xd18"]},
+    {"label": "master vehicle avatar entity vtable", "address": "0x10e67a9b8", "length": "0x700", "disassemble_slots": ["0x3a0", "0x3a8", "0x3c0", "0x478", "0x4e0"]},
     {"label": "device r8 vehicle vtable", "address": "0x10ebc1680", "length": "0x2000", "disassemble_slots": ["0x4c0", "0x8b8"]},
     {"label": "device r7 local character vtable", "address": "0x10e7b1108", "length": "0x1600", "disassemble_slots": ["0x8b8", "0x1528"]}
   ],
@@ -75,5 +76,9 @@
     ,{"label": "master vehicle entity native registration", "offset": "0x68ad16c", "length": "0x500"}
     ,{"label": "vehicle entity constructor wrapper", "offset": "0x72419ec", "length": "0x180"}
     ,{"label": "base avatar entity constructor wrapper", "offset": "0x6118550", "length": "0x180"}
+    ,{"label": "base avatar entity native constructor", "offset": "0x42f07ec", "length": "0x600"}
+    ,{"label": "vehicle avatar entity native constructor", "offset": "0x42f0644", "length": "0x200"}
+    ,{"label": "master getter return class", "offset": "0x611b984", "length": "0x180"}
+    ,{"label": "vehicle pendant getter return class", "offset": "0x61f6afc", "length": "0x180"}
   ]
 }
