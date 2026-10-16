@@ -20,7 +20,7 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
     bool enabled, uint32_t selected, unsigned *category, unsigned *page, void (*action)(uint32_t, bool)) {
     const char *states[] = {
         "15 秒试穿", "等待角色", "试穿中", "已恢复原外观",
-        "请先穿戴对应物品", "请查看报告", "等待恢复", "请坐在车内采集", "车辆报告已保存"
+        "请先穿戴对应物品", "请查看报告", "等待恢复", "正在读取车辆", "车辆报告已保存"
     };
     static const uint32_t slots[] = {5,2,6,7,11,0};
     static const char *categories[] = {"外套", "头发", "裤子", "鞋子", "降落伞", "车辆适配"};

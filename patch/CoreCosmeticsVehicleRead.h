@@ -4,7 +4,8 @@
 
 // Reviewed only against the pinned 1.38.12/15915 binary in Actions. Vehicle
 // SynData has a different stride and refresh path from character MeshSynData.
-#define CCP_VEHICLE_OFFSET 0x3710
+#define CCP_VEHICLE_USER_OFFSET 0x47F8
+#define CCP_VEHICLE_USER_CURRENT_OFFSET 0x158
 #define CCP_VEHICLE_AVATAR_OFFSET 0x1ED8
 #define CCP_VEHICLE_SYNC_OFFSET 0x11E8
 #define CCP_VEHICLE_STRIDE 0x30
@@ -12,32 +13,60 @@
 typedef struct { uint32_t type, item, updateCounter; } CCPVehicleItem;
 typedef enum {
     CCPVehicleSampled, CCPVehicleUnavailable, CCPVehicleOwnerUnconfirmed,
-    CCPVehicleMethodsUnconfirmed, CCPVehicleArrayUnconfirmed, CCPVehicleChanged
+    CCPVehicleMethodsUnconfirmed, CCPVehicleArrayUnconfirmed, CCPVehicleChanged,
+    CCPVehicleSourceReadFailed, CCPVehicleSourceUnavailable, CCPVehicleSourceOwnerUnconfirmed,
+    CCPVehiclePointerReadFailed, CCPVehiclePointerInvalid
 } CCPVehicleStatus;
 typedef struct {
     CCPVehicleStatus status;
     uint32_t skin, previousSkin, pendingSkin, realSkin, defaultSkin;
     uint32_t count;
     uint64_t onrepRVA, tickRVA, vehicleTableRVA, avatarTableRVA;
+    uint64_t userTableRVA;
+    bool userFieldRead, userAvailable, userOwnerMatches, vehicleFieldRead, vehicleNonzero, vehiclePointerValid;
     uint8_t refreshPending;
     CCPVehicleItem items[CCP_MAX_VEHICLE_SLOTS];
 } CCPVehicleSample;
 
-static inline bool CCPVehicleChain(CCPReader reader, uint64_t pawn, uint64_t *vehicle, uint64_t *avatar) {
+static inline bool CCPVehicleSource(CCPReader reader, uint64_t pawn, uint64_t *user,
+                                   uint64_t *vehicle, CCPVehicleSample *diagnostic) {
+    CCPVehicleSample scratch = {0};
+    CCPVehicleSample *out = diagnostic ? diagnostic : &scratch;
+    uint64_t outer = 0;
+    // Native helpers 0x4C86960 and 0x3A77E8C resolve a vehicle-user component
+    // before reading its current-vehicle field. Pawn+0x3710 is not this path.
+    out->userFieldRead = CCPPointer(pawn) && CCPReadBytes(reader, pawn + CCP_VEHICLE_USER_OFFSET, user, 8);
+    if (!out->userFieldRead) { out->status = CCPVehicleSourceReadFailed; return false; }
+    out->userAvailable = CCPPointer(*user);
+    if (!out->userAvailable) { out->status = CCPVehicleSourceUnavailable; return false; }
+    if (!CCPReadBytes(reader, *user + 0x20, &outer, 8)) {
+        out->status = CCPVehicleSourceReadFailed; return false;
+    }
+    out->userOwnerMatches = outer == pawn;
+    if (!out->userOwnerMatches) { out->status = CCPVehicleSourceOwnerUnconfirmed; return false; }
+    out->vehicleFieldRead = CCPReadBytes(reader, *user + CCP_VEHICLE_USER_CURRENT_OFFSET, vehicle, 8);
+    if (!out->vehicleFieldRead) { out->status = CCPVehiclePointerReadFailed; return false; }
+    out->vehicleNonzero = *vehicle != 0;
+    if (!out->vehicleNonzero) { out->status = CCPVehicleUnavailable; return false; }
+    out->vehiclePointerValid = CCPPointer(*vehicle);
+    if (!out->vehiclePointerValid) { out->status = CCPVehiclePointerInvalid; return false; }
+    return true;
+}
+static inline bool CCPVehicleOwner(CCPReader reader, uint64_t vehicle, uint64_t *avatar) {
     uint64_t outer = 0, owner = 0;
-    return CCPPointer(pawn) && CCPReadBytes(reader, pawn + CCP_VEHICLE_OFFSET, vehicle, 8) && CCPPointer(*vehicle) &&
-        CCPReadBytes(reader, *vehicle + CCP_VEHICLE_AVATAR_OFFSET, avatar, 8) && CCPPointer(*avatar) &&
-        CCPReadBytes(reader, *avatar + 0x20, &outer, 8) && outer == *vehicle &&
-        CCPReadBytes(reader, *avatar + 0x10B8, &owner, 8) && owner == *vehicle;
+    return CCPPointer(vehicle) && CCPReadBytes(reader, vehicle + CCP_VEHICLE_AVATAR_OFFSET, avatar, 8) && CCPPointer(*avatar) &&
+        CCPReadBytes(reader, *avatar + 0x20, &outer, 8) && outer == vehicle &&
+        CCPReadBytes(reader, *avatar + 0x10B8, &owner, 8) && owner == vehicle;
 }
 static inline bool CCPReadVehicle(CCPReader reader, uint64_t game, uint64_t pawn, CCPVehicleSample *out) {
     if (!out) return false;
     memset(out, 0, sizeof(*out));
-    uint64_t vehicle = 0, avatar = 0, outer = 0, table = 0, vehicleTable = 0, onrep = 0, tick = 0;
-    if (!CCPPointer(pawn) || !CCPReadBytes(reader, pawn + CCP_VEHICLE_OFFSET, &vehicle, 8) || !CCPPointer(vehicle)) {
-        out->status = CCPVehicleUnavailable; return false;
-    }
-    if (!CCPVehicleChain(reader, pawn, &vehicle, &avatar)) {
+    uint64_t user = 0, vehicle = 0, avatar = 0, table = 0, vehicleTable = 0, userTable = 0, onrep = 0, tick = 0;
+    bool sourceOK = CCPVehicleSource(reader, pawn, &user, &vehicle, out);
+    if (out->userAvailable && CCPReadBytes(reader, user, &userTable, 8) && userTable >= game && userTable - game < 0x120E0000)
+        out->userTableRVA = userTable - game;
+    if (!sourceOK) return false;
+    if (!CCPVehicleOwner(reader, vehicle, &avatar)) {
         out->status = CCPVehicleOwnerUnconfirmed; return false;
     }
     if (CCPReadBytes(reader, vehicle, &vehicleTable, 8) && vehicleTable >= game && vehicleTable - game < 0x120E0000)
@@ -56,6 +85,7 @@ static inline bool CCPReadVehicle(CCPReader reader, uint64_t game, uint64_t pawn
     CCPArray first = {0}, after = {0};
     uint8_t entries[CCP_MAX_VEHICLE_SLOTS * CCP_VEHICLE_STRIDE], repeated[sizeof(entries)];
     uint32_t skin[4] = {0}, skinAfter[4] = {0}, defaultSkin = 0;
+    uint64_t userAfter = 0, vehicleAfter = 0, avatarAfter = 0;
     uint8_t pending = 0;
     if (!CCPReadBytes(reader, avatar + CCP_VEHICLE_SYNC_OFFSET, &first, sizeof(first)) ||
         first.count < 1 || first.count > CCP_MAX_VEHICLE_SLOTS || first.capacity < first.count ||
@@ -72,7 +102,8 @@ static inline bool CCPReadVehicle(CCPReader reader, uint64_t game, uint64_t pawn
         memcmp(&first, &after, sizeof(first)) ||
         !CCPReadBytes(reader, vehicle + 0x20AC, skinAfter, sizeof(skinAfter)) ||
         memcmp(skin, skinAfter, sizeof(skin)) ||
-        !CCPVehicleChain(reader, pawn, &outer, &table) || outer != vehicle || table != avatar) {
+        !CCPVehicleSource(reader, pawn, &userAfter, &vehicleAfter, NULL) || userAfter != user || vehicleAfter != vehicle ||
+        !CCPVehicleOwner(reader, vehicleAfter, &avatarAfter) || avatarAfter != avatar) {
         out->status = CCPVehicleChanged; return false;
     }
     out->skin = skin[1]; out->previousSkin = skin[2]; out->pendingSkin = skin[0]; out->realSkin = skin[3];

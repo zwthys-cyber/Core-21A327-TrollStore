@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "runtime_validated": false,
+  "device_r6_feedback": {
+    "seat_confirmed_by_user": "driver",
+    "attempt_counts": [39, 17],
+    "status": "current-vehicle-unavailable",
+    "samples": 0,
+    "limitation": "r6 merged read failures, null pointers and invalid pointers into the same status"
+  },
+  "reviewed_native_path": {
+    "actions_run": 38929870856,
+    "cached_vehicle_user_getter_rva": "0x4c86960",
+    "cache_load_instruction_rva": "0x4c86974",
+    "cache_load_instruction": "ldr x0, [x0, #0x47f8]",
+    "native_vehicle_of_character_rva": "0x3a77e8c",
+    "component_lookup_helper_rva": "0x3965bb4",
+    "current_vehicle_load_instruction_rva": "0x3a77ec8",
+    "current_vehicle_load_instruction": "ldr x0, [x0, #0x158]",
+    "character_cached_vehicle_user_offset": "0x47f8",
+    "vehicle_user_current_vehicle_offset": "0x158",
+    "r6_direct_character_candidate_offset": "0x3710"
+  },
+  "scope": "Read-only vehicle adaptation. Native refresh and vehicle appearance writes remain unimplemented."
+}

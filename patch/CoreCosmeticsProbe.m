@@ -91,8 +91,16 @@ static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t 
     BOOL sampled = CCPReadVehicle(remote, game, pawn, &sample);
     NSArray *statuses = @[@"vehicle-layout-candidate-sampled", @"current-vehicle-unavailable",
         @"vehicle-avatar-owner-unconfirmed", @"vehicle-refresh-methods-unconfirmed",
-        @"vehicle-sync-array-unconfirmed", @"vehicle-changed-during-sample"];
+        @"vehicle-sync-array-unconfirmed", @"vehicle-changed-during-sample",
+        @"vehicle-user-read-failed", @"vehicle-user-component-unavailable", @"vehicle-user-owner-unconfirmed",
+        @"current-vehicle-read-failed", @"current-vehicle-pointer-invalid"];
+    NSDictionary *path = @{@"vehicle_user_field_read": @(sample.userFieldRead),
+        @"vehicle_user_available": @(sample.userAvailable), @"vehicle_user_owner_matches": @(sample.userOwnerMatches),
+        @"current_vehicle_field_read": @(sample.vehicleFieldRead), @"current_vehicle_nonzero": @(sample.vehicleNonzero),
+        @"current_vehicle_pointer_valid": @(sample.vehiclePointerValid)};
     if (!sampled) return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
+        @"vehicle_path": @"character-vehicle-user-component", @"path_diagnostics": path,
+        @"vehicle_user_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.userTableRVA],
         @"vehicle_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.vehicleTableRVA],
         @"avatar_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.avatarTableRVA],
         @"avatar_onrep_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.onrepRVA],
@@ -104,6 +112,8 @@ static NSDictionary *VehicleCandidate(CCPReader remote, uint64_t game, uint64_t 
             @"native_update_counter": @(item.updateCounter)}];
     }
     return @{@"status": statuses[sample.status], @"vehicle_writes_implemented": @NO,
+        @"vehicle_path": @"character-vehicle-user-component", @"path_diagnostics": path,
+        @"vehicle_user_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)sample.userTableRVA],
         @"component_owner_matches": @YES, @"sync_array_stable": @YES,
         @"vehicle_skin_id": @(sample.skin), @"previous_skin_id": @(sample.previousSkin),
         @"pending_skin_id": @(sample.pendingSkin), @"real_skin_id": @(sample.realSkin),
@@ -157,11 +167,25 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
         @"core_world_available": @(CCPPointer(CCPU64(config + 0x370)))};
     if (vehicleOnly) {
         NSDictionary *vehicle = VehicleCandidate(remote, game, pawn);
+        uint64_t controller = CCPU64(config + 0x390), controllerPawn = 0, pawnTable = 0, getter = 0;
+        uint64_t characterAvatar = 0, characterOwner = 0;
+        BOOL controllerRead = CCPPointer(controller) && CCPReadBytes(remote, controller + 0x3540, &controllerPawn, 8);
+        BOOL characterOwnerMatches = CCPReadBytes(remote, pawn + CCP_AVATAR_OFFSET, &characterAvatar, 8) &&
+            CCPPointer(characterAvatar) && CCPReadBytes(remote, characterAvatar + 0x20, &characterOwner, 8) && characterOwner == pawn;
+        BOOL pawnTableRead = CCPReadBytes(remote, pawn, &pawnTable, 8) && pawnTable >= game && pawnTable - game < 0x120E0000;
+        BOOL getterRead = pawnTableRead && CCPReadBytes(remote, pawnTable + 0x1528, &getter, 8) &&
+            getter >= game && getter - game < 0xAF23BE4;
         if (!snapshot(&after) || memcmp(&before, &after, 0x28) ||
             !CCPReadBytes(local, base + 0xC54270, configAfter, sizeof(configAfter)) ||
             CCPU64(configAfter + 0x18) != game || CCPU64(configAfter + 0x3A0) != pawn)
             return @{@"status": @"session-or-character-changed"};
-        return @{@"status": @"vehicle-session-sampled", @"vehicle_candidate": vehicle};
+        return @{@"status": @"vehicle-session-sampled", @"vehicle_candidate": vehicle,
+            @"core_context": @{@"controller_pawn_field_read": @(controllerRead),
+                @"controller_pawn_available": @(controllerRead && CCPPointer(controllerPawn)),
+                @"controller_pawn_matches_cached": @(controllerRead && controllerPawn == pawn),
+                @"character_avatar_owner_matches": @(characterOwnerMatches),
+                @"pawn_vtable_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)(pawnTableRead ? pawnTable - game : 0)],
+                @"character_resolver_rva": [NSString stringWithFormat:@"0x%llx", (unsigned long long)(getterRead ? getter - game : 0)]}};
     }
     uint64_t avatar = 0, outer = 0, vtable = 0;
     if (!CCPReadBytes(remote, pawn + CCP_AVATAR_OFFSET, &avatar, sizeof(avatar)) || !CCPPointer(avatar))
@@ -251,6 +275,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 @interface CCPCosmeticsController : NSObject
 @property(nonatomic, strong) dispatch_queue_t captureQueue;
 @property(nonatomic, strong) NSMutableArray *samples;
+@property(nonatomic, strong) NSMutableArray *vehicleAttempts;
 @property(nonatomic, strong) dispatch_source_t trialTimer;
 @property(nonatomic, strong) NSMutableDictionary *trialReport;
 @property(nonatomic) BOOL trialFinishing;
@@ -460,7 +485,8 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         self.trialGeneration = generation;
         self.trialFinishing = NO;
         self.samples = [NSMutableArray array];
-        self.trialReport = [@{@"schema_version": @6, @"mode": @"vehicle-read-adaptation",
+        self.vehicleAttempts = [NSMutableArray array];
+        self.trialReport = [@{@"schema_version": @7, @"probe_revision": @7, @"mode": @"vehicle-read-adaptation",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"vehicle_writes_implemented": @NO, @"vehicle_appearance_changes_implemented": @NO,
@@ -474,6 +500,12 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     NSDictionary *vehicle = sample[@"vehicle_candidate"] ?: @{@"status": sample[@"status"] ?: @"core-session-unavailable"};
     self.trialReport[@"latest_vehicle"] = vehicle;
     self.trialReport[@"capture_attempts"] = @(attempt + 1);
+    if (sample[@"core_context"]) self.trialReport[@"core_context"] = sample[@"core_context"];
+    NSMutableDictionary *entry = [@{@"attempt": @(attempt + 1), @"status": vehicle[@"status"]} mutableCopy];
+    if (vehicle[@"path_diagnostics"]) entry[@"path_diagnostics"] = vehicle[@"path_diagnostics"];
+    [self.vehicleAttempts addObject:entry];
+    if (self.vehicleAttempts.count > 12) [self.vehicleAttempts removeObjectAtIndex:0];
+    self.trialReport[@"attempt_history"] = self.vehicleAttempts.copy;
     if ([vehicle[@"sync_array_stable"] boolValue]) [self.samples addObject:vehicle];
     self.trialReport[@"samples"] = self.samples.copy;
     self.trialReport[@"status"] = self.samples.count ? @"sampling-current-vehicle" : @"waiting-for-current-vehicle";
