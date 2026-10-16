@@ -15,7 +15,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m pip install --only-binary=:all: capstone==5.0.6
+      - run: |
+          python3 -m pip install --only-binary=:all: capstone==5.0.6
       - run: python3 analysis/cosmetics/inspect_menu.py
       - uses: actions/upload-artifact@v4
         with:
