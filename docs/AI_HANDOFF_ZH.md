@@ -8,7 +8,7 @@
 
 1. 用户明确要求：**不要在这台服务器上验证、编译或运行测试，容易卡死。所有编译、自动化测试、签名核验、游戏二进制分析和反汇编都放在 GitHub Actions。**
 2. 本机只做文本编辑、Git 操作、读取云端分析报告和 CI 日志、下载产物、轻量版本与摘要查看。不要在本机运行 `scripts/build.py`、`scripts/verify.py`、`analysis/cosmetics/analyze.py`、`vehicle_review.py`、PAK 解析、clang、Unicorn 或 unittest。仓库 `AGENTS.md` 已记录此限制。
-3. 仓库是私有仓库。游戏主程序、美化包和原始 Core IPA 不要发布到公开 Release。现有分析输入保存在私有草稿 Release 中。
+3. 用户于 2026-10-16 明确要求将仓库公开以恢复 Actions，已执行并确认 `visibility=PUBLIC`。仓库代码、历史、已发布 Release 及被 Git 跟踪的 `input/Core.ipa` 因此可公开访问。游戏主程序和美化包所在 Release `414807300` 仍保持草稿；不要把该素材草稿发布。账号计费阻碍已解除，专项分析和 r9 完整重新构建均已成功。
 4. 用户希望直接推进工作，不反复询问已授权的常规操作。原生菜单位置已经指定：**Core 的“位置”栏目下面添加“美化”**，不能另做一个与 Core 分离的悬浮面板。
 5. 游戏版本固定为 **和平精英 1.38.12 / build 15915**；手机为 **iOS 17.0 / 21A327、已装 TrollStore（巨魔）**。更换游戏 UUID、版本、Core 输入或系统条件后，旧地址不能直接沿用。
 6. 用户问过哪种方式不易被检测。当前没有“防检测”或“保证不封号”的验证结果，不要作这种承诺。当前美化路线使用已有游戏资源和进程内外观数据，不替换游戏 PAK。
@@ -46,7 +46,7 @@
 |---|---|
 | 工作区 | `/root/Core-21A327-TrollStore` |
 | 用户素材和下载产物 | `/root/和平精英` |
-| GitHub | `https://github.com/zwthys-cyber/Core-21A327-TrollStore`，私有 |
+| GitHub | `https://github.com/zwthys-cyber/Core-21A327-TrollStore`，用户已明确授权改为公开 |
 | 开发分支 | `feat/kernel-cosmetics` |
 | 主分支基线 | `e258037c8341f6290859fd310b4f6a09b2fe7ee4`，v19-600m |
 | 最新试换代码 | `feb99d180133d2d0e643b7e5b9b5a8580ffe9682`，r9 |
@@ -441,19 +441,38 @@ r9 只写主槽 ID、递增主槽 `+0x1C` 计数、Vehicle.PendingVehicleSkinID�
 
 证据摘要：`analysis/cosmetics/device-evidence-r9.json`。不要让用户再次找同款车重复相同试换来代替代码修正；下一步在云端查车辆 Handle / 原生刷新调度。
 
-### 11.10 后续云端分析被 GitHub 账号计费阻止
+### 11.10 云端分析曾被账号计费阻止，已按用户指示公开仓库并重跑
 
 提交 `5c3c868c3b8e70d9cb08ad6d9d9dfa62a21d9baa` 已记录 r9 证据，并在 `vehicle-windows.json` 增加主 Handle getter、按槽位 Handle getter、VehicleUseDoRepOnce 原生判断、基类组件 Tick 和车辆 OnRep 初始化 / 尾部六组窗口。
 
 专项分析 run `38962343474` / job `117180265753` 没有启动任何步骤，GitHub annotation 原文：`The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings`。同次触发的全量分析 `38962343486` 也未成功。本次没有新反汇编、测试或安装包。
 
-需要用户在 GitHub 账号 Billing & plans 中处理失败付款或 Actions 消费上限；不要自行更改付费设置、公开私有输入或改用本服务器执行分析。恢复云端执行后，可用 `gh run rerun 38962343474 --repo zwthys-cyber/Core-21A327-TrollStore` 重跑已提交的专项分析，再下载 `Core-vehicle-review`，重点追踪 `0x47F5F9C`、`0x47F27D0`、`0x5AAC7F4`、`0xA314EF0`、`0x47EBB2C`，核对 Handle 的实际消费与对象归属。当前没有足够证据实现新的刷新写入。
+用户随后明确要求“把仓库设置为公开”，已执行并通过 GitHub API 确认 PUBLIC，素材 Release 仍为草稿。已重跑 `38962343474`，第二次执行成功，计费阻碍已解除。随后分析 `38962846126`（代码 `39644e3`）和 `38963087229`（代码 `1d97aaa`）也已成功。无需用户再次处理额度，不要转到本机分析。
+
+### 11.11 公开仓库后恢复构建，继续沿原生实体路径调查
+
+r9 构建 `38959705176` 第二次执行成功（2026-10-16 20:34 UTC），同一代码 `feb99d1` 的编译、43 项 Python 回归、原生测试、修改边界及签名检查通过。此为构建环境恢复确认，不是车辆功能新版本；不要求用户重装或重复试车。
+
+重新构建产物单独保存，未覆盖先前已交付 IPA：
+
+```text
+/root/和平精英/Core车辆试换-r9/公开仓库重编译-20261016/Core-17.0-21A327-cosmetics-vehicle-r9.ipa
+SHA256 8c69736d6de541170a1f02db2e68074e083086984f8ed6ecf7af851271cbd132
+```
+
+新增分析工具支持有界 ASCII 名称发现（最多 256 个名称，仅云端执行）。报告目录均位于 `/root/和平精英/Core美化映射分析/`：`r9原生刷新调度/`、`r9外观Handle索引/`、`r9车辆实体与完成回调/`。本轮没有修改运行时代码，没有生成 r10。
+
+新的静态调用链：`GetMasterVehicleAvatarHandle` 包装 `0x723A754` → `0x47F5F9C`（slot 0）→ `0x47FAD00` → `0x42DD238`（使用组件 `+0x8B8` 的映射，条目步长 0x18，值位于条目 +8），随后 `0x42D9824` 读取映射值 `+0x30` 得到实体。不要将这个内部映射值直接当成 UObject；映射布局、占用位与实例归属还未完成适配。
+
+`VehicleUseDoRepOnce` 原生 `0x5AAC7F4` 是读取全局控制台配置的判断，不是每车可写刷新标记。反射名称 `OnVehicleAvatarChange` 中的一组包装 `0x726ED70` 调用 `0x5BD7FB4`，后者仅 RET，不能仅凭名称当作刷新实现。车辆 Actor vtable 的 `+0x600` 指向 `0x5A40BDC`（RET），不能将它与紧邻的 `0x5A40BE0` 函数体混为同一个入口；`+0x4C0` 的 `0xA14443C` 也没有证据可当作车辆专属 Tick。下一步应核对实体实际的类、处理函数和刷新调度；现阶段不增加未经证明的写入。
+
+重新构建的 `build-metadata.json` 仍继承旧通用键 `cosmetics_vehicle_writes_implemented=false`，与已实现且实机确认的 r9 事务写入不一致。以 `device-evidence-r9.json`、源代码和手机报告判断运行时写入；后续实际更新版本时应一并修正该通用构建元数据，不能据此否定已有写入证据。
 
 ## 12. 下一位 AI 的建议接手顺序
 
 1. 先读 `AGENTS.md`、本文，查看分支与工作区状态。不要重跑本机编译或分析。
 2. r8 采集已经成功，不必让用户重复发同一辆车的只读报告；先读 `device-evidence-r8.json`。
-3. 先读 `device-evidence-r9.json`：当前写入成功，但 Pending 未消费、缓存计数一直 1。下一步分析被 GitHub 计费阻止，先恢复 Actions 执行，再核对 Handle / 原生刷新入口。
+3. 先读 `device-evidence-r9.json`：当前写入成功，但 Pending 未消费、缓存计数一直 1。用户已授权公开仓库恢复 Actions，分析与完整构建已成功；下一步沿 11.11 节的内部映射 → 实体路径核对真正刷新入口。
 4. 在云端分析中以实机 Vehicle vtable `0x10EBC1680` 为依据，不能直接套用角色 F50、调用未经确认的函数或修改能力标志。
 5. 若 r9 主槽 / Pending 写成 3349002、原生 Skin / Real 却一直为 3349001，不能宣称生效；下一步核对真实消费者。静态主程序未证明 Pending 字段单独可驱动完整刷新，不能盲目重复相同请求或套用衣服的 F50。
 6. r9 已写入主槽 ID、主槽计数（递增）和 Vehicle.PendingVehicleSkinID；原生 Skin / Real / Default 只读。保持修改范围，且未恢复的记录会阻止新试换。退出或换车导致归属改变时不能强写旧地址。
@@ -565,4 +584,4 @@ r9 试换入口在同一页的“宾利试换15秒” / “恢复原车”。试
 - 忽略主分支 v19 与美化 feature 分支的不同构建路径。
 - 在给用户的新版本说明中写“车辆已修好”，却只做了只读采集或模拟内存测试。
 
-接手时最短摘要：**r8 取车已实机成立，实际走 pawn+0x60C8 控制器回退；r9 实机写入成功，但 Pending 未消费、缓存计数停在 1，最后主槽还原并清理请求。真正刷新入口仍需分析，专项分析 38962343474 因 GitHub 账号付款 / 消费上限未启动。处理计费后重跑该任务；不要在本机编译分析，不要重复让用户找车，不要把数据写入成功当成换肤成功。**
+接手时最短摘要：**r8 取车已实机成立，实际走 pawn+0x60C8 控制器回退；r9 实机写入成功，但 Pending 未消费、缓存计数停在 1，最后主槽还原并清理请求。用户明确授权公开仓库，已执行，分析与完整构建均已恢复成功。新增静态路径为 Avatar+0x8B8 内部映射 → 映射值+0x30 的实体；真正刷新调度尚未确认，无 r10。不要在本机编译分析，不要重复让用户找车，不要把数据写入成功当成换肤成功。**

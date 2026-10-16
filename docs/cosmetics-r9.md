@@ -45,7 +45,7 @@ r9 使用 Core 原比较写接口依次修改主槽 ID、递增主槽更新计�
 
 摘要保存在 `analysis/cosmetics/device-evidence-r9.json`。后续需要核对原生 Handle / 刷新调度；重复相同 r9 试换不能补足这项缺失。
 
-已提交后续分析窗口，Actions [38962343474](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38962343474) 因 GitHub 账号近期付款失败或消费上限而未启动任何步骤。需要在账号 Billing & plans 中处理后重跑；本次没有新安装包，服务器没有执行验证或编译。
+后续分析 Actions [38962343474](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38962343474) 第一次执行曾因账号付款 / 消费上限而未启动。用户明确授权公开仓库后，第二次执行及后续两组专项分析均成功；[r9 完整构建](https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38959705176/attempts/2) 也已重新通过。车辆刷新修复尚未完成，没有 r10；本次同一代码重编译不需要用户重装或重复试车。服务器没有执行验证或编译。
 
 ## 构建记录
 
