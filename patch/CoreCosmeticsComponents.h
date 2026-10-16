@@ -15,6 +15,7 @@ typedef enum {
 typedef struct {
     CCPComponentStatus status;
     uint32_t slots, occupied;
+    uint32_t selectedIndex; // Private membership proof; not a process address.
     int32_t dataCount, dataCapacity, bitCount, bitCapacity;
     bool headerRead, bitmapRead, stable, heapBitmap;
 } CCPComponentDiagnostic;
@@ -91,6 +92,7 @@ static inline bool CCPFindOwnedComponent(CCPReader reader, uint64_t actor, uint6
         out->status = CCPComponentChanged; return false;
     }
     *component = found;
+    out->selectedIndex = (uint32_t)foundIndex;
     out->status = CCPComponentFound;
     return true;
 }
