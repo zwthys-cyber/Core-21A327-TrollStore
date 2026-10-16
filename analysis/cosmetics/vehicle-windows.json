@@ -11,10 +11,11 @@
     {"label": "device r7 local character vtable", "address": "0x10e7b1108", "length": "0x1600", "disassemble_slots": ["0x8b8", "0x1528"]}
   ],
   "field_regions": [
-    {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]}
+    {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]},
+    {"offset": "0x5a3c000", "length": "0x68000", "displacements": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc", "0x1ed8"]}
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
-  "call_targets": ["0x47ee7c8"],
+  "call_targets": ["0x47ee7c8", "0x5a403e4"],
   "strings": [
     {"label": "resolved source class name from native getter", "address": "0x10ceac05a"},
     {"label": "resolved source class qualified name", "address": "0x10ceac136"},
@@ -46,5 +47,6 @@
     ,{"label": "vehicle-user base constructor", "offset": "0x4d9c040", "length": "0x500"}
     ,{"label": "vehicle actor skin apply", "offset": "0x5a403e4", "length": "0x1800"}
     ,{"label": "vehicle actor skin callback", "offset": "0x5a81310", "length": "0x100"}
+    ,{"label": "vehicle actor native Tick body", "offset": "0x5a40be0", "length": "0x1200"}
   ]
 }
