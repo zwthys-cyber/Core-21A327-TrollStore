@@ -300,6 +300,8 @@ def main():
                   build_host=sys.platform, device_runtime_verified=False,
                   cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
+    if args.cosmetics_probe:
+        shutil.copyfile(ROOT / "analysis/cosmetics/采集版使用说明.txt", dist / "采集版使用说明.txt")
     print(json.dumps(report, indent=2))
 
 

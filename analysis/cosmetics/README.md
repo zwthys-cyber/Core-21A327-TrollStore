@@ -32,8 +32,9 @@ The sampler checks component ownership, bounded arrays, repeated reads and
 stable session/character state. It does not invoke the native write entry or
 change game files. A successful sample is still candidate layout evidence.
 
-On the phone, initialize Core and its existing game acquisition, select
-“美化适配 → 开始采集”, then switch to the game lobby. After about 24 seconds,
+On the phone, enter the training ground, return to Core, initialize it and
+enable its existing game acquisition. Select “美化适配 → 开始采集”, then
+switch back to the training ground. After about 24 seconds,
 return to Core and select “导出报告”. The file is
 `Documents/Core-cosmetics-probe.json`, also exposed through File Sharing.
 It contains statuses and numeric appearance fields, with no raw addresses,

@@ -147,8 +147,8 @@ static atomic_bool CaptureStopped = true;
 - (void)panel {
     UIViewController *controller = [self presenter];
     if (!controller || [controller isKindOfClass:UIAlertController.class]) return;
-    NSString *message = self.capturing ? @"正在采集。可以切换到和平精英大厅，约 24 秒后返回导出报告。" :
-        @"适用于和平精英 1.38.12。先完成 Core 初始化并启动原有游戏采集，再点开始并切到游戏大厅，约 24 秒后返回导出报告。\n\n此版采集角色外观 ID，用于完成美化适配，尚未启用换装。";
+    NSString *message = self.capturing ? @"正在采集。请切回和平精英训练场，约 24 秒后返回导出报告。" :
+        @"适用于和平精英 1.38.12。先进入训练场，返回 Core 完成初始化并启动原有游戏采集，再点开始并切回训练场，约 24 秒后返回导出报告。\n\n此版采集角色外观 ID，用于完成美化适配，尚未启用换装。";
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"美化适配采集版 r1"
         message:message preferredStyle:UIAlertControllerStyleAlert];
     if (!self.capturing) [alert addAction:[UIAlertAction actionWithTitle:@"开始采集" style:UIAlertActionStyleDefault
@@ -158,7 +158,9 @@ static atomic_bool CaptureStopped = true;
             UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[[self reportURL]] applicationActivities:nil];
             share.popoverPresentationController.sourceView = self.button;
             share.popoverPresentationController.sourceRect = self.button.bounds;
-            [[self presenter] presentViewController:share animated:YES completion:nil];
+            [controller dismissViewControllerAnimated:YES completion:^{
+                [controller presentViewController:share animated:YES completion:nil];
+            }];
         }]];
     }
     [alert addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
@@ -172,6 +174,7 @@ static atomic_bool CaptureStopped = true;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.read-only", DISPATCH_QUEUE_SERIAL);
     self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core cosmetics adaptation"
         expirationHandler:^{
+            if (self.generation != generation || !self.capturing) return;
             atomic_store(&CaptureStopped, true);
             dispatch_async(self.captureQueue, ^{
                 if (self.captureTimer) { dispatch_source_cancel(self.captureTimer); self.captureTimer = nil; }
@@ -190,6 +193,7 @@ static atomic_bool CaptureStopped = true;
                 NSDictionary *report = @{@"schema_version": @1, @"probe_revision": @1,
                     @"mode": @"read-only-adaptation", @"game_version": @"1.38.12", @"game_build": @"15915",
                     @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
+                    @"captured_at_unix": @([NSDate date].timeIntervalSince1970),
                     @"kernel_writes_implemented": @NO, @"runtime_layout_validated": @NO,
                     @"samples": self.samples.copy};
                 NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];

@@ -52,6 +52,8 @@ int main(void) {
     assert(CCPReadItems(reader, Base + 2048, &items));
     assert(items.count == 1 && items.items[0].type == 1 && items.items[0].item == 101004);
     assert(items.items[0].gender == 2 && items.items[0].operation == 3 && items.items[0].version == 7);
+    Array(&f, CCP_MAX_ITEMS, CCP_MAX_ITEMS);
+    assert(CCPReadItems(reader, Base + 2048, &items) && items.count == CCP_MAX_ITEMS);
     Array(&f, 0, 0); assert(CCPReadItems(reader, Base + 2048, &items) && items.count == 0);
     const int32_t invalid[][2] = {{-1,0}, {129,129}, {1,0}, {0,513}};
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
