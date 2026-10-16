@@ -2,7 +2,7 @@
 
 更新时间：2026-10-16 UTC。本文记录用户目标、已完成工作、实机证据、失败经过和接手位置。
 
-**当前结论：服装单槽位试穿已实现，只有至尊金龙外套得到明确画面确认；车辆换肤尚未实现，r6、r7 的车辆采集均未成功。当前优先任务是修正车辆来源对象及组件查找。用户最新要求先完成本交接文档，尚未制作 r8。**
+**当前结论：服装单槽位试穿已实现，只有至尊金龙外套得到明确画面确认；车辆换肤尚未实现。r6、r7 实机采集失败后，r8 已改为控制器所属组件查找，并允许原皮车辆的空外观数组，GitHub 构建与回归通过，等待 r8 手机报告。用户要求的交接文档已经完成，随后要求继续车辆适配。**
 
 ## 1. 接手必须先知道的约束
 
@@ -49,9 +49,9 @@
 | GitHub | `https://github.com/zwthys-cyber/Core-21A327-TrollStore`，私有 |
 | 开发分支 | `feat/kernel-cosmetics` |
 | 主分支基线 | `e258037c8341f6290859fd310b4f6a09b2fe7ee4`，v19-600m |
-| 最近发给用户的安装包代码 | `efecabbd0fdf0acbbe75f93b496bf575ddf3867b`，r7 |
-| 写交接文档前的开发 HEAD | `fcb9330e041e89bc2da0bd642a9d40528f92416f`，仅在 r7 上继续增加云端静态分析窗口 |
-| r8 | **尚未实现、尚未构建、尚未交付** |
+| 最新安装包代码 | `b49e157b7249a9500bbc78626bcd5d1c60108e6c`，r8 |
+| 最近有用户实机报告的代码 | `efecabbd0fdf0acbbe75f93b496bf575ddf3867b`，r7，采集失败 |
+| r8 | **已实现修正后的只读采集、已通过 GitHub 构建，尚无手机反馈** |
 
 本文提交之后，HEAD 会再多出文档提交；识别最新可安装包时，以构建对应的 `headSha` 为准，不要把分析或文档提交当成新安装包。
 
@@ -71,7 +71,7 @@
 - v8 曾确认 SpringBoard 远程打开及悬浮菜单成功，但 launchd 远程初始化的接收超时仍有未解决记录。
 - 后续主分支保留 v19 显示基线。美化任务不应顺带改动这些历史基础模块或启用已关闭的输入工作线程。
 
-### 4.2 美化 r1～r7
+### 4.2 美化 r1～r8
 
 | 阶段 | 做了什么 | 实际证据 / 限制 |
 |---|---|---|
@@ -83,6 +83,7 @@
 | r5 | 扩充为 143 个候选，分类、分页、单项试穿、恢复实际原 ID；附带只读武器候选采集 | 云端测试通过；其余 142 个候选没有逐项实机画面确认 |
 | r6 | 新增“车辆适配 → 采集车辆”，尝试从角色 `+0x3710` 取得当前车 | 用户坐驾驶位仍失败，39 次和 17 次采样都无车辆；该直接候选路径未成立 |
 | r7 | 改读“载具使用组件”缓存，再取组件中的 Vehicle；增加阶段诊断、上下文和最近 12 次历史 | 用户最新报告 30 次仍失败；缓存字段可读，但未取得有效组件；车辆采集仍未成功 |
+| r8 | 云端确认中间对象为 STExtraPlayerController；核对当前角色与控制器，按原生稀疏位图查找控制器所属组件；允许原皮车辆的空外观数组 | GitHub 构建及回归通过，等待新手机报告；车辆写入仍未实现 |
 
 实机证据文件：
 
@@ -105,10 +106,11 @@
 - 切换项目前尝试恢复上一项；未解决的恢复记录会阻止继续覆盖。
 - 会话、目标、角色、数组、物品实例与预期值检查；失败时停止写入。
 - 服装报告、只读武器候选、车辆采集入口和车辆失败诊断。
+- r8 的控制器解析、类型核对与稀疏组件查找已实现，允许稳定空车辆外观数组；尚未取得 r8 实机反馈。
 
 ### 尚未完成
 
-- **车辆对象采集尚未成功；车辆外观写入、刷新和恢复尚未实现。**
+- **尚无成功的实机车辆样本，r8 等待手机确认；车辆外观写入、刷新和恢复尚未实现。**
 - 大厅换装尚未适配。
 - 头盔、背包、枪械换肤尚未实现；武器部分只是只读候选读取。
 - ZIP 中自定义模型、材质、发光、特效、检视等内容未整体转换。
@@ -188,14 +190,15 @@ PAK 配料中存在跨车型替换，不能把每条文字关系直接当成原�
 | `patch/CoreCosmeticsCatalog.h` | 生成的 143 项服装候选 |
 | `patch/CoreCosmeticsPage.h` | 原生分类、分页、控件和车辆采集按钮 |
 | `patch/CoreCosmeticsUIProfile.h` | 原生 UI 函数 RVA 与入口字节保护 |
-| `patch/CoreCosmeticsVehicleRead.h` | r7 车辆读取；当前失败点就在来源组件取得阶段 |
+| `patch/CoreCosmeticsVehicleRead.h` | r8 控制器来源解析、组件归属与 Character 核对、稳定车辆外观读取 |
+| `patch/CoreCosmeticsComponents.h` | r8 新增；原生类继承核对、内联 / 堆位图和有界稀疏组件查找 |
 | `scripts/build.py` | 固定输入 IPA、编译适配库、打包与元数据 |
 | `scripts/cosmetics_menu.py` | 在 v19 允许范围内增加原生菜单入口和导出函数桥 |
 | `scripts/verify.py` | 最终 IPA 的修改范围、ABI、资源、签名等检查；只在云端执行 |
 | `analysis/cosmetics/analyze.py` | 游戏 / Core 固定二进制的反射和反汇编分析 |
 | `analysis/cosmetics/vehicle_review.py` | 车辆专项云端分析 |
 | `analysis/cosmetics/vehicle-windows.json` | 车辆函数窗口、指针表和字段访问的云端分析配置 |
-| `analysis/cosmetics/vehicle-source-evidence.json` | r6 → r7 时的路径推导记录；必须结合最新 r7 失败报告，不能当作实机通过证明 |
+| `analysis/cosmetics/vehicle-source-evidence.json` | r6 / r7 失败证据与 r8 云端确认的控制器、类型及位图路径；不能当作实机通过证明 |
 | `analysis/cosmetics/采集版使用说明.txt` | 随安装包交付的使用说明 |
 | `tests/test_cosmetics_*.c`、`*.py` | 角色、写入、目录、菜单、车辆等回归，仅云端运行 |
 
@@ -357,22 +360,22 @@ r6 把角色上的 `+0x3710` 反射候选直接用于取车。它把读取失败
 
 最近 12 次历史（第 19～30 次）相同。这里能确认：Core 的 controller→pawn 与缓存 pawn 一致，角色 Avatar 的归属一致，组件缓存字段读取成功，但未得到有效组件。`available=false` 仍不能区分原值为零还是不满足指针规则；没有导出原始指针。
 
-### 11.5 写本文时最新云端分析：下一步最有用的线索
+### 11.5 r7 反馈后的云端分析线索
 
 用户给出的 pawn vtable 对应未滑动 VA `0x10E7B1108`。已据此在 GitHub 分析：
 
 - 该表 `+0x1528` 确实为 `0x4C1158C`。
 - `0x4C1158C` 调用 `0x3DA2D20`，结果为空时取输入对象 `+0x60C8`。
-- `0x3DA2D20` 先取输入对象 `+0x608`，调用通用有效性 helper `0x36262E4`，失败后另有回退流程。
-- 这强烈提示：`GetVehicleOfCharacter` 中的中间对象与 controller 路径有关，**不能继续假设组件缓存必定属于 pawn**。应结合 Core 已有 controller、pawn+0x608 及归属关系核对。此推断尚未通过新版本实机确认。
+- `0x3DA2D20` 先取输入对象 `+0x608`，调用类型判断 helper `0x36262E4`，失败后另有回退流程。后续 r8 云端读取类名字面量确认：这是 `STExtraPlayerController` 类型判断，并非普通有效性函数。
+- `GetVehicleOfCharacter` 的中间对象是 controller，不能继续假设组件来源必定属于 pawn。r8 已据此实现受类型、Core 当前控制器和当前 pawn 约束的来源解析；尚未通过实机确认。
 - pawn vtable `+0x8B8` 为 `0xA2EE5D8`。它先检查输入对象 `+0x658` 的特殊组件，类型不匹配后跳到通用 Actor 组件查找 `0xA149148`。
 - `0xA149148` 迭代 Actor 的组件集合：相关字段 `actor+0x440`、位标记相关 `+0x450` 和 `+0x468`；组件项步长 16。类型判断读取组件 UObject 的 class `+0x10`，以及 class 的 `+0x88` / `+0x90` 继承缓存。
-- 位标记迭代 helper 是 `0x27026C8`、`0x2702724`。**还没有完整审查位集合 ABI，不要把组件集合直接当普通 TArray 连续读取。**
+- 位标记迭代 helper 是 `0x27026C8`、`0x2702724`。后续 r8 已在云端审查：内联位图 `+0x450`，堆位图指针 `+0x460`，位数量 `+0x468`，容量 `+0x46C`；不是普通 TArray。
 - VehicleUserComponent 原生 UClass getter 为 `0x72CA9A4`，全局缓存未滑动 VA `0x111CCB6E8`（RVA `0x11CCB6E8`）。
 - VehicleUserComponent 反射构造包装 `0x72CB3EC` 跳到 `0x4D9C69C`。
 - 其反射属性可见 Vehicle `+0x158`、UnmannedVehicle `+0x160`、Character `+0x168`、VehicleUserState `+0x170`、重连数据 `+0x178` / `+0x198`、LastDriveVehicle `+0x1B8`。
 
-最新分析任务：`38932297639`，成功，代码 `fcb9330`。
+前期分析任务：`38932297639`，成功，代码 `fcb9330`。
 
 报告已下载：
 
@@ -388,14 +391,26 @@ r6 把角色上的 `+0x3710` 反射候选直接用于取车。它把读取失败
 /root/和平精英/Core美化映射分析/角色组件原生查找入口/vehicle-review.txt
 ```
 
+### 11.6 r8 如何修正，以及尚未证明的部分
+
+原生类名确认任务 `38934153584`（`bacd08e`）得到 `STExtraPlayerController` 和 `VehicleUserComponent`。前一任务 `38933859383` 审查了位集合 ABI。对应报告位于 `/root/和平精英/Core美化映射分析/车辆来源类名确认/` 和 `/root/和平精英/Core美化映射分析/组件位集合与来源类型/`。
+
+r8 使用 `pawn+0x608` 并做原生 IsA 核对；必要时只接受与 Core 缓存控制器完全一致的 `pawn+0x60C8` 回退。控制器 `+0x3540` 必须指向当前 pawn。来源 UClass 缓存 RVA 为 `0x11C5A650`。
+
+随后按控制器 `+0x440` 的稀疏组件集合及占用位图查找 VehicleUserComponent；类缓存 RVA `0x11CCB6E8`。最多 512 槽位，双读集合、位图和条目；只使用占用槽位，多个类型匹配会拒绝。组件 Outer 必须等于控制器，组件 Character `+0x168` 必须等于当前 pawn，再取 Vehicle `+0x158`。不读取角色或控制器的 `+0x47F8` 缓存。
+
+原皮车辆可能没有同步外观项，因此 r8 接受稳定的零长度数组及零皮肤 ID；不会将这些情况单独判为未上车。采样前后还核对 Core 绑定身份和缓存控制器。报告 schema / probe revision 为 8，`vehicle_path=controller-owned-vehicle-user-component`，新增组件集合数量、位图、查找状态和角色归属等诊断。
+
+构建代码 `b49e157`，Actions `38935444227` 成功。**r8 只有云端回归通过，没有实机报告；车辆采集和车辆写入都不能宣称已在手机成功。** 具体安装和测试见 `docs/cosmetics-r8.md`。
+
 ## 12. 下一位 AI 的建议接手顺序
 
 1. 先读 `AGENTS.md`、本文，查看分支与工作区状态。不要重跑本机编译或分析。
-2. 阅读上述最新云端反汇编，确认 `0x4C1158C` / `0x3DA2D20` 返回对象的真实类型；核对它与 Core controller 的关系。
-3. 修正 VehicleUserComponent 的来源 Actor。当前最应核对的是 controller，而不是继续在 pawn 上硬套 `+0x47F8`。
-4. 如果需实现缓存为空时的查找，先在 Actions 审查 `0x27026C8` / `0x2702724`、组件集合布局、原生类型判断，再实现有界、只读、所有者和会话一致的查找。不要扫整个堆或无界遍历所有对象。
-5. 回归要覆盖：缓存为空但组件存在、组件属于控制器、控制器与当前 pawn 不匹配、组件被替换、位集合空洞 / 越界 / 并发变化、类型不符、读取失败。不要只测试人为把某个新偏移填对就成功。
-6. 新包应标为 r8，并通过 feature 分支触发 GitHub 构建；这一步目前还没做。
+2. 优先阅读 r8 手机报告，确认 schema / probe revision 都为 8。用户最近给出的报告仍是 r7；不要拿旧报告判断新包。
+3. 关注 `source_resolver_matches`、`source_matches_core_controller`、`controller_pawn_matches`，再看 `component_lookup_status`、组件数量与 `vehicle_user_character_matches`，按具体失败阶段定位。
+4. 若组件查找仍失败，结合 r8 云端已确认的位图 ABI 和实际数量继续修正；不要回到 pawn 的 `+0x47F8`，也不要无界扫堆。
+5. 现有 r8 回归已覆盖空缓存、控制器来源、子类、集合空洞 / 堆位图 / 512 槽位边界、类型或归属不符、读取失败、空车辆外观数组及来源变化。新增修改应补充对应失败案例，再仅在 Actions 测试。
+6. r8 已构建并下载。后续运行时代码有变化应更新版本，保留 r8 作为此次路径修正的证据。
 7. 在取得真实车辆同步数据之前保持车辆写入关闭。拿到样本后，再核对外观 ID、车型兼容性、原生刷新与恢复路径。
 8. 首个车辆试换可优先考虑名称 / ID 唯一且同系列的目标，但不等于已确认兼容。例如白 Dacia `3306003` → 蓝色 Ghibli `3306004`；三人摩托 `3309001/2` → 鬼马风驰 `3309003` / 拉轰鸭鸭车 `3309004`；4 座敞篷 `3349001` → 宾利火焰橘 `3349002`。必须以实际车辆数据和刷新语义为准。
 
@@ -413,7 +428,7 @@ r6 把角色上的 `+0x3710` 反射候选直接用于取车。它把读取失败
 
 全量分析已排除 `vehicle_review.py` 和 `vehicle-windows.json` 的改动，车辆窗口小改不必重复跑全量 PAK 解析。
 
-云端测试在最近 r7 构建中通过 43 项 Python 回归，并通过角色读取、同值写、单槽位事务、分页、车辆来源读取、Mach 转发、环境准备等原生测试，以及最终 IPA 的修改边界和签名核验。
+云端测试在最近 r8 构建中通过 43 项 Python 回归，并通过角色读取、同值写、单槽位事务、分页、车辆控制器来源 / 稀疏组件 / 空外观数组、Mach 转发、环境准备等原生测试，以及最终 IPA 的修改边界和签名核验。
 
 这些测试不会模拟手机真实游戏对象、账号资源或游戏画面；r7 的模拟回归通过并没有发现其来源对象选择不完整，实机反馈才暴露了问题。
 
@@ -432,11 +447,19 @@ gh run download RUN_ID --repo zwthys-cyber/Core-21A327-TrollStore --name ARTIFAC
 
 | 版本 | GitHub run | 代码 / 产物 |
 |---|---:|---|
+| r8 | `38935444227` | 代码 `b49e157b7249a9500bbc78626bcd5d1c60108e6c`；artifact `Core-cosmetics-vehicle-r8` |
 | r5 | `38922744774` | 代码 `fa2c0634a21bd0dc4bb0cba0a0c2ef2cbddd7811`；artifact `Core-cosmetics-catalog-r5` |
 | r6 | `38928395631` | 代码 `277dc7b0463bf9b025edf3f066d202eb7cd5ae4a`；artifact `Core-cosmetics-vehicle-r6` |
 | r7 | `38930863902` | 代码 `efecabbd0fdf0acbbe75f93b496bf575ddf3867b`；artifact `Core-cosmetics-vehicle-r7` |
 
-最近 r7：
+最新 r8（build 20.8，ProbeVersion 8，尚无实机反馈）：
+
+```text
+/root/和平精英/Core车辆适配-r8/Core-17.0-21A327-cosmetics-vehicle-r8.ipa
+SHA256 ff0f95a86854aa815b89dac886916e970cb81fdd096ec03b12b20de65cda6fa0
+```
+
+历史 r7：
 
 ```text
 /root/和平精英/Core车辆适配-r7/Core-17.0-21A327-cosmetics-vehicle-r7.ipa
@@ -454,12 +477,13 @@ r5 SHA256：`878acfa7487903c228eff98aa77b8b51165c424d130982c53d290b8749875780`�
 
 GitHub 构建链接：
 
+- r8：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38935444227
 - r7：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38930863902
 - r6：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38928395631
 - r5：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38922744774
-- 最新车辆分析：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38932297639
+- 车辆来源类名确认：https://github.com/zwthys-cyber/Core-21A327-TrollStore/actions/runs/38934153584
 
-Actions 产物保留期为 14 天，安装包已下载到用户目录。日志另存 `/tmp/core-r7-build.log`、`/tmp/core-r6-final-build.log` 等；临时日志可从 Actions 重新获取。
+Actions 产物保留期为 14 天，安装包已下载到用户目录。日志另存 `/tmp/core-r8-build.log`、`/tmp/core-r7-build.log`、`/tmp/core-r6-final-build.log` 等；临时日志可从 Actions 重新获取。
 
 手机报告位置：
 
@@ -467,7 +491,7 @@ Actions 产物保留期为 14 天，安装包已下载到用户目录。日志�
 文件 App → 浏览 → 我的 iPhone → Core → Core-cosmetics-probe.json
 ```
 
-原生菜单：“位置”下面“美化” → “换分类”到“车辆适配” → “采集车辆”。正常设计为取得 8 个成功样本后自动结束；未就绪时最多约 60 秒，也可手动停止。当前 r7 仍未成功。
+原生菜单：“位置”下面“美化” → “换分类”到“车辆适配” → “采集车辆”。正常设计为取得 8 个成功样本后自动结束；未就绪时最多约 60 秒，也可手动停止。r7 未成功，r8 尚待手机反馈。
 
 报告只导出外观标量、状态、相对方法 / vtable 位置和诊断，不导出原始进程地址、PID 或物品实例 ID。新包报告会覆盖同名旧文件，检查 `schema_version` 和 `probe_revision` 避免拿旧报告分析新包。
 
@@ -484,4 +508,4 @@ Actions 产物保留期为 14 天，安装包已下载到用户目录。日志�
 - 忽略主分支 v19 与美化 feature 分支的不同构建路径。
 - 在给用户的新版本说明中写“车辆已修好”，却只做了只读采集或模拟内存测试。
 
-接手时最短摘要：**保留已实机成立的角色试穿；车辆 r7 失败在 pawn 上的组件缓存。最新云端反汇编已给出对象解析及 Actor 组件查找入口，应先核对控制器作用域和缓存为空的查找路径。本文之后还没有 r8。**
+接手时最短摘要：**保留已实机成立的角色试穿；车辆 r7 失败在 pawn 组件缓存。r8 已按云端确认的 STExtraPlayerController 来源及原生稀疏组件查找修正，GitHub 构建通过，安装包已下载。下一步读取 r8 手机报告；车辆换肤仍未实现。**
