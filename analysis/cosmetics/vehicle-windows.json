@@ -4,7 +4,12 @@
     {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
     {"label": "vehicle avatar candidate", "start": "0x10fc58000", "end": "0x10fc59b00"}
   ],
-  "pointer_tables": [],
+  "pointer_tables": [
+    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0xc68", "0xd18"]}
+  ],
+  "field_regions": [
+    {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]}
+  ],
   "windows": [
     {"label": "vehicle avatar native registration", "offset": "0x7238f60", "length": "0x600"},
     {"label": "vehicle avatar reflected constructor", "offset": "0x7241944", "length": "0x400"},

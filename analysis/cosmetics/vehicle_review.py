@@ -44,6 +44,24 @@ def main():
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]
+    for table, entry in zip(tables, config['pointer_tables']):
+        for row in table['rows']:
+            if row['executable'] and row['slot'] in entry.get('disassemble_slots', []):
+                windows.append((table['label'] + ' slot ' + row['slot'], int(row['value'], 16), 0x1400))
+    decoder = analyze.Cs(analyze.CS_ARCH_ARM64, analyze.CS_MODE_ARM)
+    decoder.detail = True
+    fields = []
+    for region in config.get('field_regions', []):
+        address = 0x100000000 + int(region['offset'], 16)
+        offset = image.offset(address)
+        data = image.data[offset:offset + int(region['length'], 16)]
+        displacements = [int(value, 16) for value in region['displacements']]
+        for instruction in decoder.disasm(data, address):
+            if any(operand.type == analyze.ARM64_OP_MEM and operand.mem.disp in displacements
+                   for operand in instruction.operands):
+                fields.append(dict(address=hex(instruction.address), instruction=instruction.mnemonic + ' ' + instruction.op_str))
+                windows.append(('vehicle field access', instruction.address - 0x80, 0x200))
+    report['field_references'] = fields
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))
     for record in properties:
