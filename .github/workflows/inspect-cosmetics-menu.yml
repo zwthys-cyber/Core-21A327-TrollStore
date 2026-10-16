@@ -1,6 +1,12 @@
 name: Inspect native Core cosmetics menu
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/kernel-cosmetics]
+    paths:
+      - '.github/workflows/inspect-cosmetics-menu.yml'
+      - 'analysis/cosmetics/inspect_menu.py'
+      - 'analysis/cosmetics/menu-windows.json'
 permissions:
   contents: read
 jobs:
