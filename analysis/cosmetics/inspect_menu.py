@@ -46,7 +46,7 @@ for _ in range(core.u32(16)):
                              *struct.unpack_from('<II', data, start + 68)))
     position += size
 for name, address, length, reserved1, reserved2 in sections:
-    if name != '__stubs':
+    if name not in ['__stubs', '__auth_stubs']:
         continue
     for index in range(length // reserved2):
         symbol_index = core.u32(indirect[0] + (reserved1 + index) * 4)
@@ -56,8 +56,12 @@ for name, address, length, reserved1, reserved2 in sections:
                                 instructions=disassemble(core, address + index * reserved2, reserved2)))
 (output / 'native-menu-symbols.json').write_text(json.dumps(dict(stubs=records, symbols=[name for name in names
     if any(term in name for term in ['ImGui', 'Button', 'TextUnformatted', 'Selectable'])],
-    prefixes={window['rva']: data[core.offset(0x100000000 + int(window['rva'], 16)):
-        core.offset(0x100000000 + int(window['rva'], 16)) + 32].hex() for window in windows},
+    prefixes={hex(rva): data[core.offset(0x100000000 + rva):core.offset(0x100000000 + rva) + 32].hex()
+        for rva in [0xC7A60, 0xC88B0, 0xC8928, 0x12E620, 0x133168, 0x14F980]},
+    ui_constants={hex(rva): list(struct.unpack_from('<2f', data, core.offset(0x100000000 + rva)))
+        for rva in [0x8A9E50, 0x8A9EC8]},
+    sections=[dict(name=name, address=hex(address), length=hex(length), reserved1=reserved1, reserved2=reserved2)
+        for name, address, length, reserved1, reserved2 in sections if 'stub' in name],
     strings={hex(rva): core.string(0x100000000 + rva) for rva in [0x744522, 0x744529, 0x744530]},
     removed_tabs_sha256=hashlib.sha256(data[0xD07E0:0xD097C]).hexdigest()), indent=2))
 binary.unlink()
