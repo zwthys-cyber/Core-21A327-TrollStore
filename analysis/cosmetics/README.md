@@ -26,8 +26,23 @@ bounded optional native menu changes: restore one sidebar row below Position,
 label it “美化”, and route only its page to the injected C renderer through the
 original authenticated dlsym stub. Other saved page values fall back to
 initialization. There is no separate UIKit button and no runtime code patching.
-The current artifact is `Core-17.0-21A327-cosmetics-menu-r4.ipa`; see
-[the r4 guide](../../docs/cosmetics-r4.md).
+The current artifact is `Core-17.0-21A327-cosmetics-catalog-r5.ipa`; see
+[the r5 guide](../../docs/cosmetics-r5.md).
+
+r5 adds 143 exact-label/ID candidates across five observed character slots:
+60 coats, 53 hair styles, 14 trousers, 5 shoes and 11 parachutes. Four entries
+are shown per page with previous/next/category controls. The generated C header
+is checked against `selected-avatar-catalog.json` in Actions. Only the golden-dragon
+coat has explicit visual confirmation; matching a label and Item name-map row
+is not proof that a candidate renders on the device. No weapon, helmet, backpack,
+lobby or custom PAK-resource write path is enabled.
+
+Each r5 transaction captures the current nonzero ID of the selected compatible
+slot, preserves its instance and binding, and restores that exact prior ID.
+Changing selections queues restoration before the next trial. A failed restore
+retains ownership and prevents a new change. Each trial remains 15 seconds.
+Read-only weapon owner and bounded array samples are included in the report
+to support subsequent weapon adaptation; they are explicitly marked candidates.
 
 The r1 device report contains eight identical, stable samples: 30 sync slots,
 six nonzero IDs and an empty client array. Game UUID and component ownership
