@@ -17,6 +17,9 @@
     {"label": "character native registration", "offset": "0x6375718", "length": "0x300"},
     {"label": "character constructor implementation", "offset": "0x43a159c", "length": "0x500"},
     {"label": "weapon constructor implementation", "offset": "0x482100c", "length": "0x500"},
-    {"label": "avatar readiness and wait setters", "offset": "0x6395280", "length": "0x120"}
+    {"label": "avatar readiness and wait setters", "offset": "0x6395280", "length": "0x120"},
+    {"label": "character concrete constructor", "offset": "0x439ff50", "length": "0x500"},
+    {"label": "weapon concrete constructor", "offset": "0x481e4ec", "length": "0x500"},
+    {"label": "UAE table concrete constructor", "offset": "0xadd1d50", "length": "0x400"}
   ]
 }

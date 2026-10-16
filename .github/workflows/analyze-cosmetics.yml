@@ -45,6 +45,10 @@ jobs:
         run: python3 analysis/cosmetics/pak_inventory.py --inputs analysis-input --output analysis-output
       - name: Inspect cooked appearance table names and recipe labels
         run: python3 analysis/cosmetics/csv_metadata.py --inputs analysis-input --output analysis-output
+      - name: Cross-reference recipe labels and pinned item row identifiers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 analysis/cosmetics/catalog_match.py --inputs analysis-input --output analysis-output
       - uses: actions/upload-artifact@v4
         if: always()
         with:
