@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-probe-r2.ipa"
-COSMETICS_BUNDLE_BUILD = "20.2"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-trial-r3.ipa"
+COSMETICS_BUNDLE_BUILD = "20.3"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -182,7 +182,7 @@ def main():
     parser.add_argument("--clang", default="clang-21")
     parser.add_argument("--linker", default="ld64.lld-21")
     parser.add_argument("--ldid", type=Path)
-    parser.add_argument("--cosmetics-probe", action="store_true", help="Include the read-only 1.38.12 adaptation sampler")
+    parser.add_argument("--cosmetics-probe", action="store_true", help="Include the bounded 1.38.12 cosmetic trial and diagnostics")
     args = parser.parse_args()
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
     if original_hash != INPUT_SHA256:
@@ -251,8 +251,8 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="2",
-                    CoreCosmeticsMode="same-value-write-adaptation")
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="3",
+                    CoreCosmeticsMode="single-coat-trial")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -298,8 +298,9 @@ def main():
                                            retain="most recent tail", contention="drop diagnostic record"),
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False,
-                  cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=False,
-                  cosmetics_same_value_write_check=args.cosmetics_probe)
+                  cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=args.cosmetics_probe,
+                  cosmetics_trial_preset="golden-dragon-coat" if args.cosmetics_probe else None,
+                  cosmetics_visual_effect_verified=False)
     (dist / "build-metadata.json").write_text(json.dumps(report, indent=2) + "\n")
     if args.cosmetics_probe:
         shutil.copyfile(ROOT / "analysis/cosmetics/采集版使用说明.txt", dist / "采集版使用说明.txt")

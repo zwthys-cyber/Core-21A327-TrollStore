@@ -23,6 +23,7 @@
     {"label": "UAE table concrete constructor", "offset": "0xadd1d50", "length": "0x400"},
     {"label": "UAE table native object initialization", "offset": "0xadd1b50", "length": "0x200"},
     {"label": "character deferred sync refresh", "offset": "0x43d24bc", "length": "0xb00"},
-    {"label": "character mode check", "offset": "0x43cc378", "length": "0x100"}
+    {"label": "character mode check", "offset": "0x43cc378", "length": "0x100"},
+    {"label": "avatar pending-refresh reset", "offset": "0x42e8c34", "length": "0x200"}
   ]
 }

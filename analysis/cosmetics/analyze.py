@@ -223,6 +223,16 @@ def main():
         "static_configuration": [hex(core.qword(core.offset(0x100AC83F0) + 8 * i)) for i in range(75)],
     }
     report["reviewed_struct_candidates"] = []
+    trial_profile = json.loads(Path(__file__).with_name('trial-profile.json').read_text())
+    trial_profile['refresh_mode_static_default'] = game.data[game.offset(0x111069CD5)]
+    for address, slot in [(0x10E6189A8 + 0x1320, 'onrep_rva'), (0x10E6189A8 + 0xC68, 'deferred_update_rva'),
+                          (0x10E6189A8 + 0x4C0, 'tick_rva')]:
+        if game.qword(game.offset(address)) != 0x100000000 + int(trial_profile[slot], 16):
+            raise ValueError('Trial refresh virtual method differs from reviewed profile')
+    trial_profile['tick_pending_read'] = disassemble(game, 0x1043D6D78, 4)
+    trial_profile['deferred_onrep_call'] = disassemble(game, 0x1043D265C, 0x14)
+    trial_profile['native_reset'] = disassemble(game, 0x1042E8C34, 0x100)
+    report['trial_profile'] = trial_profile
     for label, address in [("MeshSynData", 0x10EDC1580), ("ItemDefineID", 0x10FDD8F98)]:
         offset = game.offset(address)
         words = [game.qword(offset + 8 * i) for i in range(10)]

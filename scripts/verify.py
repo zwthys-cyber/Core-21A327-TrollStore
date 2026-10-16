@@ -155,7 +155,7 @@ def main(ipa, cosmetics_probe=False):
         assert info["CFBundleVersion"] == (COSMETICS_BUNDLE_BUILD if cosmetics_probe else BUNDLE_BUILD)
         assert info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         if cosmetics_probe:
-            assert info["CoreCosmeticsProbeVersion"] == "2" and info["CoreCosmeticsMode"] == "same-value-write-adaptation"
+            assert info["CoreCosmeticsProbeVersion"] == "3" and info["CoreCosmeticsMode"] == "single-coat-trial"
             assert b"CCPCosmeticsController\0" in patch_library
         else:
             assert "CoreCosmeticsProbeVersion" not in info and b"CCPCosmeticsController\0" not in patch_library

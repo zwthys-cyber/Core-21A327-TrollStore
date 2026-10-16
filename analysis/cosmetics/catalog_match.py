@@ -84,13 +84,17 @@ def main():
         item_id = slot['type_specific_id']
         device_matches.append(dict(**slot, item_row_present=str(item_id) in item_names,
                                    catalog_labels=[r['label'] for r in rows if r['item_id'] == item_id]))
+    trial = json.loads((directory / 'trial-profile.json').read_text())
+    target_rows = [r for r in rows if r['item_id'] == trial['target_id'] and r['label'] == trial['target_label']]
+    if len(target_rows) != 1 or any(str(trial[key]) not in item_names for key in ['original_id', 'target_id']):
+        raise ValueError('Trial coat identity is absent or ambiguous in the reviewed sources')
     summary = dict(catalog_rows=len(rows), supplied_item_names=len(item_names), recipe_rows=len(recipes),
                    unique_source_candidates=sum(len(r['source_candidates']['candidates']) == 1 for r in recipes),
                    unique_target_candidates=sum(len(r['target_candidates']['candidates']) == 1 for r in recipes),
                    unique_pairs=sum(len(r['source_candidates']['candidates']) == len(r['target_candidates']['candidates']) == 1 for r in recipes))
     output = dict(status='external-name-id-candidates-only', runtime_item_ids_validated=False,
                   usable_as_kernel_configuration=False, source=source, summary=summary,
-                  device_initial_outfit=device_matches, recipes=recipes)
+                  device_initial_outfit=device_matches, trial_target=target_rows[0], recipes=recipes)
     (args.output / 'recipe-id-candidates.json').write_text(json.dumps(output, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps(summary))
 
