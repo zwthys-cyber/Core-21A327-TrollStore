@@ -30,5 +30,9 @@
     ,{"label": "vehicle-user native class", "offset": "0x72ca9a4", "length": "0x200"}
     ,{"label": "vehicle-user reflected constructor", "offset": "0x72cb3ec", "length": "0x200"}
     ,{"label": "device character resolver", "offset": "0x4c1158c", "length": "0x200"}
+    ,{"label": "actor native component lookup fallback", "offset": "0xa149148", "length": "0x900"}
+    ,{"label": "base character controller resolver", "offset": "0x3da2d20", "length": "0x200"}
+    ,{"label": "native object validity helper", "offset": "0x36262e4", "length": "0x200"}
+    ,{"label": "vehicle-user concrete constructor", "offset": "0x4d9c69c", "length": "0x400"}
   ]
 }
