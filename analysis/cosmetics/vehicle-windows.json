@@ -22,5 +22,8 @@
     ,{"label": "vehicle base static class", "offset": "0x700b800", "length": "0x300"}
     ,{"label": "native GetVehicleOfCharacter implementation", "offset": "0x3a77e8c", "length": "0x500"}
     ,{"label": "native GetVehicleUserComponent implementation", "offset": "0x58ace78", "length": "0x400"}
+    ,{"label": "character vehicle component getter", "offset": "0x3965bb4", "length": "0x400"}
+    ,{"label": "vehicle-user component helper", "offset": "0x4c86960", "length": "0x300"}
+    ,{"label": "vehicle-user helper owner resolution", "offset": "0x58acd9c", "length": "0x200"}
   ]
 }
