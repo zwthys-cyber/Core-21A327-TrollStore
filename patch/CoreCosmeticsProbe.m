@@ -593,7 +593,10 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 @property(nonatomic) NSUInteger pendingPresetIndex;
 @property(nonatomic) BOOL vehicleCapturing;
 @property(nonatomic) BOOL vehicleTrialMode;
+@property(nonatomic) BOOL earlyAttachStarted;
+@property(nonatomic) BOOL earlyAttachFinished;
 - (void)startEarlySession;
+- (void)pollEarlyAttachAttempt:(unsigned)attempt;
 - (void)startTrial;
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)restoreTrial;
@@ -782,146 +785,134 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     });
 }
 - (void)startEarlySession {
-    if (self.capturing || atomic_load(&MenuOwned)) return;
-    self.capturing = YES;
-    atomic_store(&MenuBusy, true);
-    atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @41, @"probe_revision": @41,
-        @"mode": @"early-game-session", @"status": @"early-session-started",
-        @"game_version": @"1.38.12", @"game_build": @"15915",
-        @"process_name": @"ShadowTrackerExtra", @"open_result": @"attach-only-never-remote-open",
-        @"call_result": @"skipped-open-time-remote-call", @"session_open_attempted": @NO,
-        @"vehicle_appearance_changes_implemented": @NO,
-        @"ui_location": @"native-menu-below-position"} mutableCopy];
-    [self writeTrialReport];
-    uint32_t generation = ++self.generation;
+    // Silent attach-only: never claim "正在打开游戏", never MenuBusy, never block the
+    // cosmetics serial queue with a long usleep loop. User-initiated menu "打开游戏"
+    // is the only path that may show CCPMenuGameOpening.
+    if (self.earlyAttachStarted) return;
+    self.earlyAttachStarted = YES;
+    self.earlyAttachFinished = NO;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
-    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core foreground-game session"
-        expirationHandler:^{}];
+    [self pollEarlyAttachAttempt:0];
+}
+- (void)pollEarlyAttachAttempt:(unsigned)attempt {
+    if (self.earlyAttachFinished) return;
     dispatch_async(self.captureQueue, ^{
-        if (self.generation != generation) return;
+        if (self.earlyAttachFinished) return;
+        // Yield while a menu operation owns the controller/report.
+        if (self.capturing || atomic_load(&MenuOwned)) {
+            if (attempt < 3000)
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), self.captureQueue,
+                    ^{ [self pollEarlyAttachAttempt:attempt + 1]; });
+            else self.earlyAttachFinished = YES;
+            return;
+        }
         CCPReader local = {LocalRead, NULL};
         uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
-        uint32_t quarantineStart = 0, quarantineBefore = 0, quarantineAfter = 0, targetPid = 0, remotePort = 0;
-        uint8_t fatalStart = 0, fatalBefore = 0, fatalAfter = 0, remoteReady = 0;
-        BOOL startRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineStart, sizeof(quarantineStart));
-        CCPReadBytes(local, base + 0xC1D2E8, &fatalStart, sizeof(fatalStart));
-        NSString *lookup = @"unavailable";
-        NSString *openResult = @"attach-only-never-remote-open";
-        NSString *callResult = @"not-called";
-        NSString *status = @"early-window-missed";
-        NSString *waitBlocker = @"not-started";
-        NSString *openAppState = @"not-called";
-        BOOL execCalled = NO, pidMatches = NO, entry = NO;
-        unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
         BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
             EntryMatches(base + 0x35E60, ProcessLookupByPidPrefix) &&
             EntryMatches(base + 0x64C7C, SnapshotPrefix);
         uint8_t seenEntry[32] = {0};
-        BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
-        entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
+        BOOL entry = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry)) &&
+            !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
+        NSString *status = @"early-window-missed";
+        NSString *waitBlocker = @"not-started";
+        NSString *lookup = @"unavailable";
+        BOOL pidMatches = NO;
+        uint32_t quarantine = 0, pid = 0, port = 0, targetPid = 0, remotePort = 0;
+        uint8_t fatal = 0, remoteReady = 0;
+        BOOL startRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatal, sizeof(fatal));
         if (!identity) status = @"core-identity-mismatch";
         else if (!prefixes) status = @"core-entry-mismatch";
-        self.trialReport[@"status"] = status;
-        [self writeTrialReport];
-        // Attach-only: never RemoteOpen and never remote-exec (including getpid)
-        // from the constructor path. Launch-time remote calls into the game can
-        // freeze or kill it. Match the published Core session to the named game
-        // process with local lookups only; menu "打开游戏" stays user-initiated.
-        CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 600;
-        if (identity && prefixes) while (!pidMatches && CFAbsoluteTimeGetCurrent() < deadline) {
-            if ((waits % 25) == 0) {
-                self.trialReport[@"wait_ticks"] = @(waits);
-                self.trialReport[@"wait_blocker"] = waitBlocker;
-                self.trialReport[@"status"] = status;
-                [self writeTrialReport];
-            }
-            waits++;
-            uint32_t quarantine = 0, pid = 0, port = 0;
-            uint8_t fatal = 0, ready = 0;
-            BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
-            BOOL fatalRead = CCPReadBytes(local, base + 0xC1D2E8, &fatal, sizeof(fatal));
+        else if (!startRead || quarantine != 0 || fatal != 0) {
+            waitBlocker = @"recorded-fault";
+            status = @"open-blocked-by-recorded-fault";
+        } else {
             BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &pid, sizeof(pid));
-            BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &ready, sizeof(ready));
             BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &port, sizeof(port));
-            quarantineBefore = quarantine;
-            fatalBefore = fatal;
-            if (!quarantineRead || quarantine != 0 || !fatalRead || fatal != 0) {
-                waitBlocker = @"recorded-fault";
-                status = @"open-blocked-by-recorded-fault";
-                break;
-            }
-            (void)readyRead; (void)ready;
             if (!portRead || port == 0 || !pidRead || pid == 0) {
                 waitBlocker = @"waiting-for-published-game-session";
                 status = @"switch-to-game";
-                usleep(200000);
-                continue;
+            } else {
+                uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+                uint64_t published = ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid);
+                if (named == 0) lookup = @"zero";
+                else if (named == ~(uint64_t)0) lookup = @"not-found";
+                else lookup = @"located";
+                if (named == 0 || named == ~(uint64_t)0 || published == 0 ||
+                    published == ~(uint64_t)0 || named != published || !entry) {
+                    waitBlocker = @"remote-port-in-progress";
+                    status = @"springboard-port-held";
+                } else {
+                    pidMatches = YES;
+                    waitBlocker = @"game-session-published";
+                    status = @"existing-game-session";
+                }
             }
-            uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
-            uint64_t published = ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid);
-            if (named == 0) lookup = @"zero";
-            else if (named == ~(uint64_t)0) lookup = @"not-found";
-            else lookup = @"located";
-            if (named == 0 || named == ~(uint64_t)0 || published == 0 ||
-                published == ~(uint64_t)0 || named != published || !entry) {
-                waitBlocker = @"remote-port-in-progress";
-                status = @"springboard-port-held";
-                usleep(20000);
-                continue;
-            }
-            lookup = @"located";
-            openAppState = UIApplication.sharedApplication.applicationState == UIApplicationStateBackground
-                ? @"background" : @"active";
-            // Local name/pid object match is enough. Do not remote-call getpid —
-            // that still executes inside the game and has killed live sessions.
-            callResult = @"skipped-open-time-remote-call";
-            execCalled = NO;
-            pidMatches = YES;
-            waitBlocker = @"game-session-published";
-            status = @"existing-game-session";
-            break;
         }
-        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
-        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
-        BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
-        BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
+        BOOL retry = !pidMatches &&
+            ([status isEqualToString:@"switch-to-game"] ||
+             [status isEqualToString:@"springboard-port-held"]) &&
+            attempt < 3000;
+        if (retry) {
+            if ((attempt % 25) == 0 &&
+                (!self.trialReport || [self.trialReport[@"mode"] isEqualToString:@"early-game-session"])) {
+                self.trialReport = [@{@"schema_version": @42, @"probe_revision": @42,
+                    @"mode": @"early-game-session", @"status": status,
+                    @"wait_blocker": waitBlocker, @"wait_ticks": @(attempt),
+                    @"open_result": @"attach-only-never-remote-open",
+                    @"call_result": @"skipped-open-time-remote-call",
+                    @"session_open_attempted": @NO, @"menu_status_policy": @"silent-attach-keep-idle",
+                    @"game_version": @"1.38.12", @"game_build": @"15915",
+                    @"process_name": @"ShadowTrackerExtra",
+                    @"vehicle_appearance_changes_implemented": @NO,
+                    @"ui_location": @"native-menu-below-position"} mutableCopy];
+                [self writeTrialReport];
+            }
+            int64_t delay = [status isEqualToString:@"springboard-port-held"]
+                ? 20 * NSEC_PER_MSEC : 200 * NSEC_PER_MSEC;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay), self.captureQueue,
+                ^{ [self pollEarlyAttachAttempt:attempt + 1]; });
+            return;
+        }
+        self.earlyAttachFinished = YES;
+        CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
+        CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
+        CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
         NSDictionary *gameThread = pidMatches ? RunGameThreadProbe(base)
             : @{@"attempted": @NO, @"status": @"skipped-pid-mismatch"};
         if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @41, @"probe_revision": @41,
-            @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
-            @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
-            @"status": status, @"session_open_attempted": @NO, @"wait_ticks": @(waits),
-            @"wait_blocker": waitBlocker, @"app_state_at_open": openAppState,
-            @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
-            @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
-            @"game_thread_probe": gameThread,
-            @"vehicle_appearance_changes_implemented": @NO,
-            @"target_pid_published": @(pidRead && targetPid != 0),
-            @"remote_port_present": @(portRead && remotePort != 0),
-            @"remote_ready": @(readyRead && remoteReady != 0),
-            @"quarantine_at_start": @(quarantineStart), @"quarantine_start_read": @(startRead),
-            @"fatal_at_start": @(fatalStart),
-            @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
-            @"quarantine_reason": QuarantineReason(base),
-            @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
-            @"quarantine_changed": @(startRead && quarantineStart != quarantineAfter),
-            @"ui_location": @"native-menu-below-position"} mutableCopy];
-        [self writeTrialReport];
-        CCPMenuStatus shown = CCPMenuFailed;
-        if (pidMatches) shown = CCPMenuExecMatched;
-        else if ([status isEqualToString:@"open-blocked-by-recorded-fault"]) shown = CCPMenuGameOpenBlocked;
-        else if ([status isEqualToString:@"springboard-port-held"] ||
-                 [status isEqualToString:@"switch-to-game"] ||
-                 [status isEqualToString:@"early-window-missed"]) shown = CCPMenuProcessAbsent;
-        atomic_store(&MenuStatus, shown);
-        dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+        if (!self.capturing && !atomic_load(&MenuOwned) &&
+            (!self.trialReport || [self.trialReport[@"mode"] isEqualToString:@"early-game-session"])) {
+            self.trialReport = [@{@"schema_version": @42, @"probe_revision": @42,
+                @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
+                @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup,
+                @"open_result": @"attach-only-never-remote-open",
+                @"status": status, @"session_open_attempted": @NO, @"wait_ticks": @(attempt),
+                @"wait_blocker": waitBlocker,
+                @"app_state_at_open": UIApplication.sharedApplication.applicationState == UIApplicationStateBackground
+                    ? @"background" : @"active",
+                @"symbol": @"getpid", @"call_result": @"skipped-open-time-remote-call",
+                @"exec_call_attempted": @NO, @"entry_matches": @(entry),
+                @"pid_matches_published": @(pidMatches), @"game_thread_probe": gameThread,
+                @"menu_status_policy": @"silent-attach-keep-idle",
+                @"vehicle_appearance_changes_implemented": @NO,
+                @"target_pid_published": @(targetPid != 0),
+                @"remote_port_present": @(remotePort != 0), @"remote_ready": @(remoteReady != 0),
+                @"quarantine_at_start": @(quarantine), @"quarantine_start_read": @(startRead),
+                @"fatal_at_start": @(fatal), @"quarantine_reason": QuarantineReason(base),
+                @"ui_location": @"native-menu-below-position"} mutableCopy];
+            [self writeTrialReport];
+        }
+        // Keep title at "选择外观" unless attach succeeded and the menu is still idle.
+        if (pidMatches) {
+            CCPMenuStatus current = (CCPMenuStatus)atomic_load(&MenuStatus);
+            if (current == CCPMenuIdle) atomic_store(&MenuStatus, CCPMenuExecMatched);
+        }
     });
 }
 - (void)startGameOpen {
