@@ -253,7 +253,7 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="32",
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="33",
                     CoreCosmeticsMode="early-game-session", CoreCosmeticsUILocation="native-menu-below-position")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)

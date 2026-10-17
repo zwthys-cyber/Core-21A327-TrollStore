@@ -6,6 +6,7 @@
 #include <ptrauth.h>
 #include <sys/mman.h>
 #include <string.h>
+#include <unistd.h>
 
 // Product GameThread PutOn path. Must keep RX code separate from RW CAD slots.
 // r30 froze the game by mprotect(RX) on one buffer that also held FGraphEventRef.
@@ -122,11 +123,16 @@ static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
                event, 0, 0, 0, 0, 0, 0, 0, &rel, &unused);
     remoteCall(10000, game + CCP_ENQUEUE_TF_DESTROY_RVA, "TFunction::Destroy",
                tfunction, 0, 0, 0, 0, 0, 0, 0, &rel, &unused);
-    uint32_t skinAfter[4] = {0};
-    if (read(pid, vehicle + 0x20AC, sizeof(skinAfter), skinAfter)) {
+    // GameThread PutOn is async; poll skin id briefly before reporting.
+    out.skinAfter = skinBefore;
+    for (int settle = 0; settle < 20; settle++) {
+        usleep(50000);
+        uint32_t skinAfter[4] = {0};
+        if (!read(pid, vehicle + 0x20AC, sizeof(skinAfter), skinAfter)) continue;
         out.skinAfter = skinAfter[1];
-        out.skinChanged = skinAfter[1] != skinBefore;
+        if (skinAfter[1] == targetRes || skinAfter[1] != skinBefore) break;
     }
+    out.skinChanged = out.skinAfter != skinBefore;
     out.status = "create-and-dispatch-returned";
     return out;
 }

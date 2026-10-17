@@ -147,7 +147,7 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
 }
 // After getpid matches the published game session: call IsSafeForGameThread and
 // FTaskGraphInterface::Get by address. Vehicle resolve is read-only. PutOn enqueue
-// stays disabled until the split RX/RW product path ships.
+// is menu-only (装目标车皮 / 恢复原车) with split RX/RW pages — never here.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
@@ -252,15 +252,13 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     } else {
         out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
     }
-    // r30 auto-enqueued PutOn after mprotect(RX) on a buffer that also held the
-    // writable FGraphEventRef/TFunction slots; CreateAndDispatch then faulted the
-    // GameThread. Early-session path stays diagnostics-only until a split RX/RW
-    // product path is finished — no mid-build device testing.
+    // Session-open stays diagnostics-only. Product PutOn uses menu 装目标车皮 with
+    // a separate RX code page and RW data page (r30 froze when both shared one RX page).
     out[@"put_on_attempted"] = @NO;
-    out[@"enqueue_status"] = @"disabled-pending-product";
+    out[@"enqueue_status"] = @"menu-explicit-only";
     out[@"enqueue_disabled_reason"] =
-        @"r30-mprotect-rx-covered-writable-event-slot;auto-enqueue-removed";
-    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"disabled-pending-product";
+        @"session-open-never-enqueues;use-menu-puton-split-rx-rw";
+    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"menu-explicit-only";
     out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
     return out;
 }
@@ -1284,6 +1282,12 @@ static NSDictionary *VehicleTrialObservation(void) {
 }
 - (void)startVehicleTrial {
     if (self.capturing) return;
+    // Already applied — keep originalCounter; user must 恢复原车 first.
+    if (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == CCP_VEHICLE_TRIAL_INDEX &&
+        VehicleState.active) {
+        atomic_store(&MenuStatus, CCPMenuVehicleTrialApplied);
+        return;
+    }
     self.capturing = YES; self.vehicleCapturing = NO; self.vehicleTrialMode = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuPresetIndex, CCP_VEHICLE_TRIAL_INDEX);
@@ -1379,16 +1383,24 @@ static NSDictionary *VehicleTrialObservation(void) {
         EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
         EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && TrialBindingValid(&VehicleContext)) {
         atomic_store(&MenuStatus, CCPMenuVehicleRestoring);
+        uint32_t skinNow = CCP_ENQUEUE_TARGET_RES;
+        uint32_t skinWords[4] = {0};
+        if (VehicleContext.target.read(VehicleContext.target.pid, VehicleContext.vehicle + 0x20AC,
+                                       sizeof(skinWords), skinWords))
+            skinNow = skinWords[1];
         CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
         CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
         CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
             VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle,
-            CCP_ENQUEUE_TARGET_RES, original, VehicleContext.target.read, VehicleContext.target.write,
+            skinNow, original, VehicleContext.target.read, VehicleContext.target.write,
             symbolCall, remoteCall);
-        restored = enqueued.putOnAttempted && strcmp(enqueued.status, "create-and-dispatch-returned") == 0;
+        restored = (enqueued.putOnAttempted &&
+                    strcmp(enqueued.status, "create-and-dispatch-returned") == 0) ||
+                   strcmp(enqueued.status, "skipped-already-target") == 0;
         self.trialReport[@"restore"] = @{
             @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
             @"original_skin_id": @(original),
+            @"skin_before": @(skinNow),
             @"put_on_attempted": @(enqueued.putOnAttempted),
             @"skin_after": @(enqueued.skinAfter)
         };

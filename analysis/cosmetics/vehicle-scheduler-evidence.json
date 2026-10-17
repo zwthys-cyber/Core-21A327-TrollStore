@@ -121,5 +121,12 @@
       "Never auto-enqueue on session open; explicit menu action only",
       "No further mid-build device testing requests until a finished IPA"
     ]
+  },
+  "r33_product": {
+    "revision": 33,
+    "cad_abi": "x0=&TFunction, x1=prerequisites(null), w2=desired thread(#4), x8=&FGraphEventRef; trampoline mov x8,x3; br x4 with remote args (tf,0,4,event,cad)",
+    "menu": "装目标车皮 / 恢复原车 on dedicated row; diagnostics below; no hit-rect overlap",
+    "enqueue": "CCPEnqueuePutOnByResID split RX/RW; session-open enqueue_status=menu-explicit-only",
+    "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation on finished IPA"
   }
 }

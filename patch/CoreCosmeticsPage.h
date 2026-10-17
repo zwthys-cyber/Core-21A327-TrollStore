@@ -51,28 +51,24 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
     if (visible) {
         CCPUIVec gap = {0, 8 * scale}; ui.space(&gap);
         if (*category == 5) {
+            // Primary product actions first — must not share a hit rect with diagnostics.
             CCPUIVec row = {8 * scale, 28 * scale}; ui.cursor(&row);
-            if (ui.button("v", "采集车辆", enabled && selected == CCP_VEHICLE_CAPTURE_INDEX))
-                action(CCP_VEHICLE_CAPTURE_INDEX, true);
-            row.x = 155 * scale; ui.cursor(&row);
-            if (ui.button("s", "停止采集", false)) action(CCP_VEHICLE_CAPTURE_INDEX, false);
-            // Explicit PutOn enqueue only — never runs from session-open probes.
-            row.x = 8 * scale; row.y = 70 * scale; ui.cursor(&row);
             if (ui.button("t", "装目标车皮", enabled && selected == CCP_VEHICLE_TRIAL_INDEX))
                 action(CCP_VEHICLE_TRIAL_INDEX, true);
-            row.x = 155 * scale; row.y = 70 * scale; ui.cursor(&row);
+            row.x = 155 * scale; ui.cursor(&row);
             if (ui.button("r", "恢复原车", enabled && selected == CCP_VEHICLE_TRIAL_INDEX))
                 action(CCP_VEHICLE_TRIAL_INDEX, false);
-            // Name lookup only. It does not call the remote open entry.
+            // Diagnostics only. Never auto-enqueue from these paths.
+            row.x = 8 * scale; row.y = 70 * scale; ui.cursor(&row);
+            if (ui.button("v", "采集车辆", enabled && selected == CCP_VEHICLE_CAPTURE_INDEX))
+                action(CCP_VEHICLE_CAPTURE_INDEX, true);
             row.x = 155 * scale; row.y = 70 * scale; ui.cursor(&row);
             if (ui.button("g", "探测游戏进程", enabled && selected == CCP_PROCESS_PROBE_INDEX))
                 action(CCP_PROCESS_PROBE_INDEX, true);
             row.x = 8 * scale; row.y = 112 * scale; ui.cursor(&row);
             if (ui.button("o", "尝试打开游戏", enabled && selected == CCP_GAME_OPEN_INDEX))
                 action(CCP_GAME_OPEN_INDEX, true);
-            // Reuses the session left by a successful open. It does not open,
-            // tear down, or call a vehicle function.
-            row.x = 155 * scale; ui.cursor(&row);
+            row.x = 155 * scale; row.y = 112 * scale; ui.cursor(&row);
             if (ui.button("k", "核对远程进程号", enabled && selected == CCP_REMOTE_EXEC_INDEX))
                 action(CCP_REMOTE_EXEC_INDEX, true);
         }
