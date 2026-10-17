@@ -365,6 +365,8 @@ for index in range(min(count, 8000)):
         if len(offline_symbols) == 32:
             break
 offline_export = None
+offline_dylibs = []
+chained_blob = None
 offline_position = 32
 for _ in range(struct.unpack_from('<I', offline_data, 16)[0]):
     command, size = struct.unpack_from('<II', offline_data, offline_position)
@@ -374,6 +376,15 @@ for _ in range(struct.unpack_from('<I', offline_data, 16)[0]):
         if export_size <= 0x200000 and export_off + export_size <= len(offline_data):
             offline_matches, offline_export_status = export_matches(offline_data[export_off:export_off + export_size])
             offline_export = dict(command=hex(command), size=export_size, status=offline_export_status, symbols=offline_matches)
+    if command in (0xC, 0x80000018, 0x8000001F, 0x80000023):
+        name_off = struct.unpack_from('<I', offline_data, offline_position + 8)[0]
+        start = offline_position + name_off
+        end = offline_data.find(b'\0', start, offline_position + size)
+        offline_dylibs.append(offline_data[start:end].decode('utf-8', 'replace'))
+    if command == 0x80000034:
+        chained_off, chained_size = struct.unpack_from('<II', offline_data, offline_position + 8)
+        if chained_size <= 0x100000 and chained_off + chained_size <= len(offline_data):
+            chained_blob = offline_data[chained_off:chained_off + chained_size]
     offline_position += size
 offline_strings = []
 cursor = 0
@@ -391,12 +402,106 @@ for row in offline_symbols:
         execution_lines += [f'\n### CoreOffline {row["name"]} {address:#x}'] + disassemble(offline, address, 0x160)
 offline.file.close()
 offline_path.unlink()
-offline_literals = {hex(address): offline.string(address) for address in (0x7823, 0x784A, 0x7877, 0x787C)}
+def chained_slot(blob, image, target):
+    if blob is None or len(blob) < 28:
+        return dict(status='absent')
+    version, starts_offset, imports_offset, symbols_offset, imports_count, imports_format, symbols_format = struct.unpack_from('<7I', blob, 0)
+    if version != 0 or starts_offset >= len(blob) or imports_count > 4096:
+        return dict(status='unrecognized', version=version)
+    starts = starts_offset
+    seg_count = struct.unpack_from('<I', blob, starts)[0]
+    if seg_count > 16:
+        return dict(status='segment-cap', segments=seg_count)
+    specials = {0: 'self', 0xFD: 'weak-lookup', 0xFE: 'flat-lookup', 0xFF: 'main-executable'}
+    strides = {1: 8, 7: 8, 9: 8, 10: 8, 12: 8, 2: 4, 6: 4, 8: 4}
+    found = None
+    for index in range(seg_count):
+        info_offset = struct.unpack_from('<I', blob, starts + 4 + index * 4)[0]
+        if not info_offset:
+            continue
+        info = starts + info_offset
+        size, page_size, pointer_format = struct.unpack_from('<IHH', blob, info)
+        segment_offset, max_valid, page_count = struct.unpack_from('<QIH', blob, info + 8)
+        if index >= len(image.segments) or size < 22 + page_count * 2 or page_count > 256 or pointer_format not in strides or info + size > len(blob):
+            return dict(status='page-or-format-cap', pointer_format=pointer_format, page_count=page_count, segment_index=index)
+        words = list(struct.unpack_from('<' + 'H' * ((size - 22) // 2), blob, info + 22))
+        segment = image.segments[index]
+        stride = strides[pointer_format]
+        for page in range(page_count):
+            start = words[page]
+            offsets = []
+            if start == 0xFFFF:
+                continue
+            if start & 0x8000:
+                overflow = start & 0x7FFF
+                for _ in range(32):
+                    if overflow >= len(words):
+                        break
+                    entry = words[overflow]
+                    offsets.append(entry & 0x7FFF)
+                    overflow += 1
+                    if entry & 0x8000:
+                        break
+            else:
+                offsets.append(start)
+            for offset in offsets:
+                address = segment['address'] + segment_offset + page * page_size + offset
+                for _ in range(2048):
+                    if address == target:
+                        raw = struct.unpack_from('<Q', offline_data, image.offset(address))[0]
+                        auth = raw >> 63 & 1
+                        bind = raw >> 62 & 1
+                        nxt = raw >> 51 & 0x7FF
+                        low = raw & ((1 << 51) - 1)
+                        record = dict(status='found', segment=segment['name'], pointer_format=pointer_format,
+                            raw=hex(raw), auth=auth, bind=bind, next=nxt)
+                        if bind:
+                            index = low & (0xFFFFFF if pointer_format == 12 else 0xFFFF)
+                            record['import_index'] = index
+                            name_offset = None
+                            ordinal = None
+                            if index < imports_count and imports_format in (1, 2):
+                                word = struct.unpack_from('<I', blob, imports_offset + index * (4 if imports_format == 1 else 8))[0]
+                                ordinal = word & 0xFF
+                                name_offset = word >> 9
+                            symbol = None
+                            if name_offset is not None and symbols_offset + name_offset < len(blob):
+                                symbol_end = blob.find(b'\0', symbols_offset + name_offset, symbols_offset + name_offset + 96)
+                                symbol = blob[symbols_offset + name_offset:symbol_end].decode('utf-8', 'replace')
+                            library = specials.get(ordinal)
+                            if library is None and ordinal is not None and 1 <= ordinal <= len(offline_dylibs):
+                                library = offline_dylibs[ordinal - 1]
+                            record.update(ordinal=ordinal, library=library, symbol=symbol)
+                        else:
+                            record['target'] = hex(low & (0xFFFFFFFF if auth else (1 << 43) - 1))
+                        return record
+                    if nxt_from(address) == 0:
+                        break
+                    address += nxt_from(address) * stride
+                    if not any(item['address'] <= address < item['address'] + item['length'] for item in image.segments):
+                        break
+    return dict(status='not-in-chain', imports_format=imports_format, imports_count=imports_count, symbols_format=symbols_format)
+
+def nxt_from(address):
+    raw = struct.unpack_from('<Q', offline_data, offline.offset(address))[0]
+    return raw >> 51 & 0x7FF
+
+fixup = chained_slot(chained_blob, offline, 0x102F0)
+if fixup.get('status') == 'found' and not fixup.get('bind'):
+    target = int(fixup['target'], 16) + 0x3710
+    if any(item['address'] <= target < item['address'] + item['length'] for item in offline.segments):
+        execution_lines += [f'\n### CoreOffline fixup target plus 0x3710 {target:#x}'] + disassemble(offline, target, 0x60)
+        fixup['resolved_plus_3710'] = hex(target)
+pretext_end = data.find(b'\0', core.offset(0x100003664), core.offset(0x100003664) + 64)
+pretext_symbol = data[core.offset(0x100003664):pretext_end].decode('utf-8', 'replace')
+execution_lines += ['\n### Core pre-text target 0x100003710'] + disassemble(core, 0x100003710, 0x80)
+offline_literals = {hex(address): offline.string(address) for address in (0x7823, 0x784A, 0x784C, 0x7877, 0x787C)}
 pointer_bits = None
 if offline.code_address(0x102F0) or any(segment['address'] <= 0x102F0 < segment['address'] + segment['length'] for segment in offline.segments):
     pointer_bits = hex(struct.unpack_from('<Q', offline_data, offline.offset(0x102F0))[0])
 offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
-    literals=offline_literals, image_pointer_raw=pointer_bits,
+    literals=offline_literals, image_pointer_raw=pointer_bits, fixup=fixup,
+    loaded_libraries=offline_dylibs, pretext_symbol=pretext_symbol,
     text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
