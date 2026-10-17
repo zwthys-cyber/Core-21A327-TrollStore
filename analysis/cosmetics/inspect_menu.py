@@ -118,6 +118,16 @@ if function_starts_data:
         starts.append(address)
 literal_targets = {address: name for name in ['remote_call', 'remote-call-quarantined', 'invoke']
                    for address in core.string_addresses(name)}
+process_literals = {}
+for name in ['SpringBoard', 'launchd', 'ShadowTrackerExtra', 'backboardd', 'com.tencent.tmgp.pubgmhd']:
+    found = 0
+    for address in core.string_addresses(name):
+        process_literals[address] = name
+        found += 1
+        if found == 4:
+            break
+code_literals = dict(literal_targets)
+code_literals.update(process_literals)
 literal_data_references = []
 for segment in core.segments:
     if not segment['name'].startswith('__DATA'):
@@ -144,8 +154,14 @@ stub_targets.update({0x100000000 + rva: label for rva, label in [
     (0x398C8, 'Core.remote_name_call_candidate'),
     (0x39A80, 'Core.remote_function_call_candidate'),
     (0x3D624, 'Core.remote_objc_call_candidate'),
+    (0x3800, 'Core.remote_bootstrap_veneer'),
+    (0x3A7D4, 'Core.remote_bootstrap_entry'),
+    (0x3A7D8, 'Core.remote_bootstrap_body'),
+    (0x39F00, 'Core.remote_session_teardown'),
+    (0x3B7F4, 'Core.remote_thread_state_writer'),
 ]})
 execution_references = []
+process_reference_count = 0
 code = data[core.text['offset']:core.text['offset'] + (core.text['length'] & ~3)]
 for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
     pc = core.text['address'] + index * 4
@@ -155,7 +171,7 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
         if relative & (1 << 20):
             relative -= 1 << 21
         page, register = (pc & ~4095) + relative * 4096, word & 31
-        if any(0 <= address - page < 4096 for address in literal_targets):
+        if any(0 <= address - page < 4096 for address in code_literals):
             for delta in range(1, 9):
                 offset = (index + delta) * 4
                 if offset + 4 > len(code):
@@ -163,8 +179,8 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
                 following = struct.unpack_from('<I', code, offset)[0]
                 if following & 0xFFC00000 == 0x91000000 and ((following >> 5) & 31) == register:
                     candidate = page + ((following >> 10) & 4095)
-                    if candidate in literal_targets:
-                        target, label = candidate, literal_targets[candidate]
+                    if candidate in code_literals:
+                        target, label = candidate, code_literals[candidate]
                         break
     if word & 0xFC000000 in (0x14000000, 0x94000000):
         relative = word & 0x3FFFFFF
@@ -174,6 +190,10 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
         if candidate in stub_targets:
             target, label = candidate, stub_targets[candidate]
     if target is not None:
+        if label in process_literals.values():
+            if process_reference_count >= 16:
+                continue
+            process_reference_count += 1
         position = bisect_right(starts, pc) - 1
         start = starts[position] if position >= 0 else None
         end = starts[position + 1] if position >= 0 and position + 1 < len(starts) else None
@@ -185,14 +205,48 @@ for address in review_functions[:64]:
     index = bisect_right(starts, address)
     end = starts[index] if index < len(starts) else address + 0x1000
     execution_lines += [f'\n### Core execution candidate {address:#x}'] + disassemble(core, address, min(end - address, 0x1800))
+def bounded_text(address, before, total):
+    if not core.code_address(address):
+        return []
+    start = max(core.text['address'], (address - before) & ~3)
+    end = min(core.text['address'] + (core.text['length'] & ~3), start + total)
+    if end <= start:
+        return []
+    return disassemble(core, start, end - start)
+
 for row in execution_references:
     if row['label'] in literal_targets.values():
         address = int(row['address'], 16)
-        execution_lines += [f'\n### Core {row["label"]} reference {address:#x}'] + disassemble(core, address - 0x100, 0x500)
+        execution_lines += [f'\n### Core {row["label"]} reference {address:#x}'] + bounded_text(address, 0x100, 0x500)
+veneer = 0x100003800
+veneer_section = next((dict(segment=section['segment'], name=section['name'], address=hex(section['address']),
+    length=hex(section['length'])) for section in core.sections
+    if section['address'] <= veneer < section['address'] + section['length']), None)
+veneer_segment = next((segment['name'] for segment in core.segments
+    if segment['address'] <= veneer < segment['address'] + segment['virtual_size']), None)
+bootstrap_veneer = dict(address=hex(veneer), inside_text=core.code_address(veneer),
+    segment=veneer_segment, section=veneer_section)
+if bootstrap_veneer['inside_text']:
+    execution_lines += ['\n### Core remote bootstrap veneer 0x100003800'] + bounded_text(veneer, 0, 0x180)
+session_labels = {'Core.remote_bootstrap_veneer', 'Core.remote_bootstrap_entry', 'Core.remote_bootstrap_body',
+    'Core.remote_session_teardown', 'Core.remote_thread_state_writer'}
+session_rows = [row for row in execution_references if row['label'] in session_labels][:32]
+for row in session_rows:
+    address = int(row['address'], 16)
+    execution_lines += [f'\n### Core {row["label"]} caller {address:#x}'] + bounded_text(address, 0x120, 0x280)
+process_rows = [row for row in execution_references if row['label'] in process_literals.values()][:8]
+for row in process_rows:
+    address = int(row['address'], 16)
+    execution_lines += [f'\n### Core process literal {row["label"]} reference {address:#x}'] + bounded_text(address, 0x80, 0x180)
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
-    status='static-candidates-only', runtime_invocation_verified=False,
+    status='static-candidates-only', runtime_invocation_verified=False, game_thread_dispatch_verified=False,
     symbols=execution_symbols, strings=execution_strings, references=execution_references,
     literal_data_references=literal_data_references,
-    function_windows_limited_to=64, function_candidates=len(review_functions)), indent=2) + '\n')
+    text=dict(address=hex(core.text['address']), length=hex(core.text['length'])),
+    bootstrap_veneer=bootstrap_veneer,
+    process_name_literals={name: [hex(address) for address, label in process_literals.items() if label == name]
+        for name in ['SpringBoard', 'launchd', 'ShadowTrackerExtra', 'backboardd', 'com.tencent.tmgp.pubgmhd']},
+    function_windows_limited_to=64, function_candidates=len(review_functions),
+    session_reference_windows_limited_to=32), indent=2) + '\n')
 binary.unlink()
