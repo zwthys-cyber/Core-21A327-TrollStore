@@ -2,6 +2,7 @@
 """Cloud-only review of the pinned Core menu and its UI/import helpers."""
 import hashlib
 import json
+from bisect import bisect_right
 from pathlib import Path
 import struct
 import zipfile
@@ -41,10 +42,13 @@ records = []
 position = 32
 sections = []
 indirect = None
+function_starts_data = None
 for _ in range(core.u32(16)):
     command, size = struct.unpack_from('<II', data, position)
     if command == 0xB:
         indirect = struct.unpack_from('<II', data, position + 56)
+    if command == 0x26:
+        function_starts_data = struct.unpack_from('<II', data, position + 8)
     if command == 0x19:
         for index in range(core.u32(position + 64)):
             start = position + 72 + index * 80
@@ -77,7 +81,79 @@ execution_strings = sorted({value.decode('utf-8', errors='replace')
     if 0 < len(value) <= 180 and any(term.encode() in value.lower() for term in execution_terms)})
 if len(execution_strings) > 512:
     raise ValueError('Core execution-name review exceeded bounded output')
+starts = []
+if function_starts_data:
+    cursor, length = function_starts_data
+    limit = cursor + length
+    address = 0x100000000
+    while cursor < limit:
+        delta = shift = 0
+        while True:
+            if cursor >= limit or shift > 63:
+                raise ValueError('Invalid Core function-start encoding')
+            value = data[cursor]
+            cursor += 1
+            delta |= (value & 127) << shift
+            shift += 7
+            if not value & 128:
+                break
+        if not delta:
+            break
+        address += delta
+        if not core.code_address(address):
+            raise ValueError('Core function start outside reviewed code')
+        starts.append(address)
+literal_targets = {address: name for name in ['remote_call', 'remote-call-quarantined', 'invoke']
+                   for address in core.string_addresses(name)}
+stub_targets = {0x100000000 + int(row['rva'], 16): row['symbol'] for row in records
+                if any(term in row['symbol'] for term in execution_terms)}
+execution_references = []
+code = data[core.text['offset']:core.text['offset'] + (core.text['length'] & ~3)]
+for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
+    pc = core.text['address'] + index * 4
+    target, label = None, None
+    if word & 0x9F000000 == 0x90000000:
+        relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
+        if relative & (1 << 20):
+            relative -= 1 << 21
+        page, register = (pc & ~4095) + relative * 4096, word & 31
+        if any(0 <= address - page < 4096 for address in literal_targets):
+            for delta in range(1, 9):
+                offset = (index + delta) * 4
+                if offset + 4 > len(code):
+                    break
+                following = struct.unpack_from('<I', code, offset)[0]
+                if following & 0xFFC00000 == 0x91000000 and ((following >> 5) & 31) == register:
+                    candidate = page + ((following >> 10) & 4095)
+                    if candidate in literal_targets:
+                        target, label = candidate, literal_targets[candidate]
+                        break
+    if word & 0xFC000000 in (0x14000000, 0x94000000):
+        relative = word & 0x3FFFFFF
+        if relative & (1 << 25):
+            relative -= 1 << 26
+        candidate = pc + relative * 4
+        if candidate in stub_targets:
+            target, label = candidate, stub_targets[candidate]
+    if target is not None:
+        position = bisect_right(starts, pc) - 1
+        start = starts[position] if position >= 0 else None
+        end = starts[position + 1] if position >= 0 and position + 1 < len(starts) else None
+        execution_references.append(dict(label=label, address=hex(pc), target=hex(target),
+            function_start=hex(start) if start else None, function_end=hex(end) if end else None))
+review_functions = sorted({int(row['function_start'], 16) for row in execution_references if row['function_start']})
+execution_lines = []
+for address in review_functions[:64]:
+    index = bisect_right(starts, address)
+    end = starts[index] if index < len(starts) else address + 0x1000
+    execution_lines += [f'\n### Core execution candidate {address:#x}'] + disassemble(core, address, min(end - address, 0x1800))
+for row in execution_references:
+    if row['label'] in literal_targets.values():
+        address = int(row['address'], 16)
+        execution_lines += [f'\n### Core {row["label"]} reference {address:#x}'] + disassemble(core, address - 0x100, 0x500)
+(output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
     status='static-candidates-only', runtime_invocation_verified=False,
-    symbols=execution_symbols, strings=execution_strings), indent=2) + '\n')
+    symbols=execution_symbols, strings=execution_strings, references=execution_references,
+    function_windows_limited_to=64, function_candidates=len(review_functions)), indent=2) + '\n')
 binary.unlink()
