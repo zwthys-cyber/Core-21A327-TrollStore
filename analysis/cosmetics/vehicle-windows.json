@@ -28,7 +28,7 @@
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
   "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
-  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8"],
+  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8", "0x7637894", "0x7637778", "0x760f7d0", "0x7522a68", "0x37d033c", "0x37d0104", "0x37cca28"],
   "native_registration_tables": [
     {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
     {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
