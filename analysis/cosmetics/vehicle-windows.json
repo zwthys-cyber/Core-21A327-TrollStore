@@ -53,7 +53,7 @@
       }
     }
   ],
-  "call_targets": ["0x42c4c9c", "0x7522a68", "0x35e3c10", "0x35e3d38", "0x35e3d50", "0x35e3f2c", "0x8af6894", "0x8af6900", "0x8af69f4", "0x8afeb0c", "0x3765444", "0x47f2824"],
+  "call_targets": ["0x42c4c9c", "0x7522a68", "0x35e3c10", "0x35e3d38", "0x35e3d50", "0x35e3f2c", "0x8af6894", "0x8af6900", "0x8af69f4", "0x8afeb0c", "0x3765444", "0x3769108", "0x2705f64", "0x2704da4", "0x47f2824"],
   "native_registration_tables": [
     {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
     {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
@@ -156,5 +156,17 @@
     ,{"label": "sample CreateAndDispatch caller with built object", "offset": "0xa4ef550", "length": "0x100"}
     ,{"label": "sample TFunction/delegate builder before CreateAndDispatch", "offset": "0xa4ef624", "length": "0x200"}
     ,{"label": "TaskGraphInterface vtable Dispatch slot helper", "offset": "0x35e3f00", "length": "0x40"}
+    ,{"label": "CreateAndDispatch internal implementation", "offset": "0x3769108", "length": "0x400"}
+    ,{"label": "CreateAndDispatch prerequisite helper", "offset": "0x3768fe0", "length": "0x120"}
+    ,{"label": "TFunction place/allocate helper", "offset": "0x2705f64", "length": "0x100"}
+    ,{"label": "TFunction destroy helper", "offset": "0x2704da4", "length": "0x80"}
+    ,{"label": "GT CreateAndDispatch invoker thunk A", "offset": "0x2341f04", "length": "0x40"}
+    ,{"label": "GT CreateAndDispatch invoker thunk B", "offset": "0x35b8540", "length": "0x40"}
+    ,{"label": "GT CreateAndDispatch invoker thunk C", "offset": "0x37735dc", "length": "0x40"}
+    ,{"label": "sample GT CreateAndDispatch caller simple capture", "offset": "0x232ab7c", "length": "0x120"}
+    ,{"label": "sample GT CreateAndDispatch near helper", "offset": "0x3764fe8", "length": "0x100"}
+    ,{"label": "dispatch_async stub", "offset": "0xaf26f44", "length": "0x10"}
+    ,{"label": "dispatch_sync stub", "offset": "0xaf27100", "length": "0x10"}
+    ,{"label": "sample dispatch_async block caller", "offset": "0x357ee6c", "length": "0x200"}
   ]
 }

@@ -1,6 +1,7 @@
 {
-  "status": "static-scheduler-partial",
+  "status": "static-callable-enqueue-locked",
   "runtime_validated": false,
+  "artifact_commit": "2e19303",
   "game_thread": {
     "id_global": "0x11114c5ec",
     "initialized_global": "0x11114c600",
@@ -16,30 +17,48 @@
     "singleton_slot": "0x111faae30",
     "task_vtable": "0x10e2dbc10",
     "sample_sequence": "CreateTask(prereq=null, thread=4) -> Construct(priority/flags=2|3) -> Get() -> DispatchWhenReady(event, flags=0x104)",
-    "caveat": "Installs a completion/event task vtable. Observed callers synchronize existing work onto GameThread; they do not accept an arbitrary callable for PutOnEquipmentByResID."
+    "caveat": "Completion/event only; not usable for PutOnEquipmentByResID"
   },
-  "function_task_candidate": {
+  "function_task_path": {
     "create_and_dispatch": "0x103765444",
-    "observed_inputs": "x0 = pointer to callable/TFunction-like object, x1 = prerequisites (often null), w2 = desired thread/flags, x8 = FGraphEventRef out",
-    "sample_callers": [
-      {
-        "address": "0x1033cb8cc",
-        "callable": "stack word = code pointer 0x1033f3578",
-        "w2": "0x6ff",
-        "note": "Looks like AnyThread-with-flags rather than GameThread (#4)"
-      },
-      {
-        "address": "0x10a4ef578",
-        "callable": "built object at sp+0x10 via helper 0x10a4ef624",
-        "w2": "0xff",
-        "note": "Matches AnyThread (0xff); not GameThread"
-      }
+    "internal_dispatch": "0x103769108",
+    "tfunction_place": "0x102705f64",
+    "tfunction_destroy": "0x102704da4",
+    "observed_inputs": "x0=&TFunction, x1=prerequisites (null), w2=desired thread, x8=&FGraphEventRef out",
+    "caller_counts": {
+      "total": 104,
+      "game_thread_w2_4": 90,
+      "any_thread_w2_ff_or_6ff": 7,
+      "other": 7
+    },
+    "game_thread_recipe": [
+      "Zero TFunction storage; place 0x10/0x18-byte callable via 0x102705f64 into TFunction+0x10",
+      "Store callable vtable + captured args into the placed object",
+      "Store invoker thunk pointer at TFunction+0 (ADR of a small ldr/b trampoline)",
+      "CreateAndDispatch(TFunction*, prereq=null, thread=4)",
+      "Release FGraphEventRef via 0x1035691fc; destroy TFunction via 0x102704da4"
     ],
-    "next": "Enumerate all CreateAndDispatch callers and keep only those whose nearby immediates encode GameThread (#4 / #0x104) before implementing r27 remote enqueue"
+    "simple_code_pointer_recipe": {
+      "sample": "0x1033cb8cc",
+      "layout": "TFunction is a single stack word holding the code pointer; destroy with 0x102704da4",
+      "sample_w2": "0x6ff (AnyThread-with-flags)",
+      "r27_hypothesis": "Same one-word TFunction with w2=#4 should enqueue that code pointer onto GameThread"
+    },
+    "representative_game_thread_callers": [
+      "0x10232ac08",
+      "0x1033cb630",
+      "0x1035b7154",
+      "0x103765070"
+    ]
   },
   "libdispatch": {
     "imported_symbols": ["__dispatch_main_q", "_dispatch_async", "_dispatch_sync"],
-    "note": "Present as undefined imports; stub RVAs and caller counts are collected by the next vehicle_review pass. Useful only if GameThread is the process main queue on this build."
+    "stubs": {
+      "_dispatch_async": "0x10af26f44",
+      "_dispatch_sync": "0x10af27100"
+    },
+    "stub_callers": {"_dispatch_async": 42, "_dispatch_sync": 2},
+    "note": "__dispatch_main_q is an imported data symbol (no stub). Useful only if GameThread equals the process main queue."
   },
   "put_on": {
     "native": "0x1047f2824",
@@ -47,5 +66,10 @@
     "wrapper": "0x10723c67c",
     "inputs": "x0 = VehicleAvatarComponent, x1 = resource id (converted to definition/handle inside)",
     "requirement": "Must run on GameThread; Core remote worker must enqueue, not call PutOn directly"
-  }
+  },
+  "next_r27": [
+    "Disassemble CreateAndDispatch internals 0x103769108 and a GameThread invoker thunk to confirm one-word TFunction + w2=4",
+    "Wrap Core 0x39A80 remote-call-by-address for IsSafeForGameThread then CreateAndDispatch",
+    "Only after a successful GameThread enqueue diagnostic, call PutOnEquipmentByResID(3349002)"
+  ]
 }
