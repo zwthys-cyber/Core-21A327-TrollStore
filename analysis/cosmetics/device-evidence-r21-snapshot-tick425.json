@@ -1,0 +1,17 @@
+{
+  "captured_at_unix": 1792217160.023536,
+  "schema_version": 21,
+  "probe_revision": 21,
+  "mode": "early-game-session",
+  "status": "early-window-missed",
+  "wait_ticks": 425,
+  "wait_blocker": "snapshot-not-ready",
+  "open_result": "not-called",
+  "call_result": "not-called",
+  "session_open_attempted": false,
+  "process_name": "ShadowTrackerExtra",
+  "game_version": "1.38.12",
+  "game_build": "15915",
+  "vehicle_appearance_changes_implemented": false,
+  "interpretation": "Still an intermediate write. Final fields such as quarantine_after are absent. After 425 ticks the Core snapshot word was still not ready, so the game open had not been called."
+}
