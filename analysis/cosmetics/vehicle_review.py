@@ -194,6 +194,8 @@ def main():
                 windows.append(('vehicle field access', instruction.address - 0x80, 0x200))
     report['field_references'] = fields
     global_references = []
+    scheduler_adrp_add_count = 0
+    scheduler_adrp_ldr_count = 0
     wanted = {int(value, 16) for value in config.get('global_field_loads', [])}
     field_constants = {int(value, 16) for value in config.get('global_field_constants', [])}
     call_targets = {0x100000000 + int(value, 16) for value in config.get('call_targets', [])}
@@ -212,14 +214,21 @@ def main():
         # Reviewed class registration names use ADRP + ADD and UTF-16 strings.
         # Keep raw references as candidates; the surrounding function still
         # needs manual review before assigning a class or constructor identity.
-        if word & 0x9F000000 == 0x90000000 and (literal_addresses or scheduler_addresses):
+        if word & 0x9F000000 == 0x90000000 and (
+                literal_addresses or scheduler_addresses or scheduler_pointer_addresses):
             relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
             if relative & (1 << 20):
                 relative -= 1 << 21
             page = (pc & ~0xFFF) + relative * 4096
             register = word & 31
-            if any(0 <= address - page < 4096 for address in literal_addresses):
-                for delta in range(1, 9):
+            page_has_literal = any(0 <= address - page < 4096 for address in literal_addresses)
+            page_has_scheduler = any(0 <= address - page < 4096 for address in scheduler_addresses)
+            page_has_scheduler_pointer = any(
+                0 <= address - page < 4096 for address in scheduler_pointer_addresses)
+            # Scheduler cstrings and UTF-16 class names live on different pages.
+            # Do not gate scheduler ADRP/ADD discovery on UTF-16 literal hits.
+            if page_has_literal or page_has_scheduler or page_has_scheduler_pointer:
+                for delta in range(1, 12):
                     position = (index + delta) * 4
                     if position + 4 > len(code):
                         break
@@ -232,13 +241,19 @@ def main():
                         if address in scheduler_addresses:
                             global_references.append(dict(address=hex(pc), scheduler_literal=hex(address),
                                                           add_address=hex(pc + delta * 4), kind='adrp-add'))
-                            windows.append(('scheduler literal reference', pc - 0x100, 0x500))
+                            scheduler_adrp_add_count += 1
+                            # Keep every reference in JSON; only disassemble a
+                            # reviewed sample so the artifact stays bounded.
+                            if scheduler_adrp_add_count <= 96:
+                                windows.append(('scheduler literal reference', pc - 0x100, 0x400))
                     if following & 0xFFC00000 == 0xF9400000 and ((following >> 5) & 31) == register:
                         address = page + ((following >> 10) & 4095) * 8
                         if address in scheduler_pointer_addresses:
                             global_references.append(dict(address=hex(pc), scheduler_pointer=hex(address),
                                                           load_address=hex(pc + delta * 4), kind='adrp-ldr'))
-                            windows.append(('scheduler pointer reference', pc - 0x100, 0x500))
+                            scheduler_adrp_ldr_count += 1
+                            if scheduler_adrp_ldr_count <= 48:
+                                windows.append(('scheduler pointer reference', pc - 0x100, 0x400))
         kind = word & 0xFFC00000
         scale = 4 if kind == 0xB9400000 else 8 if kind == 0xF9400000 else 0
         displacement = ((word >> 10) & 4095) * scale
@@ -261,6 +276,13 @@ def main():
                 global_references.append(dict(address=hex(pc), target=hex(target)))
                 windows.append(('vehicle native update caller', pc - 0x100, 0x300))
     report['global_references'] = global_references
+    report['scheduler_reference_counts'] = dict(
+        adrp_add=sum(1 for row in global_references if row.get('kind') == 'adrp-add'),
+        adrp_ldr=sum(1 for row in global_references if row.get('kind') == 'adrp-ldr'),
+        adr=sum(1 for row in global_references if row.get('kind') == 'adr'),
+        is_safe_native_callers=sum(1 for row in global_references if row.get('target') == '0x1042c4c9c'),
+        put_on_native_callers=sum(1 for row in global_references if row.get('target') == '0x1047f2824'),
+    )
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))
     for record in properties:

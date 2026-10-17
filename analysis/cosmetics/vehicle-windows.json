@@ -1,7 +1,7 @@
 {
   "terms": ["VehicleAvatarComponent", "VehicleAvatarComp", "VehicleSkinID", "CurrentVehicle", "ReplicatedVehicle", "GetVehicleAvatarComponent", "GetVehicleSkinID", "CurVehicleSkinID", "RealVehicleSkinID", "PreVehicleSkinID", "PendingVehicleSkinID", "VehicleAvatarItemList", "RepVehicleAvatarItemList", "OnRep_VehicleAvatarItemList", "DoReponceVehicleAvatarItemList", "VehicleUseDoRepOnce", "OnRep_AvatarMeshChanged", "AvatarMeshChangedVehicle", "GetCurrentVehicle", "GetVehicleAvatarSyncDataIDBySlot", "GetVehicleAvatarSyncDataBySlot", "GetMasterVehicleAvatarHandle", "GetVehicleCommon", "GetVehicleUserComponent", "VehicleUserComponent", "OwnerVehicle", "VehicleCommon", "VehicleSeatIdx", "VehicleUserState", "GetVehicleOfCharacter"],
   "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle", "VehicleAvatarEntity", "RenderDirty", "DelayRender"],
-  "scheduler_terms": ["GameThread", "IsInGameThread", "TaskGraph", "ENamedThreads", "AsyncTask", "NamedThread", "GameTask", "dispatch_async", "dispatch_sync", "main_queue", "pthread_getname_np"],
+  "scheduler_terms": ["GameThread", "IsInGameThread", "TaskGraph", "ENamedThreads", "AsyncTask", "NamedThread", "GameTask", "dispatch_async", "dispatch_sync", "main_queue", "pthread_getname_np", "WaitCallInGameThread", "CreateAndDispatchWhenReady", "FFunctionGraphTask", "NamedThreads", "GGameThreadId", "IsSafeForGameThread"],
   "utf16_terms": ["MasterVehicleAvatarEntity", "VehicleAvatarEntity", "VehicleAvatarHandle", "AvatarEntity"],
   "property_regions": [
     {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
@@ -28,7 +28,7 @@
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
   "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
-  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8", "0x7637894", "0x7637778", "0x760f7d0", "0x7522a68", "0x37d033c", "0x37d0104", "0x37cca28"],
+  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8", "0x42c4c9c", "0x7522a68", "0x7522a78", "0x3750630", "0x47f2824"],
   "native_registration_tables": [
     {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
     {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
@@ -98,5 +98,10 @@
     ,{"label": "vehicle entity renderer and post-render", "offset": "0x480a42c", "length": "0xa00"}
     ,{"label": "vehicle avatar resource completion dispatcher", "offset": "0x47eb43c", "length": "0x1000"}
     ,{"label": "vehicle skin trigger native implementation", "offset": "0x47f3104", "length": "0x500"}
+    ,{"label": "IsSafeForGameThread native predicate", "offset": "0x42c4c9c", "length": "0x200"}
+    ,{"label": "GetGameThreadId native", "offset": "0x7522a68", "length": "0x100"}
+    ,{"label": "GetGameThreadId companion", "offset": "0x7522a78", "length": "0x100"}
+    ,{"label": "UpdateFinishPending_GameThread native", "offset": "0x3750630", "length": "0x400"}
+    ,{"label": "PutOnEquipmentByResID native implementation", "offset": "0x47f2824", "length": "0x120"}
   ]
 }
