@@ -6,6 +6,7 @@
 #import <stdatomic.h>
 #import <math.h>
 #import <stdio.h>
+#import <unistd.h>
 #import "CoreCosmeticsRead.h"
 #import "CoreCosmeticsVehicleRead.h"
 #import "CoreCosmeticsWriteCheck.h"
@@ -427,6 +428,7 @@ static NSDictionary *VehicleTrialObservation(void) {
 @property(nonatomic) NSUInteger pendingPresetIndex;
 @property(nonatomic) BOOL vehicleCapturing;
 @property(nonatomic) BOOL vehicleTrialMode;
+- (void)startEarlySession;
 - (void)startTrial;
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)restoreTrial;
@@ -613,6 +615,128 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPMenuStatus shown = CCPMenuFailed;
         if ([result isEqualToString:@"located"]) shown = CCPMenuProcessVisible;
         else if ([result isEqualToString:@"not-found"] || [result isEqualToString:@"zero"]) shown = CCPMenuProcessAbsent;
+        atomic_store(&MenuStatus, shown);
+        dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+    });
+}
+- (void)startEarlySession {
+    if (self.capturing || atomic_load(&MenuOwned)) return;
+    self.capturing = YES;
+    atomic_store(&MenuBusy, true);
+    atomic_store(&MenuStatus, CCPMenuGameOpening);
+    uint32_t generation = ++self.generation;
+    if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
+    dispatch_async(self.captureQueue, ^{
+        if (self.generation != generation) return;
+        CCPReader local = {LocalRead, NULL};
+        uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+        uint32_t quarantineStart = 0, quarantineBefore = 0, quarantineAfter = 0, targetPid = 0, remotePort = 0;
+        uint8_t fatalStart = 0, fatalBefore = 0, fatalAfter = 0, remoteReady = 0;
+        BOOL startRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineStart, sizeof(quarantineStart));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatalStart, sizeof(fatalStart));
+        NSString *lookup = @"unavailable";
+        NSString *openResult = @"not-called";
+        NSString *callResult = @"not-called";
+        NSString *status = @"early-window-missed";
+        BOOL called = NO, sessionReady = NO, execCalled = NO, pidMatches = NO, entry = NO;
+        unsigned waits = 0;
+        BOOL identity = CCPIdentity(local, base, CoreUUID);
+        BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
+            EntryMatches(base + 0x64C7C, SnapshotPrefix) && EntryMatches(base + 0x3A7D4, RemoteOpenPrefix);
+        uint8_t seenEntry[32] = {0};
+        BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
+        entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
+        if (!identity) status = @"core-identity-mismatch";
+        else if (!prefixes) status = @"core-entry-mismatch";
+        else for (waits = 0; waits < 75 && !called && !sessionReady; waits++) {
+            uint32_t quarantine = 0, pid = 0, port = 0;
+            uint8_t fatal = 0, ready = 0;
+            BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
+            BOOL fatalRead = CCPReadBytes(local, base + 0xC1D2E8, &fatal, sizeof(fatal));
+            BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &pid, sizeof(pid));
+            BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &ready, sizeof(ready));
+            BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &port, sizeof(port));
+            quarantineBefore = quarantine;
+            fatalBefore = fatal;
+            if (!quarantineRead || quarantine != 0 || !fatalRead || fatal != 0) {
+                status = @"open-blocked-by-recorded-fault";
+                break;
+            }
+            if (readyRead && ready != 0 && pidRead && pid != 0 && portRead && port != 0 && entry) {
+                sessionReady = YES;
+                status = @"existing-session";
+                break;
+            }
+            if (portRead && port != 0) {
+                usleep(200000);
+                continue;
+            }
+            CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
+            CCPSnapshot readyState = {0};
+            if (!snapshot(&readyState) || !readyState.words[1]) {
+                usleep(200000);
+                continue;
+            }
+            uint64_t found = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+            if (found == 0) lookup = @"zero";
+            else if (found == ~(uint64_t)0) lookup = @"not-found";
+            else lookup = @"located";
+            if (![lookup isEqualToString:@"located"]) {
+                usleep(200000);
+                continue;
+            }
+            called = YES;
+            uint64_t returned = ((CCPRemoteOpen)SignedEntry(base + 0x3A7D4))("ShadowTrackerExtra", 0);
+            uint32_t code = (uint32_t)returned;
+            if (code == 0) openResult = @"returned-zero";
+            else if (code == 0xFFFFFFFFu) openResult = @"returned-failure";
+            else openResult = @"returned-other";
+            status = @"game-open-attempt-finished";
+        }
+        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
+        BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
+        BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
+        BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
+        if ((called && [openResult isEqualToString:@"returned-zero"]) || sessionReady) {
+            if (quarantineAfter == 0 && fatalAfter == 0 && pidRead && targetPid != 0 &&
+                readyRead && remoteReady != 0 && portRead && remotePort != 0 && entry) {
+                execCalled = YES;
+                uint64_t output = 0;
+                uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))("getpid", 0, 0, &output);
+                uint32_t code = (uint32_t)returned;
+                if (code == 1) {
+                    callResult = @"returned-success";
+                    pidMatches = output == (uint64_t)targetPid;
+                } else if (code == 0) callResult = @"returned-zero";
+                else callResult = @"returned-other";
+            }
+        }
+        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
+        self.trialReport = [@{@"schema_version": @17, @"probe_revision": @17,
+            @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
+            @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
+            @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
+            @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
+            @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
+            @"vehicle_appearance_changes_implemented": @NO,
+            @"target_pid_published": @(pidRead && targetPid != 0),
+            @"remote_port_present": @(portRead && remotePort != 0),
+            @"remote_ready": @(readyRead && remoteReady != 0),
+            @"quarantine_at_start": @(quarantineStart), @"quarantine_start_read": @(startRead),
+            @"fatal_at_start": @(fatalStart),
+            @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
+            @"quarantine_reason": QuarantineReason(base),
+            @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
+            @"quarantine_changed": @(startRead && quarantineStart != quarantineAfter),
+            @"ui_location": @"native-menu-below-position"} mutableCopy];
+        [self writeTrialReport];
+        CCPMenuStatus shown = CCPMenuFailed;
+        if (pidMatches) shown = CCPMenuExecMatched;
+        else if (execCalled && [callResult isEqualToString:@"returned-success"]) shown = CCPMenuExecMismatch;
+        else if ([status isEqualToString:@"open-blocked-by-recorded-fault"]) shown = CCPMenuGameOpenBlocked;
+        else if (called || execCalled) shown = CCPMenuGameOpenReturned;
         atomic_store(&MenuStatus, shown);
         dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
     });
@@ -1078,9 +1202,9 @@ __attribute__((visibility("default"))) void CoreCosmeticsRenderPage(void) {
         atomic_load(&MenuBusy) || atomic_load(&MenuOwned), atomic_load(&MenuPresetIndex), &category, &page, NativeMenuAction);
 }
 __attribute__((constructor)) static void StartCosmeticsProbe(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        CosmeticsController = [CCPCosmeticsController new];
-        CosmeticsController.backgroundTask = UIBackgroundTaskInvalid;
-        CosmeticsController.pendingPresetIndex = NSNotFound;
-    });
+    CCPCosmeticsController *controller = [CCPCosmeticsController new];
+    controller.backgroundTask = UIBackgroundTaskInvalid;
+    controller.pendingPresetIndex = NSNotFound;
+    CosmeticsController = controller;
+    [controller startEarlySession];
 }
