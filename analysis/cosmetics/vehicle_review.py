@@ -153,7 +153,8 @@ def main():
                 if symbol_index >= len(symbol_names):
                     continue
                 symbol = symbol_names[symbol_index]
-                if any(term.lower() in symbol.lower() for term in scheduler_terms):
+                if any(term.lower() in symbol.lower()
+                       for term in config.get('scheduler_terms', [])):
                     stub_address = section_address + index * reserved2
                     scheduler_stubs.append(dict(
                         symbol=symbol, address=hex(stub_address), section=section_name,
