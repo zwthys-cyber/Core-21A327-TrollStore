@@ -40,8 +40,10 @@ int main(void) {
     result.putOnAttempted = true;
     assert(CCPVehiclePutOnDispatched(&result));
     result.status = "create-and-dispatch-call-failed";
-    assert(CCPVehiclePutOnDispatched(&result));
+    result.putOnAttempted = false;
+    assert(!CCPVehiclePutOnDispatched(&result));
     result.status = "task-context-changed";
+    result.putOnAttempted = true;
     result.taskRejectedContext = true;
     result.mappingReleased = false;
     assert(CCPVehiclePutOnDispatched(&result));

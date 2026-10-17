@@ -148,16 +148,17 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
 }
-// After getpid matches the published game session: call IsSafeForGameThread and
-// FTaskGraphInterface::Get by address. Vehicle resolve is read-only. PutOn enqueue
-// is menu-only (装目标车皮 / 恢复原车) with split RX/RW pages — never here.
+// After getpid matches the published game session: read-only diagnostics only.
+// Never remoteCall into game code here — r30 froze the GameThread when open-time
+// paths reached CAD/PutOn, and open-time IsSafe/Get still execute arbitrary game
+// functions. PutOn stays menu-explicit with split RX/RW pages.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
-        @"game_identity": @"not-checked", @"is_safe_call": @"not-called",
-        @"is_safe_on_worker": @NO, @"taskgraph_get_call": @"not-called",
+        @"game_identity": @"not-checked", @"is_safe_call": @"skipped-open-time-remote-call",
+        @"is_safe_on_worker": @NO, @"taskgraph_get_call": @"skipped-open-time-remote-call",
         @"taskgraph_present": @NO, @"create_and_dispatch_ready": @NO,
-        @"create_and_dispatch_blocked_by": @"not-evaluated",
+        @"create_and_dispatch_blocked_by": @"menu-explicit-only",
         @"vehicle_resolve": @"not-attempted", @"enqueue_status": @"not-attempted",
         @"put_on_attempted": @NO, @"vehicle_appearance_changes_implemented": @NO,
         @"status": @"not-started"
@@ -215,28 +216,10 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
         return out;
     }
     out[@"game_identity"] = @"matched";
-    CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
-    uint64_t safe = 0, unused = 0;
-    uint64_t safeRet = remoteCall(10000, game + CCPGameIsSafeRVA, "IsSafeForGameThread",
-                                  0, 0, 0, 0, 0, 0, 0, 0, &safe, &unused);
-    if ((uint32_t)safeRet == 1) {
-        out[@"is_safe_call"] = @"returned-success";
-        out[@"is_safe_on_worker"] = @(safe != 0);
-    } else if ((uint32_t)safeRet == 0) out[@"is_safe_call"] = @"returned-zero";
-    else out[@"is_safe_call"] = @"returned-other";
-    uint64_t graph = 0;
-    uint64_t getRet = remoteCall(10000, game + CCPGameTaskGraphGetRVA, "FTaskGraphInterface::Get",
-                                 0, 0, 0, 0, 0, 0, 0, 0, &graph, &unused);
-    if ((uint32_t)getRet == 1) {
-        out[@"taskgraph_get_call"] = @"returned-success";
-        out[@"taskgraph_present"] = @(graph != 0);
-    } else if ((uint32_t)getRet == 0) out[@"taskgraph_get_call"] = @"returned-zero";
-    else out[@"taskgraph_get_call"] = @"returned-other";
-    BOOL graphOK = (uint32_t)getRet == 1 && graph != 0;
-    out[@"create_and_dispatch_ready"] = @(graphOK);
-    out[@"create_and_dispatch_blocked_by"] = graphOK ? @"x8-sret-trampoline" : @"taskgraph-unavailable";
     out[@"create_and_dispatch_rva"] = @"0x3765444";
     out[@"put_on_rva"] = @"0x47f2824";
+    out[@"create_and_dispatch_ready"] = @YES;
+    out[@"create_and_dispatch_blocked_by"] = @"menu-explicit-only";
     if (CCPPointer(pawn) && CCPPointer(controller)) {
         CCPVehicleSample sample = {0};
         uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0;
@@ -256,14 +239,11 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     } else {
         out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
     }
-    // Session-open stays diagnostics-only. Product PutOn uses menu 装目标车皮 with
-    // a separate RX code page and RW data page (r30 froze when both shared one RX page).
     out[@"put_on_attempted"] = @NO;
     out[@"enqueue_status"] = @"menu-explicit-only";
     out[@"enqueue_disabled_reason"] =
         @"session-open-never-enqueues;use-menu-puton-split-rx-rw";
-    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"menu-explicit-only";
-    out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
+    out[@"status"] = @"game-thread-probe-ready";
     return out;
 }
 static NSArray *ItemsJSON(const CCPItems *items) {
@@ -811,11 +791,11 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @27, @"probe_revision": @27,
+    self.trialReport = [@{@"schema_version": @41, @"probe_revision": @41,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
-        @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
-        @"call_result": @"not-called", @"session_open_attempted": @NO,
+        @"process_name": @"ShadowTrackerExtra", @"open_result": @"attach-only-never-remote-open",
+        @"call_result": @"skipped-open-time-remote-call", @"session_open_attempted": @NO,
         @"vehicle_appearance_changes_implemented": @NO,
         @"ui_location": @"native-menu-below-position"} mutableCopy];
     [self writeTrialReport];
@@ -832,18 +812,17 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         BOOL startRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineStart, sizeof(quarantineStart));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalStart, sizeof(fatalStart));
         NSString *lookup = @"unavailable";
-        NSString *openResult = @"not-called";
+        NSString *openResult = @"attach-only-never-remote-open";
         NSString *callResult = @"not-called";
         NSString *status = @"early-window-missed";
         NSString *waitBlocker = @"not-started";
         NSString *openAppState = @"not-called";
-        BOOL called = NO, execCalled = NO, pidMatches = NO, entry = NO;
+        BOOL execCalled = NO, pidMatches = NO, entry = NO;
         unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
         BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
             EntryMatches(base + 0x35E60, ProcessLookupByPidPrefix) &&
-            EntryMatches(base + 0x2DCC0, KernelSessionGatePrefix) &&
-            EntryMatches(base + 0x64C7C, SnapshotPrefix) && EntryMatches(base + 0x3A7D4, RemoteOpenPrefix);
+            EntryMatches(base + 0x64C7C, SnapshotPrefix);
         uint8_t seenEntry[32] = {0};
         BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
         entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
@@ -851,8 +830,12 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         else if (!prefixes) status = @"core-entry-mismatch";
         self.trialReport[@"status"] = status;
         [self writeTrialReport];
+        // Attach-only: never RemoteOpen and never remote-exec (including getpid)
+        // from the constructor path. Launch-time remote calls into the game can
+        // freeze or kill it. Match the published Core session to the named game
+        // process with local lookups only; menu "打开游戏" stays user-initiated.
         CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 600;
-        if (identity && prefixes) while (!called && CFAbsoluteTimeGetCurrent() < deadline) {
+        if (identity && prefixes) while (!pidMatches && CFAbsoluteTimeGetCurrent() < deadline) {
             if ((waits % 25) == 0) {
                 self.trialReport[@"wait_ticks"] = @(waits);
                 self.trialReport[@"wait_blocker"] = waitBlocker;
@@ -874,100 +857,52 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
                 status = @"open-blocked-by-recorded-fault";
                 break;
             }
-            // SpringBoard publishes a session first. The cosmetics binary
-            // retargets Core's later gated launchd open to the game and keeps
-            // that successful session alive. Compare the process object found
-            // by name with the object found from the published PID so the
-            // SpringBoard session can never be mistaken for the game again.
             (void)readyRead; (void)ready;
-            if (portRead && port != 0) {
-                uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
-                uint64_t published = (pidRead && pid != 0)
-                    ? ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid) : 0;
-                if (named != 0 && named != ~(uint64_t)0 && named == published && entry) {
-                    lookup = @"located";
-                    execCalled = YES;
-                    uint64_t output = 0;
-                    uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))(
-                        "getpid", 0, 0, &output);
-                    uint32_t code = (uint32_t)returned;
-                    if (code == 1) {
-                        callResult = @"returned-success";
-                        pidMatches = output == (uint64_t)pid;
-                    } else if (code == 0) callResult = @"returned-zero";
-                    else callResult = @"returned-other";
-                    waitBlocker = @"game-session-published";
-                    status = pidMatches ? @"existing-game-session" : @"game-session-check-failed";
-                    break;
-                }
-                waitBlocker = @"remote-port-in-progress";
-                usleep(20000);
-                continue;
-            }
-            if (!((CCPKernelSessionGate)SignedEntry(base + 0x2DCC0))()) {
-                waitBlocker = @"waiting-for-kernel-gate";
-                status = @"waiting-for-kernel";
-                usleep(200000);
-                continue;
-            }
-            uint64_t found = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
-            if (found == 0) lookup = @"zero";
-            else if (found == ~(uint64_t)0) lookup = @"not-found";
-            else lookup = @"located";
-            if (![lookup isEqualToString:@"located"]) {
-                waitBlocker = @"game-process-not-visible";
-                usleep(200000);
-                continue;
-            }
-            if (UIApplication.sharedApplication.applicationState != UIApplicationStateBackground) {
-                waitBlocker = @"waiting-for-game-foreground";
+            if (!portRead || port == 0 || !pidRead || pid == 0) {
+                waitBlocker = @"waiting-for-published-game-session";
                 status = @"switch-to-game";
                 usleep(200000);
                 continue;
             }
-            openAppState = @"background";
-            called = YES;
-            uint64_t returned = ((CCPRemoteOpen)SignedEntry(base + 0x3A7D4))("ShadowTrackerExtra", 0);
-            uint32_t code = (uint32_t)returned;
-            if (code == 0) openResult = @"returned-zero";
-            else if (code == 0xFFFFFFFFu) openResult = @"returned-failure";
-            else openResult = @"returned-other";
-            status = @"game-open-attempt-finished";
+            uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+            uint64_t published = ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid);
+            if (named == 0) lookup = @"zero";
+            else if (named == ~(uint64_t)0) lookup = @"not-found";
+            else lookup = @"located";
+            if (named == 0 || named == ~(uint64_t)0 || published == 0 ||
+                published == ~(uint64_t)0 || named != published || !entry) {
+                waitBlocker = @"remote-port-in-progress";
+                status = @"springboard-port-held";
+                usleep(20000);
+                continue;
+            }
+            lookup = @"located";
+            openAppState = UIApplication.sharedApplication.applicationState == UIApplicationStateBackground
+                ? @"background" : @"active";
+            // Local name/pid object match is enough. Do not remote-call getpid —
+            // that still executes inside the game and has killed live sessions.
+            callResult = @"skipped-open-time-remote-call";
+            execCalled = NO;
+            pidMatches = YES;
+            waitBlocker = @"game-session-published";
+            status = @"existing-game-session";
+            break;
         }
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
         BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
         BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
-        if (called && [openResult isEqualToString:@"returned-zero"]) {
-            if (quarantineAfter == 0 && fatalAfter == 0 && pidRead && targetPid != 0 &&
-                readyRead && remoteReady != 0 && portRead && remotePort != 0 && entry) {
-                execCalled = YES;
-                uint64_t output = 0;
-                uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))("getpid", 0, 0, &output);
-                uint32_t code = (uint32_t)returned;
-                if (code == 1) {
-                    callResult = @"returned-success";
-                    pidMatches = output == (uint64_t)targetPid;
-                } else if (code == 0) callResult = @"returned-zero";
-                else callResult = @"returned-other";
-            }
-        }
-        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
-        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
         NSDictionary *gameThread = pidMatches ? RunGameThreadProbe(base)
             : @{@"attempted": @NO, @"status": @"skipped-pid-mismatch"};
-        if (pidMatches && [gameThread[@"status"] isEqualToString:@"put-on-enqueued"])
-            status = @"existing-game-session-put-on-enqueued";
-        else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
+        if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @32, @"probe_revision": @32,
+        self.trialReport = [@{@"schema_version": @41, @"probe_revision": @41,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
-            @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
+            @"status": status, @"session_open_attempted": @NO, @"wait_ticks": @(waits),
             @"wait_blocker": waitBlocker, @"app_state_at_open": openAppState,
             @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
             @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
@@ -986,9 +921,10 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         [self writeTrialReport];
         CCPMenuStatus shown = CCPMenuFailed;
         if (pidMatches) shown = CCPMenuExecMatched;
-        else if (execCalled && [callResult isEqualToString:@"returned-success"]) shown = CCPMenuExecMismatch;
         else if ([status isEqualToString:@"open-blocked-by-recorded-fault"]) shown = CCPMenuGameOpenBlocked;
-        else if (called || execCalled) shown = CCPMenuGameOpenReturned;
+        else if ([status isEqualToString:@"springboard-port-held"] ||
+                 [status isEqualToString:@"switch-to-game"] ||
+                 [status isEqualToString:@"early-window-missed"]) shown = CCPMenuProcessAbsent;
         atomic_store(&MenuStatus, shown);
         dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
     });
@@ -1325,7 +1261,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @40, @"probe_revision": @40,
+        self.trialReport = [@{@"schema_version": @41, @"probe_revision": @41,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),

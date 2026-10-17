@@ -49,7 +49,6 @@ static inline bool CCPVehiclePutOnDispatched(const CCPVehicleEnqueueResult *resu
         (result && result->putOnAttempted && result->status &&
          (!strcmp(result->status, "target-not-observed") ||
           !strcmp(result->status, "task-not-completed") ||
-          !strcmp(result->status, "create-and-dispatch-call-failed") ||
           (!strcmp(result->status, "task-context-changed") && !result->mappingReleased)));
 }
 
@@ -264,6 +263,11 @@ static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
     out.remoteStatus = (uint32_t)cadStatus;
     if ((uint32_t)cadStatus != 1) {
         out.status = "create-and-dispatch-call-failed";
+        out.putOnAttempted = false;
+        uint64_t unmapped = 0;
+        uint64_t unmapStatus = remoteCall(10000, munmapAddr, "munmap-failed-cad",
+            mapping, page * 2, 0, 0, 0, 0, 0, 0, &unmapped, &unused);
+        out.mappingReleased = (uint32_t)unmapStatus == 1 && unmapped == 0;
         return out;
     }
     uint64_t rel = 0;
