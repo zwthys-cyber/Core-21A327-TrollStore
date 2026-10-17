@@ -27,7 +27,10 @@
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
   "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
-  "call_targets": ["0x47ee7c8", "0x5a403e4"],
+  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8"],
+  "native_registration_tables": [
+    {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71}
+  ],
   "strings": [
     {"label": "resolved source class name from native getter", "address": "0x10ceac05a"},
     {"label": "resolved source class qualified name", "address": "0x10ceac136"},
@@ -85,5 +88,9 @@
     ,{"label": "loaded item handle native class getter", "offset": "0x74bb1dc", "length": "0x180"}
     ,{"label": "base avatar entity native method registration", "offset": "0x61142e8", "length": "0x500"}
     ,{"label": "loaded item handle actual class getter", "offset": "0x74bb434", "length": "0x180"}
+    ,{"label": "vehicle entity loaded handle setup", "offset": "0x45dabbc", "length": "0x1000"}
+    ,{"label": "vehicle entity deferred render dispatcher", "offset": "0x45d9000", "length": "0x4800"}
+    ,{"label": "base avatar entity render entry", "offset": "0x42f1574", "length": "0x400"}
+    ,{"label": "avatar component entity render map iteration", "offset": "0x42e53e8", "length": "0x300"}
   ]
 }

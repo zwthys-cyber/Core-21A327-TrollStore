@@ -79,6 +79,23 @@ def main():
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]
+    registrations = []
+    for entry in config.get('native_registration_tables', []):
+        count = int(entry['count'])
+        if not 0 < count <= 128:
+            raise ValueError('Native registration count outside reviewed bound')
+        address = int(entry['address'], 16)
+        rows = []
+        for index in range(count):
+            offset = image.offset(address + index * 16)
+            name_address, function = image.qword(offset), image.qword(offset + 8)
+            name = image.string(name_address)
+            if not name or not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9:]*', name) or not image.code_address(function):
+                raise ValueError('Unconfirmed native registration table entry')
+            rows.append(dict(name=name, code_address=hex(function), table_index=index))
+            windows.append((entry['label'] + ': ' + name, function, 0x300))
+        registrations.append(dict(label=entry['label'], address=hex(address), rows=rows))
+    report['native_registrations'] = registrations
     for table, entry in zip(tables, config['pointer_tables']):
         for row in table['rows']:
             if row['executable'] and row['slot'] in entry.get('disassemble_slots', []):
