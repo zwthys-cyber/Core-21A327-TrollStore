@@ -1,6 +1,6 @@
 # Core / 和平精英美化项目 AI 交接文档
 
-更新时间：2026-10-16 UTC。本文记录用户目标、已完成工作、实机证据、失败经过和接手位置。
+更新时间：2026-10-17 UTC。本文记录用户目标、已完成工作、实机证据、失败经过和接手位置。
 
 **当前结论：金龙外套已实机确认；r8 车辆读取成立；r9 写入成功但 Pending 未消费，用户明确确认画面“完全没有变化”。资源包未下载只是用户假设，未验证。r10 已在 GitHub 编译和检查通过，新增当前车辆实体 / LoadedHandle / 模型记录的只读诊断，关闭无效的 r9 新试换入口；等待手机报告。目标宾利资源是否下载仍为 not-checked，车辆换肤尚未完成。**
 
@@ -99,6 +99,7 @@
 - `analysis/cosmetics/device-evidence-r4.json`
 - `analysis/cosmetics/device-evidence-r8.json`（用户完整重复报告的压缩摘要，8 次稳定车辆采样）
 - `analysis/cosmetics/device-evidence-r9.json`（两个车型不匹配及匹配车辆试换；写入成功但原生请求未消费）
+- `analysis/cosmetics/device-evidence-r9-followup.json`（2026-10-17 收到的 8 次只读报告；仍是 schema / probe 9，不含 r10 实体诊断）
 
 注意：`trial-profile.json` 内仍有早期 `visual_effect_device_verified: false`，它不是对后续用户画面确认的否定。金龙结果应结合 `device-evidence-r3.json` 和用户原话；不要把整个候选目录改成已验证。
 
@@ -505,6 +506,14 @@ r10 的 `CCPReadVehicleEntity` 不接受写入回调，不调用游戏函数、�
 报告 mode 为 `vehicle-entity-resource-diagnostics`，schema / probe 为 10。`refresh_diagnostics.target_resource_availability=not-checked`，仅描述当前实体加载状态，不扫描游戏磁盘，不主动加载目标宾利，也不保证路径记录对应的资源可用。用户怀疑未下载资源，仍需实际资源就绪证据；不要把 r10 空句柄 / 路径直接解释为缺包。
 
 r10 控制器拒绝新的车辆试换请求，菜单移除“宾利试换15秒”，保留采集 / 停止及已有修改记录的恢复处理；服装试穿不变。完整代码 `061d253`，构建 `38965497830` 成功，43 项 Python 回归、原生实体及既有测试、最终 IPA 修改边界和签名检查均通过。**尚无 r10 手机报告。下一步先取报告定位实际实体 / 加载状态，再研究真正的刷新调度，不能声称已经修复。**
+
+### 11.13 2026-10-17 后续报告仍为 r9
+
+用户在 r10 交付后发来一份 `captured_at_unix=1792205171.538888` 的只读报告：schema / probe 都是 9，mode 为 `vehicle-read-adaptation`，`vehicle_trial_available=true`，没有 `refresh_diagnostics`。8 次采样均成功，原车 / Real / Previous / Default 为 `3349001`、主槽计数 3、Pending 为 0，控制器回退与组件归属仍匹配。这份报告支持原车读取和当前无待处理请求；没有新增实体或目标资源证据。
+
+源码中 r10 的车辆采集在开始时固定写 schema / probe 10、mode `vehicle-entity-resource-diagnostics` 和 `vehicle_trial_available=false`；资源缺失不会使它回退成 r9 报告。交付 IPA 的轻量 SHA 查看仍与第 14 节一致；没有为此重新编译或在本机验证。
+
+目前不能断定用户安装错包。可能取到旧导出文件、仍有旧 Core 进程运行，或使用了另一安装包。下一步关闭悬浮并彻底退出 Core，用第 14 节 r10 IPA 覆盖安装后重新启动和初始化，再采集并从原 Core 文件夹重新导出；先确认 schema / probe 10 和 `refresh_diagnostics`，无需重复 r9 宾利试换。新报告前不要把本次数据标为 r10 实机结果。
 
 ## 12. 下一位 AI 的建议接手顺序
 

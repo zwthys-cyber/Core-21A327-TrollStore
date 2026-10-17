@@ -16,6 +16,8 @@ r10 增加当前车辆外观实体、已加载物品及模型状态的只读采�
 
 报告应为 `schema_version=10`、`probe_revision=10`、`mode=vehicle-entity-resource-diagnostics`。报告会覆盖同名旧文件，请先保留需要的历史报告。r10 采集过程中没有车辆写入，不能通过等待 15 秒判断是否修复。
 
+若导出的报告仍是 schema / probe 9、mode `vehicle-read-adaptation`，它属于 r9 采集逻辑。先关闭悬浮并彻底退出 Core，用本页指定的 r10 包覆盖安装，重新启动、初始化和采集，再从 Core 文件夹重新导出。资源缺失不会使 r10 的固定报告版本变成 9；旧文件、旧进程或不同安装包的具体原因需要进一步区分。
+
 ## 新增内容与判断边界
 
 `latest_vehicle.refresh_diagnostics` 和各样本新增：
