@@ -589,14 +589,24 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', main_code)):
 pretext_end = data.find(b'\0', core.offset(0x100003664), core.offset(0x100003664) + 64)
 pretext_symbol = data[core.offset(0x100003664):pretext_end].decode('utf-8', 'replace')
 execution_lines += ['\n### Core pre-text target 0x100003710'] + disassemble(core, 0x100003710, 0x80)
-offline_literals = {hex(address): offline.string(address) for address in (0x7823, 0x784A, 0x784C, 0x7877, 0x787C)}
+offline_literals = {hex(address): offline.string(address) for address in (0x7823, 0x784A, 0x784C, 0x7877, 0x787C, 0x78ED)}
+base_symbols = []
+for index in range(min(count, 8000)):
+    name_offset, kind, section, desc, value = struct.unpack_from('<IBBHQ', offline_data, symoff + index * 16)
+    end = offline_data.find(b'\0', stroff + name_offset, stroff + strsize)
+    name = offline_data[stroff + name_offset:end].decode('utf-8', 'replace')
+    if any(term in name for term in ('dyld', 'strcmp', 'strstr', 'image', 'MachHeader')):
+        base_symbols.append(dict(name=name, section=section, value=hex(value)))
+    if len(base_symbols) == 24:
+        break
 pointer_bits = None
 if offline.code_address(0x102F0) or any(segment['address'] <= 0x102F0 < segment['address'] + segment['length'] for segment in offline.segments):
     pointer_bits = hex(struct.unpack_from('<Q', offline_data, offline.offset(0x102F0))[0])
 offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
     literals=offline_literals, image_pointer_raw=pointer_bits, fixup=fixup,
     loaded_libraries=offline_dylibs, pretext_symbol=pretext_symbol, image_slot_references=slot_refs,
-    image_slot_stores=slot_stores, initializers=initializers, veneer_symbols=veneer_symbols,
+    image_slot_stores=slot_stores, initializers=initializers, base_symbols=base_symbols,
+    veneer_symbols=veneer_symbols,
     veneer_calls=veneer_calls,
     text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
