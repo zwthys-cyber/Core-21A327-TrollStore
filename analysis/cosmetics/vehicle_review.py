@@ -90,10 +90,11 @@ def main():
             offset = image.offset(address + index * 16)
             name_address, function = image.qword(offset), image.qword(offset + 8)
             name = image.string(name_address)
-            if not name or not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9:]*', name) or not image.code_address(function):
-                raise ValueError('Unconfirmed native registration table entry')
-            rows.append(dict(name=name, code_address=hex(function), table_index=index))
-            windows.append((entry['label'] + ': ' + name, function, 0x300))
+            confirmed = bool(name and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9:]*', name) and image.code_address(function))
+            rows.append(dict(name=name, name_address=hex(name_address), code_address=hex(function),
+                             table_index=index, confirmed=confirmed))
+            if confirmed:
+                windows.append((entry['label'] + ': ' + name, function, 0x300))
         registrations.append(dict(label=entry['label'], address=hex(address), rows=rows))
     report['native_registrations'] = registrations
     for table, entry in zip(tables, config['pointer_tables']):
