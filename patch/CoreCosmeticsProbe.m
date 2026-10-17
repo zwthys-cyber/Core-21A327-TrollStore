@@ -142,74 +142,9 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
 }
-    target->write = (CCPWriteFunction)SignedEntry(base + 0x620B8);
-    CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
-    uint64_t buf = 0, unused = 0;
-    uint64_t allocRet = symbolCall("calloc", 1, CCPRemoteTrampSize, &buf);
-    if ((uint32_t)allocRet != 1 || !CCPPointer(buf)) {
-        out[@"enqueue_status"] = @"calloc-failed";
-        out[@"calloc_status"] = @((uint32_t)allocRet);
-        return;
-    }
-    out[@"trampoline_buf"] = [NSString stringWithFormat:@"0x%llx", (unsigned long long)buf];
-    // cad: mov x8,x3; br x4
-    const uint32_t cadCode[2] = {0xAA0303E8u, 0xD61F0080u};
-    // puton: ldr x0,#16; ldr x1,#20; ldr x16,#24; br x16  (pools at +0x20/+0x28/+0x30)
-    const uint32_t putOnCode[4] = {0x58000080u, 0x580000A1u, 0x580000D0u, 0xD61F0200u};
-    uint64_t avatarWord = avatar;
-    uint64_t resWord = CCPTargetSkinResID;
-    uint64_t putOnFn = game + CCPGamePutOnByResRVA;
-    uint64_t invoker = buf + CCPRemotePutOnOff;
-    if (!RemoteWriteBytes(target, buf + CCPRemoteCadOff, cadCode, sizeof(cadCode)) ||
-        !RemoteWriteBytes(target, buf + CCPRemotePutOnOff, putOnCode, sizeof(putOnCode)) ||
-        !RemoteWriteBytes(target, buf + CCPRemoteAvatarOff, &avatarWord, sizeof(avatarWord)) ||
-        !RemoteWriteBytes(target, buf + CCPRemoteResOff, &resWord, sizeof(resWord)) ||
-        !RemoteWriteBytes(target, buf + CCPRemotePutOnFnOff, &putOnFn, sizeof(putOnFn)) ||
-        !RemoteWriteBytes(target, buf + CCPRemoteTFunctionOff, &invoker, sizeof(invoker))) {
-        out[@"enqueue_status"] = @"trampoline-write-failed";
-        return;
-    }
-    uint64_t mpRet = 0;
-    uint64_t mpStatus = remoteCall(10000, mprotectAddr, "mprotect",
-                                   buf, CCPRemoteTrampSize, (uint64_t)(PROT_READ | PROT_EXEC),
-                                   0, 0, 0, 0, 0, &mpRet, &unused);
-    out[@"mprotect_status"] = @((uint32_t)mpStatus);
-    out[@"mprotect_errno"] = @(mpRet);
-    if ((uint32_t)mpStatus != 1 || mpRet != 0) {
-        out[@"enqueue_status"] = @"mprotect-failed";
-        return;
-    }
-    out[@"create_and_dispatch_blocked_by"] = @"none-installed-trampoline";
-    uint64_t cadOut0 = 0, cadOut1 = 0;
-    out[@"put_on_attempted"] = @YES;
-    uint64_t cadStatus = remoteCall(15000, buf + CCPRemoteCadOff, "CAD-x8-tramp",
-                                    buf + CCPRemoteTFunctionOff, 0, 4,
-                                    buf + CCPRemoteEventOff, game + CCPGameCreateAndDispatchRVA,
-                                    0, 0, 0, &cadOut0, &cadOut1);
-    out[@"create_and_dispatch_status"] = @((uint32_t)cadStatus);
-    if ((uint32_t)cadStatus != 1) {
-        out[@"enqueue_status"] = @"create-and-dispatch-call-failed";
-        return;
-    }
-    uint64_t rel0 = 0;
-    remoteCall(10000, game + CCPGameGraphEventReleaseRVA, "FGraphEventRef::Release",
-               buf + CCPRemoteEventOff, 0, 0, 0, 0, 0, 0, 0, &rel0, &unused);
-    remoteCall(10000, game + CCPGameTFunctionDestroyRVA, "TFunction::Destroy",
-               buf + CCPRemoteTFunctionOff, 0, 0, 0, 0, 0, 0, 0, &rel0, &unused);
-    usleep(200000);
-    CCPReader remote = {TargetRead, target};
-    uint32_t skinAfter[4] = {0};
-    if (CCPReadBytes(remote, vehicle + 0x20AC, skinAfter, sizeof(skinAfter))) {
-        out[@"vehicle_skin_id_after"] = @(skinAfter[1]);
-        out[@"skin_id_changed"] = @(skinAfter[1] != skinBefore);
-    }
-    out[@"enqueue_status"] = @"create-and-dispatch-returned";
-    out[@"status"] = @"put-on-enqueued";
-}
-#endif
 // After getpid matches the published game session: call IsSafeForGameThread and
 // FTaskGraphInterface::Get by address. Vehicle resolve is read-only. PutOn enqueue
-// stays disabled after the r30 device freeze.
+// stays disabled until the split RX/RW product path ships.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
