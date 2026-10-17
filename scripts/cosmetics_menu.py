@@ -13,7 +13,7 @@ MENU_RETURN = 0xD09E4
 DLSYM_STUB = 0x725A10
 LAUNCHD_OPEN_CALL_RVA = 0x2E7D4
 LAUNCHD_OPEN_CALL = bytes.fromhex('00300094')
-REMOTE_OPEN_FAILURE = word(0x12800000)  # mov w0, #-1
+REMOTE_OPEN_SUCCESS = word(0x52800000)  # mov w0, #0
 REMOVED_TABS_SHA256 = '5a033074e6ee5168867e716bf338705af6878c648437f6e909cd775b38270504'
 
 
@@ -28,11 +28,11 @@ def cosmetics_core(original):
     result = bytearray(minimal_core(original))
     if original[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4] != LAUNCHD_OPEN_CALL:
         raise ValueError('Unreviewed launchd remote-open call')
-    # Keep SpringBoard initialization intact, but make the later automatic
-    # launchd open take its existing failure/teardown path. Otherwise launchd
-    # races the cosmetics worker and records a first-exception timeout before
-    # the game can be opened through the original remote-open veneer.
-    result[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4] = REMOTE_OPEN_FAILURE
+    # Keep SpringBoard initialization intact and skip only the later automatic
+    # launchd remote-open. Report success so Core still runs its existing
+    # zero-return continuation at 0x2E140, which prepares the kernel snapshot
+    # from the two already validated kernel ports before normal teardown.
+    result[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4] = REMOTE_OPEN_SUCCESS
     if hashlib.sha256(original[0xD07E0:0xD097C]).hexdigest() != REMOVED_TABS_SHA256:
         raise ValueError('Unreviewed native sidebar region')
     if original[0x744529:0x744530] != '物资'.encode() + b'\0':

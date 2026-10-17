@@ -11,7 +11,7 @@ import test_minimal_features as minimal_tests
 from build import commands
 from minimal_features import minimal_core
 from cosmetics_menu import (cosmetics_core, MENU_SYMBOL, MENU_SYMBOL_RVA, MENU_BRIDGE, MENU_RETURN,
-                            DLSYM_STUB, LAUNCHD_OPEN_CALL_RVA, LAUNCHD_OPEN_CALL, REMOTE_OPEN_FAILURE)
+                            DLSYM_STUB, LAUNCHD_OPEN_CALL_RVA, LAUNCHD_OPEN_CALL, REMOTE_OPEN_SUCCESS)
 from unicorn import UC_HOOK_CODE
 from unicorn import arm64_const as r
 BASE = minimal_tests.BASE
@@ -44,9 +44,9 @@ class CosmeticsMenuTests(unittest.TestCase):
         for offset, size in [(0x620B8, 0x2000), (0xC54270, 0x400), (0xD33F4, 0x54CC)]:
             self.assertEqual(self.binary[offset:offset + size], baseline[offset:offset + size])
 
-    def test_launchd_open_uses_existing_failure_path_without_calling_remote_open(self):
+    def test_launchd_open_uses_zero_return_continuation_without_calling_remote_open(self):
         self.assertEqual(self.original[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], LAUNCHD_OPEN_CALL)
-        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], REMOTE_OPEN_FAILURE)
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], REMOTE_OPEN_SUCCESS)
         self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA - 8:LAUNCHD_OPEN_CALL_RVA],
                          self.original[LAUNCHD_OPEN_CALL_RVA - 8:LAUNCHD_OPEN_CALL_RVA])
         self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA + 4:LAUNCHD_OPEN_CALL_RVA + 8],
