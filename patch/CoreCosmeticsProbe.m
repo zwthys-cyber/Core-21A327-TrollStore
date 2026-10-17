@@ -624,7 +624,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @22, @"probe_revision": @22,
+    self.trialReport = [@{@"schema_version": @23, @"probe_revision": @23,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
         @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
@@ -739,7 +739,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
         if (!called && [waitBlocker isEqualToString:@"snapshot-not-ready"]) status = @"kernel-snapshot-not-ready";
-        self.trialReport = [@{@"schema_version": @22, @"probe_revision": @22,
+        self.trialReport = [@{@"schema_version": @23, @"probe_revision": @23,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),

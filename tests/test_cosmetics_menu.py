@@ -10,7 +10,8 @@ from test_patch import ROOT
 import test_minimal_features as minimal_tests
 from build import commands
 from minimal_features import minimal_core
-from cosmetics_menu import cosmetics_core, MENU_SYMBOL, MENU_SYMBOL_RVA, MENU_BRIDGE, MENU_RETURN, DLSYM_STUB
+from cosmetics_menu import (cosmetics_core, MENU_SYMBOL, MENU_SYMBOL_RVA, MENU_BRIDGE, MENU_RETURN,
+                            DLSYM_STUB, LAUNCHD_OPEN_CALL_RVA, LAUNCHD_OPEN_CALL, REMOTE_OPEN_FAILURE)
 from unicorn import UC_HOOK_CODE
 from unicorn import arm64_const as r
 BASE = minimal_tests.BASE
@@ -30,7 +31,7 @@ class CosmeticsMenuTests(unittest.TestCase):
 
     def test_only_native_row_page_dispatch_and_callback_region_change(self):
         baseline = minimal_core(self.original)
-        allowed = {i for start, size in [(0xD07E0, 4), (0xD0814, 28),
+        allowed = {i for start, size in [(LAUNCHD_OPEN_CALL_RVA, 4), (0xD07E0, 4), (0xD0814, 28),
                     (MENU_SYMBOL_RVA, len(MENU_SYMBOL)), (0xD098C, 12), (0x744529, 6)]
                    for i in range(start, start + size)}
         changed = {i for i, (a, b) in enumerate(zip(baseline, self.binary)) if a != b}
@@ -42,6 +43,14 @@ class CosmeticsMenuTests(unittest.TestCase):
         self.assertEqual(self.binary[0x744529:0x744530], '美化'.encode() + b'\0')
         for offset, size in [(0x620B8, 0x2000), (0xC54270, 0x400), (0xD33F4, 0x54CC)]:
             self.assertEqual(self.binary[offset:offset + size], baseline[offset:offset + size])
+
+    def test_launchd_open_uses_existing_failure_path_without_calling_remote_open(self):
+        self.assertEqual(self.original[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], LAUNCHD_OPEN_CALL)
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], REMOTE_OPEN_FAILURE)
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA - 8:LAUNCHD_OPEN_CALL_RVA],
+                         self.original[LAUNCHD_OPEN_CALL_RVA - 8:LAUNCHD_OPEN_CALL_RVA])
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA + 4:LAUNCHD_OPEN_CALL_RVA + 8],
+                         self.original[LAUNCHD_OPEN_CALL_RVA + 4:LAUNCHD_OPEN_CALL_RVA + 8])
 
     def test_page_routing_and_stale_preferences(self):
         destinations = {BASE + 0xD09C8, BASE + 0xD09D0, BASE + MENU_BRIDGE}
