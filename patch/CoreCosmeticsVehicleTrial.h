@@ -25,12 +25,15 @@ typedef enum { CCPVehiclePrepareNone, CCPVehiclePrepareSource, CCPVehiclePrepare
     CCPVehiclePrepareCounter, CCPVehiclePrepareReady } CCPVehiclePrepareStage;
 typedef struct {
     uint64_t game, pawn, controller, user, vehicle, avatar;
+    uint64_t pendingApplyMapping, pendingApplyDataPage, pendingApplyMappingLength;
+    uint64_t pendingRestoreMapping, pendingRestoreDataPage, pendingRestoreMappingLength;
     CCPArray sync, cached;
     uint32_t componentIndex, originalCounter, appliedCounter, restoreCounter;
     CCPVehiclePrepareStage prepareStage;
     uint8_t membership[0x30], objectIdentity[3][0x1C], entryIdentity[CCP_VEHICLE_STRIDE];
     unsigned owned;
-    bool active, prepared, requestSent, restoring, counterRestored, restoreRequested, engineApplyObserved;
+    bool active, prepared, requestSent, restoring, counterRestored, restoreRequested, engineApplyObserved,
+        putOnTaskCompleted;
 } CCPVehicleTrial;
 typedef struct {
     CCPVehicleTrialStatus status;

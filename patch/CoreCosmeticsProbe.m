@@ -26,7 +26,9 @@ typedef CCPNativeWriteResult (*CCPWriteFunction)(uint32_t, uint64_t, const void 
 typedef struct { uint32_t pid; CCPReadFunction read; CCPWriteFunction write; } CCPTarget;
 typedef struct {
     uintptr_t coreBase;
-    uint64_t game, pawn, avatar, controller, vehicle;
+    uint64_t game, pawn, avatar, controller, vehicle, vehicleUser, vehicleComponentOffset;
+    uint64_t vehicleComponentHeap, vehicleComponentBitmapWord;
+    uint32_t vehicleComponentBit;
     CCPSnapshot snapshot;
     uint8_t binding[0x30];
     CCPSnapshotFunction getSnapshot;
@@ -459,11 +461,21 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
             return @{@"status": @"session-or-character-changed"};
         if (resolved && [vehicle[@"sync_array_stable"] boolValue] && EntryMatches(base + 0x620B8, WritePrefix)) {
             uint64_t actor = 0, user = 0, currentVehicle = 0, vehicleAvatar = 0;
+            uint64_t componentHeap = 0;
             CCPVehicleSample diagnostic = {0};
             BOOL owned = CCPVehicleSource(remote, game, pawn, controller, &actor, &user, &currentVehicle, &diagnostic) &&
                 CCPVehicleOwner(remote, currentVehicle, &vehicleAvatar);
+            if (owned) owned = CCPReadBytes(remote, controller + 0x460, &componentHeap, sizeof(componentHeap)) &&
+                (!componentHeap || CCPPointer(componentHeap));
+            uint32_t selected = diagnostic.components.selectedIndex;
+            uint64_t bitmap = componentHeap ? componentHeap : controller + 0x450;
             *resolved = (CCPResolvedTarget){.coreBase = base, .game = game, .pawn = pawn, .controller = controller,
                 .avatar = owned ? vehicleAvatar : 0, .vehicle = owned ? currentVehicle : 0,
+                .vehicleUser = owned ? user : 0,
+                .vehicleComponentOffset = owned ? (uint64_t)selected * 16u : 0,
+                .vehicleComponentHeap = owned ? componentHeap : 0,
+                .vehicleComponentBitmapWord = owned ? bitmap + (uint64_t)(selected / 32u) * 4u : 0,
+                .vehicleComponentBit = owned ? UINT32_C(1) << (selected % 32u) : 0,
                 .snapshot = before, .getSnapshot = snapshot, .target = target,
                 .sessionFromPublishedGlobals = fromPublished};
             memcpy(resolved->binding, binding, sizeof(binding));
@@ -557,6 +569,25 @@ static bool TrialBindingValid(void *context) {
     if (!target->sessionFromPublishedGlobals && !published &&
         now.words[1] != target->snapshot.words[1]) return false;
     return true;
+}
+static bool VehicleContextSample(CCPResolvedTarget *target, uint32_t expectedItem,
+                                 bool requireAppearanceReady, CCPVehicleSample *sample) {
+    if (!target || !sample || !TrialBindingValid(target)) return false;
+    CCPReader reader = {TargetRead, &target->target};
+    uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0, componentHeap = 0;
+    CCPVehicleSample chain = {0};
+    if (!CCPVehicleSource(reader, target->game, target->pawn, target->controller,
+                          &actor, &user, &vehicle, &chain) ||
+        (uint64_t)chain.components.selectedIndex * 16u != target->vehicleComponentOffset ||
+        user != target->vehicleUser || vehicle != target->vehicle ||
+        !CCPVehicleOwner(reader, vehicle, &avatar) || avatar != target->avatar ||
+        !CCPReadBytes(reader, target->controller + 0x460, &componentHeap, sizeof(componentHeap)) ||
+        componentHeap != target->vehicleComponentHeap ||
+        !CCPReadVehicle(reader, target->game, target->pawn, target->controller, sample))
+        return false;
+    if (expectedItem && (sample->skin != expectedItem || sample->count == 0 ||
+                         sample->items[0].item != expectedItem)) return false;
+    return !requireAppearanceReady || CCPVehicleAppearanceReady(sample, expectedItem);
 }
 static CCPNativeWriteResult TrialTargetWrite(void *context, uint64_t address, const void *expected,
                                             const void *replacement, size_t length) {
@@ -1298,7 +1329,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @38, @"probe_revision": @38,
+        self.trialReport = [@{@"schema_version": @39, @"probe_revision": @39,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),
@@ -1318,8 +1349,9 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     self.trialReport[@"before"] = before;
     uintptr_t base = VehicleContext.coreBase ? VehicleContext.coreBase : (uintptr_t)_dyld_get_image_header(0);
     BOOL entries = EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
-        EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && EntryMatches(base + 0x620B8, WritePrefix);
-    if (!VehicleContext.game || !VehicleContext.avatar || !VehicleContext.vehicle ||
+        EntryMatches(base + 0x620B8, WritePrefix);
+    if (!VehicleContext.game || !VehicleContext.avatar || !VehicleContext.vehicleUser ||
+        !VehicleContext.vehicle ||
         !VehicleContext.target.write || !TrialBindingValid(&VehicleContext) || !entries) {
         NSDictionary *vehicle = before[@"vehicle_candidate"];
         BOOL noCar = [vehicle[@"status"] isEqualToString:@"current-vehicle-unavailable"] ||
@@ -1345,17 +1377,38 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         [self finishVehicleTrialOnQueue:generation reason:@"source-incompatible"];
         return;
     }
+    CCPVehicleSample source = {0};
+    if (!VehicleContextSample(&VehicleContext, preset.sourceItem, true, &source)) {
+        self.trialReport[@"status"] = @"waiting-for-stable-source-render-state";
+        self.trialReport[@"waiting_attempts"] = @(attempt + 1);
+        [self writeTrialReport];
+        if (attempt >= 60) {
+            atomic_store(&MenuStatus, CCPMenuFailed);
+            [self finishVehicleTrialOnQueue:generation reason:@"source-readiness-timeout"];
+        } else dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), self.captureQueue,
+            ^{ [self prepareVehicleTrialOnQueue:generation attempt:attempt + 1]; });
+        return;
+    }
     VehicleState = (CCPVehicleTrial){
         .game = VehicleContext.game, .pawn = VehicleContext.pawn, .controller = VehicleContext.controller,
-        .vehicle = VehicleContext.vehicle, .avatar = VehicleContext.avatar,
+        .user = VehicleContext.vehicleUser, .vehicle = VehicleContext.vehicle, .avatar = VehicleContext.avatar,
         .originalCounter = skinBefore, .active = YES, .prepared = YES
     };
     CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
-    CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
     CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
-        VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle, skinBefore,
-        preset.targetItem, preset.targetResource, VehicleContext.target.read, VehicleContext.target.write,
-        symbolCall, remoteCall);
+        VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.controller,
+        VehicleContext.vehicleComponentOffset, VehicleContext.vehicleComponentHeap,
+        VehicleContext.vehicleComponentBitmapWord, VehicleContext.vehicleComponentBit,
+        VehicleContext.vehicleUser, VehicleContext.vehicle, skinBefore, 0,
+        preset.targetItem, preset.targetResource, false,
+        VehicleContext.target.read, VehicleContext.target.write, remoteCall);
+    VehicleState.putOnTaskCompleted = enqueued.taskCompleted;
+    if (enqueued.putOnAttempted && !enqueued.mappingReleased &&
+        enqueued.codePage && enqueued.dataPage && enqueued.mappingLength) {
+        VehicleState.pendingApplyMapping = enqueued.codePage;
+        VehicleState.pendingApplyDataPage = enqueued.dataPage;
+        VehicleState.pendingApplyMappingLength = enqueued.mappingLength;
+    }
     self.trialReport[@"enqueue"] = @{
         @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
         @"remote_status": @(enqueued.remoteStatus),
@@ -1365,6 +1418,10 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         @"skin_before": @(enqueued.skinBefore),
         @"skin_after": @(enqueued.skinAfter),
         @"skin_id_changed": @(enqueued.skinChanged),
+        @"task_completed": @(enqueued.taskCompleted),
+        @"task_rejected_context": @(enqueued.taskRejectedContext),
+        @"mapping_released": @(enqueued.mappingReleased),
+        @"mapping_length": @(enqueued.mappingLength),
         @"code_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.codePage],
         @"data_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.dataPage]
     };
@@ -1372,11 +1429,8 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     CCPVehicleSample rendered = {0};
     BOOL confirmed = NO;
     if (stateObserved) {
-        CCPReader reader = {TargetRead, &VehicleContext.target};
         for (unsigned settle = 0; settle < 20 && !confirmed; settle++) {
-            confirmed = CCPReadVehicle(reader, VehicleContext.game, VehicleContext.pawn,
-                                       VehicleContext.controller, &rendered) &&
-                        CCPVehicleAppearanceReady(&rendered, preset.targetItem);
+            confirmed = VehicleContextSample(&VehicleContext, preset.targetItem, true, &rendered);
             if (!confirmed) usleep(250000);
         }
     }
@@ -1405,35 +1459,119 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     self.trialReport[@"finish_reason"] = reason;
     uintptr_t base = VehicleContext.coreBase ? VehicleContext.coreBase : (uintptr_t)_dyld_get_image_header(0);
     BOOL restored = NO;
+    BOOL abandonedForExternalChange = NO;
     uint32_t original = VehicleState.originalCounter;
     if (VehicleState.active && original != 0 && VehicleContext.game && VehicleContext.avatar &&
-        VehicleContext.vehicle && VehicleContext.target.write &&
-        EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
-        EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && TrialBindingValid(&VehicleContext)) {
+        VehicleContext.vehicleUser && VehicleContext.vehicle && VehicleContext.target.write &&
+        EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix)) {
         atomic_store(&MenuStatus, CCPMenuVehicleRestoring);
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        uint32_t skinNow = preset.targetItem;
-        uint32_t skinWords[4] = {0};
-        if (VehicleContext.target.read(VehicleContext.target.pid, VehicleContext.vehicle + 0x20AC,
-                                       sizeof(skinWords), skinWords))
-            skinNow = skinWords[1];
         CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
-        CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
-        CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
-            VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle,
-            skinNow, original, preset.sourceResource, VehicleContext.target.read, VehicleContext.target.write,
-            symbolCall, remoteCall);
+        CCPVehicleMappingRelease applyRelease = CCPReleaseCompletedVehicleMapping(
+            VehicleContext.target.pid, VehicleState.pendingApplyMapping,
+            VehicleState.pendingApplyDataPage, VehicleState.pendingApplyMappingLength,
+            VehicleContext.target.read, remoteCall);
+        if (applyRelease.completionValue == 1) VehicleState.putOnTaskCompleted = true;
+        if (applyRelease.mappingReleased) {
+            VehicleState.pendingApplyMapping = 0;
+            VehicleState.pendingApplyDataPage = 0;
+            VehicleState.pendingApplyMappingLength = 0;
+        }
+        CCPVehicleSample current = {0};
+        BOOL restoreBindingValid = TrialBindingValid(&VehicleContext);
+        if (!restoreBindingValid || !VehicleContextSample(&VehicleContext, 0, false, &current)) {
+            BOOL releaseOwnership = !restoreBindingValid ||
+                VehicleState.putOnTaskCompleted ||
+                applyRelease.completionValue == 1 || applyRelease.completionValue == 2;
+            if (releaseOwnership) VehicleState.active = NO;
+            self.trialReport[@"restore"] = @{@"status": @"restore-context-or-state-unconfirmed",
+                @"original_skin_id": @(original), @"state_observed": @NO,
+                @"render_entity_observed": @NO,
+                @"binding_valid": @(restoreBindingValid),
+                @"ownership_released": @(releaseOwnership)};
+            atomic_store(&MenuOwned, VehicleState.active);
+            atomic_store(&MenuStatus, VehicleState.active ? CCPMenuRestorePending : CCPMenuIdle);
+            self.trialReport[@"status"] = releaseOwnership ?
+                @"changed-context-abandoned-ownership-released" :
+                @"restore-not-confirmed-change-still-owned";
+            [self writeTrialReport];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+            return;
+        }
+        uint32_t skinNow = current.skin;
+        CCPVehicleEnqueueResult enqueued = {0};
+        CCPVehicleMappingRelease restoreRelease = CCPReleaseCompletedVehicleMapping(
+            VehicleContext.target.pid, VehicleState.pendingRestoreMapping,
+            VehicleState.pendingRestoreDataPage, VehicleState.pendingRestoreMappingLength,
+            VehicleContext.target.read, remoteCall);
+        BOOL restoreFinished = restoreRelease.completionValue == 1;
+        BOOL restoreStillPending = VehicleState.pendingRestoreMapping &&
+            restoreRelease.completionValue == 0;
+        BOOL restoreCleanupPending = VehicleState.pendingRestoreMapping &&
+            restoreRelease.completionValue == 2 && !restoreRelease.mappingReleased;
+        if (restoreRelease.mappingReleased) {
+            VehicleState.pendingRestoreMapping = 0;
+            VehicleState.pendingRestoreDataPage = 0;
+            VehicleState.pendingRestoreMappingLength = 0;
+        }
+        BOOL conflict = skinNow != preset.targetItem && skinNow != original;
+        if (conflict) {
+            enqueued.status = "restore-conflict-third-party-skin";
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else if (restoreStillPending) {
+            enqueued.status = "task-not-completed";
+            enqueued.putOnAttempted = true;
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else if (restoreCleanupPending) {
+            enqueued.status = "completed-task-mapping-release-pending";
+            enqueued.taskRejectedContext = true;
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else if (restoreFinished) {
+            enqueued.status = skinNow == original ? "target-observed" : "target-not-observed";
+            enqueued.putOnAttempted = true;
+            enqueued.taskCompleted = true;
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else {
+            BOOL forceRestore = (!VehicleState.putOnTaskCompleted &&
+                                 applyRelease.completionValue != 2) ||
+                                skinNow == preset.targetItem;
+            enqueued = CCPEnqueuePutOnByResID(
+                VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.controller,
+                VehicleContext.vehicleComponentOffset, VehicleContext.vehicleComponentHeap,
+                VehicleContext.vehicleComponentBitmapWord, VehicleContext.vehicleComponentBit,
+                VehicleContext.vehicleUser, VehicleContext.vehicle, skinNow,
+                !VehicleState.putOnTaskCompleted ? preset.targetItem : 0,
+                original, preset.sourceResource, forceRestore,
+                VehicleContext.target.read, VehicleContext.target.write, remoteCall);
+        }
+        if (enqueued.putOnAttempted && !enqueued.mappingReleased && enqueued.codePage && enqueued.dataPage &&
+            enqueued.mappingLength && !VehicleState.pendingRestoreMapping) {
+            VehicleState.pendingRestoreMapping = enqueued.codePage;
+            VehicleState.pendingRestoreDataPage = enqueued.dataPage;
+            VehicleState.pendingRestoreMappingLength = enqueued.mappingLength;
+        }
         BOOL restoreStateObserved = CCPVehicleRestoreObserved(&enqueued);
         CCPVehicleSample rendered = {0};
         if (restoreStateObserved) {
-            CCPReader reader = {TargetRead, &VehicleContext.target};
             for (unsigned settle = 0; settle < 20 && !restored; settle++) {
-                restored = CCPReadVehicle(reader, VehicleContext.game, VehicleContext.pawn,
-                                          VehicleContext.controller, &rendered) &&
-                           CCPVehicleAppearanceReady(&rendered, original);
+                restored = VehicleContextSample(&VehicleContext, original, true, &rendered);
                 if (!restored) usleep(250000);
             }
         }
+        abandonedForExternalChange = conflict &&
+            (VehicleState.putOnTaskCompleted || applyRelease.completionValue == 2);
         self.trialReport[@"restore"] = @{
             @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
             @"original_skin_id": @(original),
@@ -1441,6 +1579,13 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             @"skin_before": @(skinNow),
             @"put_on_attempted": @(enqueued.putOnAttempted),
             @"skin_after": @(enqueued.skinAfter),
+            @"task_completed": @(enqueued.taskCompleted),
+            @"task_rejected_context": @(enqueued.taskRejectedContext),
+            @"mapping_released": @(enqueued.mappingReleased),
+            @"prior_apply_mapping_released": @(applyRelease.mappingReleased),
+            @"prior_restore_mapping_released": @(restoreRelease.mappingReleased),
+            @"conflict": @(conflict),
+            @"ownership_abandoned_for_external_change": @(abandonedForExternalChange),
             @"state_observed": @(restoreStateObserved),
             @"render_entity_observed": @(restored),
             @"loaded_handle_item_id": @(rendered.entity.loadedID),
@@ -1448,7 +1593,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             @"mesh_path_present": @(rendered.entity.meshPathPresent)
         };
     }
-    if (restored) VehicleState.active = NO;
+    if (restored || abandonedForExternalChange) VehicleState.active = NO;
     atomic_store(&MenuOwned, VehicleState.active);
     if ([reason isEqualToString:@"readiness-timeout"] && !VehicleState.active)
         atomic_store(&MenuStatus, CCPMenuFailed);
@@ -1456,8 +1601,9 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     else if (VehicleState.active) atomic_store(&MenuStatus, CCPMenuRestorePending);
     else if (self.trialReport[@"enqueue"]) atomic_store(&MenuStatus, CCPMenuIdle);
     self.trialReport[@"status"] = restored ? @"original-item-observed" :
+        (abandonedForExternalChange ? @"external-vehicle-skin-preserved-ownership-released" :
         (VehicleState.active ? @"restore-not-confirmed-change-still-owned" :
-        (self.trialReport[@"status"] ?: @"trial-finished"));
+        (self.trialReport[@"status"] ?: @"trial-finished")));
     [self writeTrialReport];
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
