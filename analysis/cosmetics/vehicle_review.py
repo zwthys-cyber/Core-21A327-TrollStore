@@ -109,6 +109,25 @@ def main():
     report['scheduler_strings'] = scheduler_strings
     report['scheduler_symbols'] = scheduler_symbols
     scheduler_addresses = {int(row['address'], 16) for row in scheduler_strings}
+    scheduler_pointer_slots = []
+    for literal in scheduler_addresses:
+        needle = struct.pack('<Q', literal)
+        for segment in image.segments:
+            if segment['name'] == '__LINKEDIT':
+                continue
+            cursor = segment['offset']
+            end = cursor + segment['length']
+            while True:
+                hit = image.data.find(needle, cursor, end)
+                if hit < 0:
+                    break
+                if (hit - segment['offset']) % 8 == 0:
+                    scheduler_pointer_slots.append(dict(address=hex(image.address(hit)), literal=hex(literal)))
+                    if len(scheduler_pointer_slots) > 1024:
+                        raise ValueError('Scheduler pointer discovery exceeded its bound')
+                cursor = hit + 1
+    report['scheduler_pointer_slots'] = scheduler_pointer_slots
+    scheduler_pointer_addresses = {int(row['address'], 16) for row in scheduler_pointer_slots}
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]
@@ -203,6 +222,12 @@ def main():
                             global_references.append(dict(address=hex(pc), scheduler_literal=hex(address),
                                                           add_address=hex(pc + delta * 4), kind='adrp-add'))
                             windows.append(('scheduler literal reference', pc - 0x100, 0x500))
+                    if following & 0xFFC00000 == 0xF9400000 and ((following >> 5) & 31) == register:
+                        address = page + ((following >> 10) & 4095) * 8
+                        if address in scheduler_pointer_addresses:
+                            global_references.append(dict(address=hex(pc), scheduler_pointer=hex(address),
+                                                          load_address=hex(pc + delta * 4), kind='adrp-ldr'))
+                            windows.append(('scheduler pointer reference', pc - 0x100, 0x500))
         kind = word & 0xFFC00000
         scale = 4 if kind == 0xB9400000 else 8 if kind == 0xF9400000 else 0
         displacement = ((word >> 10) & 4095) * scale
