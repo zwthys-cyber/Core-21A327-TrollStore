@@ -63,6 +63,14 @@ static const uint8_t RemoteOpenPrefix[32] = {
     0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
 };
 typedef uint64_t (*CCPRemoteOpen)(const char *, uint64_t);
+// 0x3A3E8 is the wrapper the open body calls at 0x3AE80 with "getpid".
+// It resolves the symbol locally, strips the pointer, and calls 0x39C74.
+// Success is the low 32 bits equal to 1; the output word is the remote return.
+static const uint8_t RemoteSymbolPrefix[32] = {
+    0x7f,0x23,0x03,0xd5,0xff,0x43,0x01,0xd1,0xf6,0x57,0x02,0xa9,0xf4,0x4f,0x03,0xa9,
+    0xfd,0x7f,0x04,0xa9,0xfd,0x03,0x01,0x91,0xf3,0x03,0x03,0xaa,0xf4,0x03,0x02,0xaa
+};
+typedef uint64_t (*CCPRemoteSymbolCall)(const char *, uint64_t, uint64_t, uint64_t *);
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
     return vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)length,
@@ -661,7 +669,84 @@ static NSDictionary *VehicleTrialObservation(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
     });
 }
+- (void)startRemoteExecCheck {
+    if (self.capturing || atomic_load(&MenuOwned)) return;
+    self.capturing = YES;
+    atomic_store(&MenuBusy, true);
+    atomic_store(&MenuPresetIndex, CCP_REMOTE_EXEC_INDEX);
+    atomic_store(&MenuStatus, CCPMenuExecChecking);
+    uint32_t generation = ++self.generation;
+    if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
+    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core remote getpid check"
+        expirationHandler:^{}];
+    dispatch_async(self.captureQueue, ^{
+        if (self.generation != generation) return;
+        CCPReader local = {LocalRead, NULL};
+        uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+        uint32_t quarantineBefore = 0, quarantineAfter = 0, targetPid = 0, remotePort = 0;
+        uint8_t fatalBefore = 0, fatalAfter = 0, remoteReady = 0, stableMode = 0;
+        BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineBefore, sizeof(quarantineBefore));
+        BOOL fatalRead = CCPReadBytes(local, base + 0xC1D2E8, &fatalBefore, sizeof(fatalBefore));
+        BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
+        BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
+        BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
+        BOOL stableRead = CCPReadBytes(local, base + 0xC53464, &stableMode, sizeof(stableMode));
+        NSString *callResult = @"not-called";
+        NSString *status = @"core-identity-mismatch";
+        BOOL called = NO, pidMatches = NO;
+        BOOL identity = CCPIdentity(local, base, CoreUUID);
+        BOOL entry = EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix);
+        if (!identity) status = @"core-identity-mismatch";
+        else if (!entry) status = @"remote-symbol-entry-mismatch";
+        else if (!quarantineRead || quarantineBefore != 0 || !fatalRead || fatalBefore != 0 ||
+                 !readyRead || remoteReady == 0 || !pidRead || targetPid == 0 || !portRead || remotePort == 0) {
+            status = @"remote-session-not-ready";
+        } else {
+            called = YES;
+            uint64_t output = 0;
+            uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))("getpid", 0, 0, &output);
+            uint32_t code = (uint32_t)returned;
+            if (code == 1) {
+                callResult = @"returned-success";
+                pidMatches = output == (uint64_t)targetPid;
+            } else if (code == 0) callResult = @"returned-zero";
+            else callResult = @"returned-other";
+            status = @"remote-getpid-finished";
+        }
+        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
+        uint8_t remoteReadyAfter = 0;
+        BOOL readyAfterRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReadyAfter, sizeof(remoteReadyAfter));
+        self.trialReport = [@{@"schema_version": @14, @"probe_revision": @14,
+            @"mode": @"remote-getpid-check", @"game_version": @"1.38.12", @"game_build": @"15915",
+            @"symbol": @"getpid", @"call_result": callResult, @"status": status,
+            @"session_open_attempted": @NO, @"exec_call_attempted": @(called),
+            @"vehicle_appearance_changes_implemented": @NO,
+            @"target_pid_published": @(pidRead && targetPid != 0),
+            @"remote_port_present": @(portRead && remotePort != 0),
+            @"remote_ready": @(readyRead && remoteReady != 0),
+            @"remote_ready_after": @(readyAfterRead && remoteReadyAfter != 0),
+            @"stable_mode_set": @(stableRead && (stableMode & 1) != 0),
+            @"pid_matches_published": @(pidMatches),
+            @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
+            @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
+            @"quarantine_read": @(quarantineRead), @"fatal_read": @(fatalRead),
+            @"quarantine_changed": @(quarantineRead && quarantineBefore != quarantineAfter),
+            @"ui_location": @"native-menu-below-position"} mutableCopy];
+        [self writeTrialReport];
+        CCPMenuStatus shown = CCPMenuFailed;
+        if ([status isEqualToString:@"remote-session-not-ready"]) shown = CCPMenuExecBlocked;
+        else if (pidMatches) shown = CCPMenuExecMatched;
+        else if (called && [callResult isEqualToString:@"returned-success"]) shown = CCPMenuExecMismatch;
+        atomic_store(&MenuStatus, shown);
+        dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+    });
+}
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index == CCP_REMOTE_EXEC_INDEX) {
+        if (enabled) [self startRemoteExecCheck];
+        return;
+    }
     if (index == CCP_GAME_OPEN_INDEX) {
         if (enabled) [self startGameOpen];
         return;
