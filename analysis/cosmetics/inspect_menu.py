@@ -168,6 +168,7 @@ stub_targets.update({0x100000000 + rva: label for rva, label in [
     (0x39F00, 'Core.remote_session_teardown'),
     (0x3B7F4, 'Core.remote_thread_state_writer'),
     (0x2E76C, 'Core.launchd_session_wrapper'),
+    (0x4E3F8, 'Core.launchd_session_gate'),
     (0x5625C, 'Core.springboard_session_attempt'),
 ]})
 execution_references = []
@@ -244,7 +245,7 @@ if bootstrap_veneer['inside_text']:
 elif veneer_offset is not None:
     execution_lines += ['\n### Core remote bootstrap veneer outside text 0x100003800'] + disassemble(core, veneer, 0x100)
 session_labels = {'Core.remote_bootstrap_veneer', 'Core.remote_bootstrap_entry', 'Core.remote_bootstrap_body',
-    'Core.remote_session_teardown', 'Core.remote_thread_state_writer', 'Core.launchd_session_wrapper',
+    'Core.remote_session_teardown',     'Core.remote_thread_state_writer', 'Core.launchd_session_wrapper', 'Core.launchd_session_gate',
     'Core.springboard_session_attempt'}
 session_rows = [row for row in execution_references if row['label'] in session_labels][:40]
 for row in session_rows:
