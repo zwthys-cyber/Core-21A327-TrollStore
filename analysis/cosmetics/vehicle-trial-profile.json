@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "trial_revision": 9,
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "original_id": 3349001,
+  "target_id": 3349002,
+  "target_label": "宾利欧陆GT敞篷（火焰橘）",
+  "recipe_evidence": "10月11日小白至尊版最新美化修复和谐.zip / 衣服枪械配料表.txt line 542; normalized-exact source and target catalog matches",
+  "device_source_evidence": "device-evidence-r8.json",
+  "required_vehicle_vtable_rva": "0xebc1680",
+  "required_avatar_vtable_rva": "0xe6d6a38",
+  "required_master_type": 33,
+  "required_sync_count": 11,
+  "native_review_actions": [38937613465, 38937875743, 38957112182],
+  "native_counter_comparison": {
+    "entry_counter_offset": "0x1c",
+    "cached_counter_array_offset": "0x1208",
+    "reviewed_compare_rvas": ["0x47eea10", "0x47eea58", "0x47eea60"],
+    "cache_value_is_diagnostic_only": true
+  },
+  "native_request_write": {
+    "master_load_rva": "0x47ee9a8",
+    "item_load_rva": "0x47ee9ac",
+    "pending_store_rva": "0x47ee9b0",
+    "pending_store_instruction": "str w9, [x8, #0x20ac]"
+  },
+  "write_scope": ["master slot item ID, 4 bytes", "master slot native counter, 4 bytes", "Vehicle.PendingVehicleSkinID, 4 bytes"],
+  "automatic_restore_seconds": 15,
+  "native_actor_skin_fields_are_read_only": true,
+  "remote_function_calls": false,
+  "character_F50_used": false,
+  "vtable_patching": false,
+  "native_request_consumption_device_verified": false,
+  "device_trial_evidence": "device-evidence-r9.json",
+  "device_trial_outcome": "Writes confirmed; request remained pending in all five apply observations, cache stayed at 1, native skin fields stayed original",
+  "original_master_and_owned_pending_restoration_device_verified": true,
+  "visual_effect_device_verified": false,
+  "restoration_device_verified": false,
+  "limitation": "Copies an observed native data request, not the complete OnRep function. The r9 device report confirms writes but shows no request consumption under the tested conditions. The original master and owned pending request were restored/cleared; counter advances intentionally remain. Native visual application/restoration is not established."
+}

@@ -1,0 +1,1881 @@
+{
+  "schema_version": 1,
+  "status": "character-menu-candidates",
+  "source": {
+    "repository": "yunmengnb666/YouthfulTool",
+    "commit": "e0a0674772fa039a46bb0ac8b1fece5f1cebe68e",
+    "path": "和平美化代码.h",
+    "git_blob_sha1": "3245306baf3335697cbd1fcd570a30ee06be72b1",
+    "size": 1742788,
+    "use": "External item-name/ID evidence only; never executed or bundled as code. Membership in the supplied Item name map is checked separately."
+  },
+  "presets": [
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403188,
+      "label": "至尊金龙外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": true,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 434
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403056,
+      "label": "光子十周年纪念上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 752
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403075,
+      "label": "师父专用外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1155
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403178,
+      "label": "黑色ROCK长袖T恤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 549
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403192,
+      "label": "猛禽上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1119
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403200,
+      "label": "酒红色名流上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1122
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403201,
+      "label": "浅蓝色牛仔衬衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 491
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403265,
+      "label": "漫步者上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 774
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403357,
+      "label": "雪鹰学院套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1106
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403385,
+      "label": "都市猎人外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 416
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403410,
+      "label": "黑曜金尊套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 768
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403425,
+      "label": "冷酷挑战者上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 436
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403460,
+      "label": "狂沙舞者上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 404
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403463,
+      "label": "幻世保卫者套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 427
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403467,
+      "label": "极限特训外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 449
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403494,
+      "label": "绝对防御上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 786
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403504,
+      "label": "奇异狩猎者大衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 550
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403517,
+      "label": "夏日倾情泳装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 961
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403524,
+      "label": "深海小丑鱼套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 142
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403542,
+      "label": "星际漫游者套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 798
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403551,
+      "label": "暗夜之虎套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1100
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403565,
+      "label": "青涩年华外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 422
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403574,
+      "label": "怪诞乔克套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 151
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403582,
+      "label": "胖达圆圆套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 444
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403583,
+      "label": "胖达团团上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 472
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403587,
+      "label": "东方飞龙套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 143
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403588,
+      "label": "攀登者外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1116
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403592,
+      "label": "沙漠守护者套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1126
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403593,
+      "label": "沙暴袭击者上衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1024
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403594,
+      "label": "粉色回忆套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 739
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403598,
+      "label": "冥河战士套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 696
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403631,
+      "label": "天使彩虹糖套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 778
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403633,
+      "label": "甜心巧克力套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 699
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403638,
+      "label": "雪国幻梦套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1098
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403647,
+      "label": "金曜白虎套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 799
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403667,
+      "label": "拳皇97八神庵套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 746
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403687,
+      "label": "百炼金风夹克",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 435
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403694,
+      "label": "金风玉露套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 738
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403701,
+      "label": "蝶舞迷情套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 440
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403708,
+      "label": "霓虹街区套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 364
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403726,
+      "label": "潮萌小黄鸭外套",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 773
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403742,
+      "label": "隐空刺套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 447
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403761,
+      "label": "金属狂野套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 467
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403763,
+      "label": "智能音符套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 418
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403764,
+      "label": "缤纷油彩套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 592
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403765,
+      "label": "放客神游套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 464
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403784,
+      "label": "新星烈龙套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 769
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403794,
+      "label": "花间之火套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 770
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403815,
+      "label": "馨动时刻套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 438
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403816,
+      "label": "极致幻想套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 485
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403828,
+      "label": "AG战队服",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 494
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403829,
+      "label": "AGFOX战队服",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1097
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403834,
+      "label": "JDG战队服",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 730
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403862,
+      "label": "童趣迷兔套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 439
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403863,
+      "label": "炙焰红王套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 551
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403888,
+      "label": "炽羽金尊套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 582
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403897,
+      "label": "耀粉歌者套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1145
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403938,
+      "label": "绚金战神套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 429
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403971,
+      "label": "闪耀迪迦角色",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 141
+      }
+    },
+    {
+      "category": "外套",
+      "slot": 5,
+      "target_id": 403980,
+      "label": "相思残雪套装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 425
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609003,
+      "label": "古堡领主头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 861
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609004,
+      "label": "浪漫波比头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 837
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609006,
+      "label": "甜心巧克力头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1134
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609008,
+      "label": "宝贝奶油派头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 866
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609018,
+      "label": "时之沙漏头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 881
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609052,
+      "label": "深海小丑鱼发饰",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 898
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609081,
+      "label": "蝶舞迷情头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1135
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609111,
+      "label": "软萌银虎",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 781
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609125,
+      "label": "诡面斩头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 900
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609132,
+      "label": "潮汐统领头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 801
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609136,
+      "label": "麻辣鲜香锅头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 840
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609142,
+      "label": "放客神游头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 871
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609146,
+      "label": "金属狂野头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1136
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609148,
+      "label": "彗云及圣头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 903
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609152,
+      "label": "扶摇飞仙头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 835
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609156,
+      "label": "草莓生巧头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 872
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609185,
+      "label": "馨动时刻头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 904
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609192,
+      "label": "星空之魅头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 366
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609194,
+      "label": "极致幻想头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 901
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609219,
+      "label": "铁血龙王头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 830
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609223,
+      "label": "桀骜红莲头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 832
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609246,
+      "label": "林间仙鹿头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 867
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609326,
+      "label": "苍蓝魅影头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 849
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609327,
+      "label": "绚金战神头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 870
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609340,
+      "label": "碇真嗣头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 1023
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609353,
+      "label": "射星猎手头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 828
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609355,
+      "label": "相思残雪头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 838
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609358,
+      "label": "烈焰拳霸头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 824
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609364,
+      "label": "明日香头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 458
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609371,
+      "label": "星之彼岸头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 809
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609375,
+      "label": "焰龙焚天头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 844
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609382,
+      "label": "暗夜玫瑰头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 864
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609394,
+      "label": "暗星紫秘头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 852
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609397,
+      "label": "蓝莓炮弹头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 826
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609406,
+      "label": "吟月归客头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 836
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609407,
+      "label": "沙场疾风头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 808
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609413,
+      "label": "渚薰头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 454
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609418,
+      "label": "焦糖拿铁头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 896
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609469,
+      "label": "炙焰牛王头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 847
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609475,
+      "label": "暖熊萌萌头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 905
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609481,
+      "label": "甜梦小狐头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 850
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609500,
+      "label": "灵感创作师头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 897
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609512,
+      "label": "甜蜜草莓头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 728
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609515,
+      "label": "红熊茄茄头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 803
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609532,
+      "label": "女娲后裔-赵灵儿头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 455
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609568,
+      "label": "第五大道头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 842
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609587,
+      "label": "雪梅暗香头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 895
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609593,
+      "label": "是爱神辣头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 868
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609596,
+      "label": "呆萌星弥头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 457
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609650,
+      "label": "萌物绒绒头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 802
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609718,
+      "label": "蜜语绒猫头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 902
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609800,
+      "label": "尼罗河传说头发",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 869
+      }
+    },
+    {
+      "category": "头发",
+      "slot": 2,
+      "target_id": 40609836,
+      "label": "英伦信使发饰",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 878
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404049,
+      "label": "S1赛事裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 475
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404070,
+      "label": "水银刺客裤子",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 749
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404082,
+      "label": "蓝色破洞牛仔裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 750
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404122,
+      "label": "寒蝎幽灵长裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 473
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404123,
+      "label": "赤蝎幽灵长裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 476
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404163,
+      "label": "光子十周年纪念长裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 748
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404232,
+      "label": "浪漫天命下衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 152
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404269,
+      "label": "5.56爱好者短裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 591
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404272,
+      "label": "狂沙舞者下衣",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 791
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404285,
+      "label": "红镰战舞者下装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 751
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404306,
+      "label": "迅捷狂鲨短裤",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 446
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404323,
+      "label": "胖达团团下装",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 697
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404325,
+      "label": "太空漫步裤子",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 474
+      }
+    },
+    {
+      "category": "裤子",
+      "slot": 6,
+      "target_id": 404328,
+      "label": "沙暴袭击者裤子",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 747
+      }
+    },
+    {
+      "category": "鞋子",
+      "slot": 7,
+      "target_id": 405241,
+      "label": "派对舞王潮鞋",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 729
+      }
+    },
+    {
+      "category": "鞋子",
+      "slot": 7,
+      "target_id": 405286,
+      "label": "摇滚狂鲨拖鞋",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 374
+      }
+    },
+    {
+      "category": "鞋子",
+      "slot": 7,
+      "target_id": 405292,
+      "label": "激萌罗小黑鞋子",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 367
+      }
+    },
+    {
+      "category": "鞋子",
+      "slot": 7,
+      "target_id": 405307,
+      "label": "兔兔白日梦鞋",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 373
+      }
+    },
+    {
+      "category": "鞋子",
+      "slot": 7,
+      "target_id": 405313,
+      "label": "暖熊萌萌鞋",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 375
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703068,
+      "label": "SS1王牌降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 478
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703131,
+      "label": "国宝胖达降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 480
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703456,
+      "label": "沙丘之主降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 483
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703466,
+      "label": "星梦奇缘降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 495
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703536,
+      "label": "幽焰骑士降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 713
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703561,
+      "label": "精灵之光降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 712
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703607,
+      "label": "盛世惊鸿降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 481
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703611,
+      "label": "晶梦幻蝶降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 482
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703625,
+      "label": "圣域龙灵降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 711
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703634,
+      "label": "圣斗士星矢降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 710
+      }
+    },
+    {
+      "category": "降落伞",
+      "slot": 11,
+      "target_id": 703638,
+      "label": "金蛇镇世降落伞",
+      "exact_label_and_item_row_confirmed": true,
+      "device_visual_verified": false,
+      "source_recipe": {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "text": "衣服枪械配料表.txt",
+        "line": 709
+      }
+    }
+  ],
+  "scope": "Five character appearance slots; weapon and custom PAK effects are not implemented by this catalog.",
+  "category_counts": {
+    "外套": 60,
+    "头发": 53,
+    "裤子": 14,
+    "鞋子": 5,
+    "降落伞": 11
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "status": "static-callable-enqueue-locked",
+  "runtime_validated": false,
+  "artifact_commit": "2e19303",
+  "game_thread": {
+    "id_global": "0x11114c5ec",
+    "initialized_global": "0x11114c600",
+    "named_thread_index": 4,
+    "is_safe_native": "0x1042c4c9c",
+    "is_safe_behavior": "If GIsGameThreadIdInitialized is unset returns 1; otherwise compares current thread id helpers 0x10af28744/0x10af2866c with GGameThreadId"
+  },
+  "completion_event_path": {
+    "create_task": "0x1035e3c10",
+    "construct": "0x1035e3d38",
+    "get": "0x108af6894",
+    "dispatch_when_ready": "0x1035e3d50",
+    "singleton_slot": "0x111faae30",
+    "task_vtable": "0x10e2dbc10",
+    "sample_sequence": "CreateTask(prereq=null, thread=4) -> Construct(priority/flags=2|3) -> Get() -> DispatchWhenReady(event, flags=0x104)",
+    "caveat": "Completion/event only; not usable for PutOnEquipmentByResID"
+  },
+  "function_task_path": {
+    "create_and_dispatch": "0x103765444",
+    "internal_dispatch": "0x103769108",
+    "tfunction_place": "0x102705f64",
+    "tfunction_destroy": "0x102704da4",
+    "observed_inputs": "x0=&TFunction, x1=prerequisites (null), w2=desired thread, x8=&FGraphEventRef out",
+    "caller_counts": {
+      "total": 104,
+      "game_thread_w2_4": 90,
+      "any_thread_w2_ff_or_6ff": 7,
+      "other": 7
+    },
+    "game_thread_recipe": [
+      "Zero TFunction storage; place 0x10/0x18-byte callable via 0x102705f64 into TFunction+0x10",
+      "Store callable vtable + captured args into the placed object",
+      "Store invoker thunk pointer at TFunction+0 (ADR of a small ldr/b trampoline)",
+      "CreateAndDispatch(TFunction*, prereq=null, thread=4)",
+      "Release FGraphEventRef via 0x1035691fc; destroy TFunction via 0x102704da4"
+    ],
+    "simple_code_pointer_recipe": {
+      "sample": "0x1033cb8cc",
+      "layout": "TFunction is a single stack word holding the code pointer; destroy with 0x102704da4",
+      "sample_w2": "0x6ff (AnyThread-with-flags)",
+      "r27_hypothesis": "Same one-word TFunction with w2=#4 should enqueue that code pointer onto GameThread"
+    },
+    "representative_game_thread_callers": [
+      "0x10232ac08",
+      "0x1033cb630",
+      "0x1035b7154",
+      "0x103765070"
+    ]
+  },
+  "libdispatch": {
+    "imported_symbols": ["__dispatch_main_q", "_dispatch_async", "_dispatch_sync"],
+    "stubs": {
+      "_dispatch_async": "0x10af26f44",
+      "_dispatch_sync": "0x10af27100"
+    },
+    "stub_callers": {"_dispatch_async": 42, "_dispatch_sync": 2},
+    "note": "__dispatch_main_q is an imported data symbol (no stub). Useful only if GameThread equals the process main queue."
+  },
+  "put_on": {
+    "native": "0x1047f2824",
+    "vtable_slot": "0x968",
+    "wrapper": "0x10723c67c",
+    "inputs": "x0 = VehicleAvatarComponent, x1 = resource id (converted to definition/handle inside)",
+    "requirement": "Must run on GameThread; Core remote worker must enqueue, not call PutOn directly"
+  },
+  "r27_probe": {
+    "revision": 27,
+    "implemented": [
+      "Core 0x39A80 remote-call-by-address after getpid match",
+      "IsSafeForGameThread (game+0x42c4c9c) on the remote worker",
+      "FTaskGraphInterface::Get (game+0x8af6894)",
+      "Vehicle avatar resolve when pawn/controller are published"
+    ],
+    "blocked": "CreateAndDispatch needs x8=&FGraphEventRef; Core's by-address bridge only sets remote x0..x7.",
+    "ci_gadget_scan_a9b98ff": {
+      "cad_x8_trampoline_gadgets": 0,
+      "cad_callers_with_x8_from_arg": 2,
+      "note": "No consecutive mov x8,xN; b/bl CAD or br gadget in game __text"
+    }
+  },
+  "r28_probe": {
+    "revision": 28,
+    "implemented": [
+      "Remote calloc(0x80) via Core 0x3A3E8",
+      "Write CAD trampoline mov x8,x3; br x4 and PutOn literal-pool invoker",
+      "mprotect(RX) via shared-cache address from local dlsym through 0x39A80",
+      "CreateAndDispatch(w2=#4) through trampoline when skin==3349001",
+      "Readback vehicle+0x20AC skin after enqueue"
+    ],
+    "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation"
+  },
+  "r29_probe": {
+    "revision": 29,
+    "change": "Drop 3349001-only gate. Lobby need not own Bentley; any current vehicle Avatar enqueues PutOn 3349002. Use training ground if lobby has no current vehicle.",
+    "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation"
+  },
+  "r30_probe": {
+    "revision": 30,
+    "device_r29": {
+      "pid_matches_published": true,
+      "game_thread_probe_status": "core-session-not-ready",
+      "cause": "RunGameThreadProbe required snapshot.words[1]; r26 open publishes C53460/BD4C5C/C534B0 instead"
+    },
+    "fix": "Accept published pid/ready/port when snapshot words[1] is unset after getpid match",
+    "device_freeze": "User reports game freeze / cannot move after r30 path that could reach calloc/mprotect+CAD+PutOn"
+  },
+  "r31_probe": {
+    "revision": 31,
+    "change": "Disable AttemptPutOnEnqueue entirely. Diagnostics only (IsSafe/Get/vehicle resolve). No remote code install or CreateAndDispatch until safer enqueue is proven."
+  },
+  "r32_freeze_root_cause": {
+    "confirmed": true,
+    "mechanism": "r30 mprotect(PROT_READ|PROT_EXEC) on one 0x80 calloc covering both trampoline code and writable FGraphEventRef/TFunction slots; CreateAndDispatch stores through x8 into that RX page and faults the GameThread",
+    "not_a_guess": "This is a structural bug in the r30 layout, matching the device freeze symptom",
+    "product_requirements": [
+      "Separate RX code page from RW data page (event + TFunction)",
+      "Never auto-enqueue on session open; explicit menu action only",
+      "No further mid-build device testing requests until a finished IPA"
+    ]
+  }
+}

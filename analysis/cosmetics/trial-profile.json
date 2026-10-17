@@ -1,0 +1,14 @@
+{
+  "status": "single-coat-device-trial",
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "original_id": 403251,
+  "target_id": 403188,
+  "target_label": "至尊金龙外套",
+  "slot": 5,
+  "refresh_mode_rva": "0x11069cd5",
+  "pending_field": "0xf50",
+  "tick_rva": "0x43d6d10",
+  "deferred_update_rva": "0x43d25a8",
+  "onrep_rva": "0x43d2eb0",
+  "visual_effect_device_verified": false
+}

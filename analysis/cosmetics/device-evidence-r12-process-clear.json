@@ -1,0 +1,17 @@
+{
+  "captured_at_unix": 1792211416.507266,
+  "schema_version": 12,
+  "probe_revision": 12,
+  "mode": "process-name-visibility",
+  "status": "game-process-visible",
+  "lookup_result": "located",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": false,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 0,
+  "quarantine_after": 0,
+  "quarantine_changed": false,
+  "interpretation": "After a fresh Core process, ShadowTrackerExtra is still visible and both the quarantine word and fatal byte are 0. The name lookup did not open a session. The recorded first-exception fault is no longer blocking the open entry.",
+  "game_open_attempted": false
+}

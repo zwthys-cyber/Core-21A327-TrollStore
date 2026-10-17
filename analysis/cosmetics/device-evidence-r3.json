@@ -1,0 +1,18 @@
+{
+  "source": "user-pasted r3 capture and explicit visual confirmation, 2026-10-16",
+  "game_version": "1.38.12",
+  "game_build": "15915",
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "initial_wait_report": "local-character-unavailable",
+  "successful_retry": true,
+  "original_id": 403251,
+  "target_id": 403188,
+  "apply": {"native_status": 1, "written_bytes": 4, "id_write_confirmed": true, "refresh_queued": true},
+  "stable_target_samples": 5,
+  "pending_flag_after_refresh": 0,
+  "restore": {"native_status": 1, "written_bytes": 4, "id_write_confirmed": true, "refresh_queued": true, "change_still_owned": false},
+  "finish_reason": "automatic-restore",
+  "user_confirmation": "出现了，随后恢复白 T 恤",
+  "single_coat_visual_effect_device_verified": true,
+  "full_package_conversion_complete": false
+}

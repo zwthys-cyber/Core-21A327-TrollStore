@@ -1,0 +1,34 @@
+{
+  "core": [
+    {"label": "native sidebar and page dispatch", "offset": "0xd04a0", "length": "0x640"},
+    {"label": "native position page", "offset": "0xcd680", "length": "0x220"},
+    {"label": "configuration initialization", "offset": "0xd32d0", "length": "0x180"},
+    {"label": "acquisition context", "offset": "0xd4a08", "length": "0x1800"},
+    {"label": "native acquisition read interface", "offset": "0x60000", "length": "0x6000"},
+    {"label": "native target readiness", "offset": "0x5e600", "length": "0x300"},
+    {"label": "native capability snapshots", "offset": "0x4e000", "length": "0x2400"},
+    {"label": "object-chain helper", "offset": "0xd5e60", "length": "0x400"}
+  ],
+  "game": [
+    {"label": "lobby character getter implementation", "offset": "0x43f959c", "length": "0x300"},
+    {"label": "lobby character reflected class", "offset": "0xab27020", "length": "0x280"},
+    {"label": "lobby pawn reflected class", "offset": "0x6e608ec", "length": "0x280"},
+    {"label": "character avatar static class", "offset": "0x6395420", "length": "0x300"},
+    {"label": "weapon avatar static class", "offset": "0x7314b1c", "length": "0x300"},
+    {"label": "character avatar OnRep wrapper", "offset": "0x6391994", "length": "0x100"},
+    {"label": "avatar sync array type", "offset": "0x6102e4c", "length": "0x100"},
+    {"label": "character avatar object constructor", "offset": "0x6398a90", "length": "0x1000"},
+    {"label": "weapon avatar object constructor", "offset": "0x73156ec", "length": "0x800"},
+    {"label": "character native registration", "offset": "0x6375718", "length": "0x300"},
+    {"label": "character constructor implementation", "offset": "0x43a159c", "length": "0x500"},
+    {"label": "weapon constructor implementation", "offset": "0x482100c", "length": "0x500"},
+    {"label": "avatar readiness and wait setters", "offset": "0x6395280", "length": "0x120"},
+    {"label": "character concrete constructor", "offset": "0x439ff50", "length": "0x500"},
+    {"label": "weapon concrete constructor", "offset": "0x481e4ec", "length": "0x500"},
+    {"label": "UAE table concrete constructor", "offset": "0xadd1d50", "length": "0x400"},
+    {"label": "UAE table native object initialization", "offset": "0xadd1b50", "length": "0x200"},
+    {"label": "character deferred sync refresh", "offset": "0x43d24bc", "length": "0xb00"},
+    {"label": "character mode check", "offset": "0x43cc378", "length": "0x100"},
+    {"label": "avatar pending-refresh reset", "offset": "0x42e8c34", "length": "0x200"}
+  ]
+}

@@ -1,0 +1,77 @@
+name: Analyze Core cosmetics inputs
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/kernel-cosmetics]
+    paths:
+      - 'analysis/cosmetics/**'
+      - '!analysis/cosmetics/vehicle_review.py'
+      - '!analysis/cosmetics/vehicle-windows.json'
+      - '!analysis/cosmetics/inspect_menu.py'
+      - '!analysis/cosmetics/menu-windows.json'
+      - '.github/workflows/analyze-cosmetics.yml'
+permissions:
+  # GitHub limits draft releases to identities with repository push access.
+  contents: write
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install disassembler wheel
+        run: |
+          python3 -m pip install --only-binary=:all: capstone==5.0.6
+      - name: Download private draft analysis inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p analysis-input analysis-output
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          repo = os.environ['GITHUB_REPOSITORY']
+          manifest = json.loads(pathlib.Path('analysis/cosmetics/inputs.json').read_text())
+          release_id = manifest['release_id']
+          assets = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/releases/{release_id}/assets']))
+          for record in manifest['files']:
+              name = record['name']
+              matches = [asset for asset in assets if asset['id'] == record['asset_id']]
+              if len(matches) != 1:
+                  raise ValueError(f'Expected one analysis input named {name}')
+              if matches[0]['size'] != record['size'] or matches[0]['digest'] != 'sha256:' + record['sha256']:
+                  raise ValueError(f'Input asset digest changed for {name}')
+              with (pathlib.Path('analysis-input') / name).open('wb') as output:
+                  subprocess.run(['gh', 'api', '-H', 'Accept: application/octet-stream', matches[0]['url']], stdout=output, check=True)
+          PY
+      - name: Inspect pinned binaries and appearance metadata
+        run: python3 analysis/cosmetics/analyze.py --inputs analysis-input --core-ipa input/Core.ipa --output analysis-output
+      - name: Inspect cosmetic pak directories and embedded identifiers
+        run: python3 analysis/cosmetics/pak_inventory.py --inputs analysis-input --output analysis-output
+      - name: Inspect cooked appearance table names and recipe labels
+        run: python3 analysis/cosmetics/csv_metadata.py --inputs analysis-input --output analysis-output
+      - name: Cross-reference recipe labels and pinned item row identifiers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 analysis/cosmetics/catalog_match.py --inputs analysis-input --output analysis-output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Core-cosmetics-static-analysis
+          path: analysis-output/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Core-cosmetics-disassembly
+          path: analysis-output/*.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-cosmetics-catalog-sources
+          path: |
+            analysis-output/CoreCosmeticsCatalog.h
+            analysis-output/selected-avatar-catalog.json
+          if-no-files-found: error
+          retention-days: 14

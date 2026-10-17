@@ -1,0 +1,43 @@
+name: Inspect vehicle cosmetics
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/kernel-cosmetics]
+    paths:
+      - 'analysis/cosmetics/vehicle_review.py'
+      - 'analysis/cosmetics/vehicle-windows.json'
+      - '.github/workflows/inspect-vehicle-cosmetics.yml'
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install disassembler wheel
+        run: |
+          python3 -m pip install --only-binary=:all: capstone==5.0.6
+      - name: Download reviewed game from private draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          manifest = json.loads(pathlib.Path('analysis/cosmetics/inputs.json').read_text())
+          record = next(r for r in manifest['files'] if r['name'] == 'ShadowTrackerExtra')
+          endpoint = 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/releases/assets/' + str(record['asset_id'])
+          asset = json.loads(subprocess.check_output(['gh', 'api', endpoint]))
+          if asset['size'] != record['size'] or asset['digest'] != 'sha256:' + record['sha256']:
+              raise ValueError('Game asset changed')
+          with pathlib.Path('analysis-game').open('wb') as output:
+              subprocess.run(['gh', 'api', '-H', 'Accept: application/octet-stream', endpoint], stdout=output, check=True)
+          PY
+      - name: Review vehicle ownership and skin update code
+        run: python3 analysis/cosmetics/vehicle_review.py --game analysis-game --output vehicle-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-vehicle-review
+          path: vehicle-output/*
+          if-no-files-found: error
+          retention-days: 14

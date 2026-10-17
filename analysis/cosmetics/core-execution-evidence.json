@@ -1,0 +1,123 @@
+{
+  "scope": "Cloud-only static review of the pinned original Core remote invocation session; no runtime call capability added",
+  "core_sha256": "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58",
+  "game_process_invocation_verified": false,
+  "game_thread_dispatch_verified": false,
+  "new_runtime_code": false,
+  "latest_installable_revision": 11,
+  "latest_installable_scope": "process-name visibility probe only; remote open and vehicle appearance are unchanged",
+  "cloud_runs": [38997584258, 38997728564, 38997837603, 38998163729, 38998232648, 38998851479, 38999428964, 38999489946, 38999815492, 38999900378, 38999962851, 39000314518, 39000384296, 39000616091, 39000698561, 39000750503],
+  "latest_analysis_commit": "e57bd4b",
+  "cloud_artifact": "Core-native-menu-review",
+  "local_text_report_directory": "/root/和平精英/Core美化映射分析/Core远程会话归属与初始化",
+  "function_boundary_caveat": "The pinned image has no decoded LC_FUNCTION_STARTS entries; disassembly windows and raw data pointer candidates are not recovered complete functions or decoded dispatch tables",
+  "confirmed_literal_identities": [
+    {"rva": "0x73ce58", "value": "malloc"},
+    {"rva": "0x73ce5f", "value": "free"},
+    {"rva": "0x73d7e9", "value": "sel_registerName"},
+    {"rva": "0x73d7fa", "value": "objc_getClass"},
+    {"rva": "0x73d808", "value": "objc_msgSend"},
+    {"rva": "0x73d831", "value": "NSInvocation"},
+    {"rva": "0x73d8ac", "value": "performSelectorOnMainThread:withObject:waitUntilDone:"},
+    {"rva": "0x73d8e2", "value": "invoke"}
+  ],
+  "remote_session": {
+    "target_getter_rva": "0x38d80",
+    "target_pid_global_rva": "0xc53460",
+    "stable_mode_byte_rva": "0xc53464",
+    "readiness_predicate_rva": "0x38d8c",
+    "fatal_state_byte_rva": "0xc1d2e8",
+    "quarantine_state_word_rva": "0xc1d2f8",
+    "bootstrap_candidate_entry_rva": "0x3a7d4",
+    "bootstrap_body_rva": "0x3a7d8",
+    "bootstrap_veneer_rva": "0x3800",
+    "text_start_va": "0x100004000",
+    "bootstrap_entry_caveat": "0x3A7D4 is only a branch to 0x3800. That address is in the __TEXT segment but outside __text and outside every section. The veneer calls dlsym(RTLD_DEFAULT, CoreRemoteOpen) through stub 0x725A10 and branches to the resolved symbol; if lookup fails it returns 0 and does not execute the local body at 0x3A7D8. No direct branch to 0x3A7D8 exists. A zero return therefore does not prove the local body ran.",
+    "bootstrap_symbol": "CoreRemoteOpen",
+    "bootstrap_symbol_in_pinned_image": false,
+    "bootstrap_provider": "Payload/Core.app/CoreOffline.work.dylib exports _CoreRemoteOpen at its VA 0x4894. Core links this image through @executable_path/CoreOffline.work.dylib. CCCoreLicense.dylib does not contain the string. The main image export trie is empty and its only CoreRemoteOpen string is the veneer literal.",
+    "bootstrap_evidence": "The local body at 0x3A7D8 still contains the previously reviewed session, pthread and getpid checks, but it is not on the direct caller path. Callers pass a process-name string and a zero second argument.",
+    "ownership": "Uses global session state separate from the cosmetics memory backend binding at 0xc288b0; no PID argument is present in the reviewed low-level function call",
+    "device_scope": "The only direct callers pass the exact strings launchd and SpringBoard. The pinned image has no ShadowTrackerExtra, backboardd or com.tencent.tmgp.pubgmhd literal. This does not establish a game session.",
+    "callers": [
+      {
+        "site_rva": "0x2e7d4",
+        "function_rva": "0x2e76c",
+        "target_literal": "launchd",
+        "literal_va": "0x10073cc28",
+        "second_argument": 0,
+        "gate": "Returns 1 without opening when Core+0xC1C258 or +0xC1C259 is already set. Otherwise requires 0x2DCC0 to return nonzero, clears those bytes and +0xC1C25A, then calls the entry.",
+        "zero_return": "Calls 0x2E140, which continues with the ports at Core+0xC52E00 and +0xC52E04, then still calls teardown.",
+        "cleanup": "Both the nonzero and zero return paths call teardown 0x39F00 before the wrapper returns.",
+        "only_direct_caller_rva": "0x4e420",
+        "caller_gate": "0x4E3F8 tails into the wrapper only when 0x4E378 returns nonzero. 0x4E378 returns 0 unless the byte at Core+0xC27B2C is 1 and the word at +0xC27B28 is 2; on that match it tails to 0x2DCC0."
+      },
+      {
+        "site_rva": "0x563a0",
+        "function_rva": "0x5625c",
+        "target_literal": "SpringBoard",
+        "literal_va": "0x1007401bf",
+        "second_argument": 0,
+        "gate": "Calls only after three object fields are pairwise different and the third is nonzero. No direct branch to 0x5625C was found in __text.",
+        "zero_return": "Does not stop. 0x3C61C exchanges Core+0xBD4C60 with 0x1388 and the routine continues into the remote calls, then teardown at 0x56648 restores that word.",
+        "cleanup": "The zero-return continuation calls teardown 0x39F00 at 0x56648. The nonzero path calls status helper 0x38DF0, which returns 1 when fatal byte 0xC1D2E8 or quarantine word 0xC1D2F8 is set."
+      }
+    ]
+  },
+  "call_candidates": [
+    {
+      "rva": "0x398c8",
+      "kind": "remote function by symbol name",
+      "observed_inputs": "x0 timeout, x1 symbol name, x2..x7 plus two stack words as eight argument words",
+      "context": "Looks up the symbol with dlsym and dispatches through the already selected global remote session; known callers use malloc, free and Objective-C runtime helpers"
+    },
+    {
+      "rva": "0x39a80",
+      "kind": "remote function by address, two result words",
+      "observed_inputs": "x0 timeout, x1 function address, x2 call label, x3..x7 plus first three stack words as eight argument words; fourth/fifth stack words are output pointers",
+      "abi_scope": "Static register and stack data flow only; not a declared adapter API or runtime-verified C prototype",
+      "context": "Clears output pointers, refuses a quarantined session, uses existing temporary/stable exception dispatch, returns integer states including 0, 1 and 2. Callers require exactly 1."
+    },
+    {
+      "rva": "0x3cb70",
+      "kind": "Objective-C NSInvocation construction and dispatch",
+      "context": "Resolves selectors and NSInvocation, supplies arguments and return storage, optionally uses performSelectorOnMainThread. Does not independently establish arbitrary Unreal game-thread dispatch."
+    },
+    {
+      "rva": "0x3d624",
+      "kind": "checked remote objc_msgSend wrapper",
+      "context": "Resolves objc_msgSend then invokes the two-result bridge with timeout 10000 and label objc_msgSend.checked; success requires return state 1"
+    }
+  ],
+  "raw_remote_call_string_reference": {
+    "string_rva": "0x7405cc",
+    "data_reference_rva": "0xbaa7b8",
+    "caveat": "Nearby string lengths and authenticated metadata words are not proof of a callable function table; chained fixups/type metadata were not decoded"
+  },
+  "thread_state_writer": {
+    "rva": "0x3b7f4",
+    "direct_callers": ["0x38ccc", "0x390cc", "0x390f0"],
+    "scope": "Sets ARM thread state with flavor 6 and count 0x44 inside the existing remote-call implementation. This is Core's remote thread register write, not an identified Unreal game-thread scheduler."
+  },
+  "core_offline_open": {
+    "symbol": "_CoreRemoteOpen",
+    "va": "0x4894",
+    "entry_log": "remote.open enter name=%s options=%llu",
+    "call": "Authenticated call to the qword at CoreOffline+0x102F0 plus 0x3710. The file qword is 0 and that __DATA slot has no chained-fixup segment info. The same pointer is later used with main-image offsets such as 0xC1D2F8, so the published value is the main Core base.",
+    "main_image_target_rva": "0x3710",
+    "main_image_target": "pacibsp; b 0x3A7D8. Once the slot holds the Core base, CoreRemoteOpen enters the local open body that the public veneer skipped.",
+    "after_call": "Reads base+0xC1D2F8 and base+0xC1D300, logs remote.open return=%llx state=%u reason=%s, and returns the local body's result.",
+    "publisher_rva": "0x4b0c",
+    "publisher": "Walks loaded images. Reads mach_header.filetype at +0xC and keeps MH_EXECUTE (2) whose name comparison with .app/Core returns nonzero, then stores that header at +0x102F0. No direct branch to 0x4B0C exists inside CoreOffline text, and no __mod_init_func section was present.",
+    "null_slot": "Before that walk stores a header, the qword remains 0. The sibling at 0x47D0 returns 0 when it is null. CoreRemoteOpen does not make that check.",
+    "shared_gate_rva": "0x2dcc0",
+    "shared_gate": "Returns 0 when Core+0xC1C258 or +0xC1C259 is set, when 0x2DA7C or fatal/quarantine helper 0x38DF0 reports a block, or when the words at +0xC52E00 and +0xC52E04 are not both at least 1. Otherwise validates three pointers at +0xC52E08, +0xC52E10 and +0xC52E18."
+  },
+  "next_unresolved_work": [
+    "The base publisher is CoreOffline+0x4B0C; its indirect trigger is not a direct branch. Do not call 0x3A7D8 by skipping the veneer",
+    "A zero return is the local body's success value only after that base is published. Callers continue on zero and then tear the session down",
+    "Establish a dedicated game target session without altering global capability or quarantine flags",
+    "Identify a verified game-thread scheduler and the lifetime of its component/handle inputs before using the native vehicle loader",
+    "Do not equate NSInvocation main-thread support, kernel memory readiness or symbol presence with working vehicle refresh"
+  ]
+}

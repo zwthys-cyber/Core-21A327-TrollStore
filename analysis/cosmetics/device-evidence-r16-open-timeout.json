@@ -1,0 +1,21 @@
+{
+  "captured_at_unix": 1792214786.5275879,
+  "schema_version": 13,
+  "probe_revision": 13,
+  "mode": "game-process-open-attempt",
+  "status": "open-blocked-by-recorded-fault",
+  "open_result": "not-called",
+  "lookup_result": "unavailable",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": false,
+  "target_pid_published": false,
+  "remote_ready": false,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 1,
+  "quarantine_after": 1,
+  "quarantine_changed": false,
+  "quarantine_reason": "bootstrap-first-exception-timeout",
+  "vehicle_appearance_changes_implemented": false,
+  "interpretation": "The open entry was not called. Quarantine was already 1 and the recorded reason is bootstrap-first-exception-timeout. That reason is written only after the open body waits for the first exception message and the wait times out. Fatal stayed 0. No getpid call and no vehicle change were made."
+}

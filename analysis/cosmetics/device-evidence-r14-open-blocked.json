@@ -1,0 +1,20 @@
+{
+  "captured_at_unix": 1792213857.096318,
+  "schema_version": 13,
+  "probe_revision": 13,
+  "mode": "game-process-open-attempt",
+  "status": "open-blocked-by-recorded-fault",
+  "open_result": "not-called",
+  "lookup_result": "unavailable",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": false,
+  "target_pid_published": false,
+  "remote_ready": false,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 1,
+  "quarantine_after": 1,
+  "quarantine_changed": false,
+  "vehicle_appearance_changes_implemented": false,
+  "interpretation": "The open button did not call the entry. Quarantine was already 1 and the fatal byte stayed 0. This is not a getpid result and not a vehicle change."
+}

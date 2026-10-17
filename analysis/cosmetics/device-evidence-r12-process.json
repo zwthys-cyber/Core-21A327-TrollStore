@@ -1,0 +1,17 @@
+{
+  "captured_at_unix": 1792211047.858849,
+  "schema_version": 12,
+  "probe_revision": 12,
+  "mode": "process-name-visibility",
+  "status": "game-process-visible",
+  "lookup_result": "located",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": false,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 1,
+  "quarantine_after": 1,
+  "quarantine_changed": false,
+  "interpretation": "r12 repeats the r11 result: ShadowTrackerExtra remains visible and no remote session was opened. The quarantine word is still 1. Code 1 is stored by the open body for bootstrap-first-exception-timeout and bootstrap-unexpected-first-exception. The open entry rejects every nonzero value, and teardown clears only value 2.",
+  "game_open_attempted": false
+}

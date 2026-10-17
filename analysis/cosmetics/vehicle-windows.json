@@ -1,0 +1,174 @@
+{
+  "terms": ["VehicleAvatarComponent", "VehicleAvatarComp", "VehicleSkinID", "CurrentVehicle", "ReplicatedVehicle", "GetVehicleAvatarComponent", "GetVehicleSkinID", "CurVehicleSkinID", "RealVehicleSkinID", "PreVehicleSkinID", "PendingVehicleSkinID", "VehicleAvatarItemList", "RepVehicleAvatarItemList", "OnRep_VehicleAvatarItemList", "DoReponceVehicleAvatarItemList", "VehicleUseDoRepOnce", "OnRep_AvatarMeshChanged", "AvatarMeshChangedVehicle", "GetCurrentVehicle", "GetVehicleAvatarSyncDataIDBySlot", "GetVehicleAvatarSyncDataBySlot", "GetMasterVehicleAvatarHandle", "GetVehicleCommon", "GetVehicleUserComponent", "VehicleUserComponent", "OwnerVehicle", "VehicleCommon", "VehicleSeatIdx", "VehicleUserState", "GetVehicleOfCharacter"],
+  "discover_string_fragments": ["VehicleAvatarHandle", "VehicleAvatar", "MasterVehicle", "VehicleAvatarEntity", "RenderDirty", "DelayRender"],
+  "scheduler_terms": ["GameThread", "IsInGameThread", "TaskGraph", "ENamedThreads", "AsyncTask", "NamedThread", "GameTask", "dispatch_async", "dispatch_sync", "dispatch_async_f", "dispatch_sync_f", "dispatch_get_main", "_dispatch_main", "main_queue", "pthread_getname_np", "WaitCallInGameThread", "CreateAndDispatchWhenReady", "FFunctionGraphTask", "NamedThreads", "GGameThreadId", "IsSafeForGameThread"],
+  "utf16_terms": ["MasterVehicleAvatarEntity", "VehicleAvatarEntity", "VehicleAvatarHandle", "AvatarEntity"],
+  "property_regions": [
+    {"label": "vehicle actor candidate", "start": "0x10fa9d000", "end": "0x10fa9f800"},
+    {"label": "vehicle avatar candidate", "start": "0x10fc58000", "end": "0x10fc59b00"},
+    {"label": "vehicle-user component candidate", "start": "0x10fcdd000", "end": "0x10fcde800"},
+    {"label": "current vehicle skin owner metadata", "start": "0x10fc6c000", "end": "0x10fc6d000"},
+    {"label": "vehicle entity owner metadata", "start": "0x10fc91000", "end": "0x10fc92800"},
+    {"label": "master vehicle avatar entity metadata", "start": "0x10f3f1000", "end": "0x10f3f4000"},
+    {"label": "base vehicle avatar entity metadata", "start": "0x10fc5b000", "end": "0x10fc5d000"},
+    {"label": "base avatar entity metadata", "start": "0x10edd0000", "end": "0x10edd4000"},
+    {"label": "master vehicle getter return metadata", "start": "0x10fc54000", "end": "0x10fc55000"}
+  ],
+  "pointer_tables": [
+    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0x820", "0x968", "0x9c0", "0xa18", "0xa58", "0xac0", "0xc30", "0xc68", "0xd18"]},
+    {"label": "master vehicle avatar entity vtable", "address": "0x10e67a9b8", "length": "0x700", "disassemble_slots": ["0x3a0", "0x3a8", "0x3c0", "0x478", "0x488", "0x498", "0x4e0"]},
+    {"label": "device r8 vehicle vtable", "address": "0x10ebc1680", "length": "0x2000", "disassemble_slots": ["0x4c0", "0x8b8"]},
+    {"label": "device r7 local character vtable", "address": "0x10e7b1108", "length": "0x1600", "disassemble_slots": ["0x8b8", "0x1528"]}
+  ],
+  "field_regions": [
+    {"offset": "0x47eac9c", "length": "0x11000", "displacements": ["0xf50", "0x11e8"]},
+    {"offset": "0x5a30000", "length": "0x74000", "displacements": ["0x20a0", "0x20a8", "0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc", "0x1ed8"]},
+    {"offset": "0x42f0000", "length": "0x10000", "displacements": ["0x1b8", "0x1b9", "0x1ba"]},
+    {"offset": "0x45d0000", "length": "0x18000", "displacements": ["0x1b8", "0x1b9", "0x1ba"]}
+  ],
+  "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
+  "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
+  "game_thread_globals": [
+    {
+      "page": "0x11114c000",
+      "offsets": {
+        "0x5ec": "GGameThreadId",
+        "0x600": "GIsGameThreadIdInitialized"
+      }
+    }
+  ],
+  "taskgraph_pool_pages": [
+    {
+      "page": "0x111fab000",
+      "offsets": {
+        "0x600": "FBaseGraphTaskPoolA",
+        "0x680": "FBaseGraphTaskPoolB",
+        "0x188": "TaskGraphScratch"
+      }
+    },
+    {
+      "page": "0x111faa000",
+      "offsets": {
+        "0xe30": "TaskGraphSingletonSlot"
+      }
+    }
+  ],
+  "call_targets": ["0x42c4c9c", "0x7522a68", "0x35e3c10", "0x35e3d38", "0x35e3d50", "0x35e3f2c", "0x8af6894", "0x8af6900", "0x8af69f4", "0x8afeb0c", "0x3765444", "0x3769108", "0x2705f64", "0x2704da4", "0x47f2824"],
+  "native_registration_tables": [
+    {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
+    {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
+  ],
+  "strings": [
+    {"label": "resolved source class name from native getter", "address": "0x10ceac05a"},
+    {"label": "resolved source class qualified name", "address": "0x10ceac136"},
+    {"label": "vehicle-user class name from native getter", "address": "0x10cf76d3c"}
+  ],
+  "windows": [
+    {"label": "vehicle avatar native registration", "offset": "0x7238f60", "length": "0x600"},
+    {"label": "vehicle avatar reflected constructor", "offset": "0x7241944", "length": "0x400"},
+    {"label": "vehicle avatar getter implementation", "offset": "0x4148404", "length": "0x200"}
+    ,{"label": "vehicle avatar constructor implementation", "offset": "0x47eac9c", "length": "0x1000"}
+    ,{"label": "vehicle avatar item getter implementation", "offset": "0x47f5c88", "length": "0x480"}
+    ,{"label": "unclassified actor OnRep; ownership unconfirmed", "offset": "0x5e33ce8", "length": "0x600"}
+    ,{"label": "vehicle base static class", "offset": "0x700b800", "length": "0x300"}
+    ,{"label": "native GetVehicleOfCharacter implementation", "offset": "0x3a77e8c", "length": "0x500"}
+    ,{"label": "native GetVehicleUserComponent implementation", "offset": "0x58ace78", "length": "0x400"}
+    ,{"label": "character vehicle component getter", "offset": "0x3965bb4", "length": "0x400"}
+    ,{"label": "vehicle-user component helper", "offset": "0x4c86960", "length": "0x300"}
+    ,{"label": "vehicle-user helper owner resolution", "offset": "0x58acd9c", "length": "0x200"}
+    ,{"label": "vehicle-user native class", "offset": "0x72ca9a4", "length": "0x200"}
+    ,{"label": "vehicle-user reflected constructor", "offset": "0x72cb3ec", "length": "0x200"}
+    ,{"label": "device character resolver", "offset": "0x4c1158c", "length": "0x200"}
+    ,{"label": "actor native component lookup fallback", "offset": "0xa149148", "length": "0x900"}
+    ,{"label": "base character controller resolver", "offset": "0x3da2d20", "length": "0x200"}
+    ,{"label": "native object validity helper", "offset": "0x36262e4", "length": "0x200"}
+    ,{"label": "vehicle-user concrete constructor", "offset": "0x4d9c69c", "length": "0x400"}
+    ,{"label": "sparse component bit iterator constructor", "offset": "0x27026c8", "length": "0x200"}
+    ,{"label": "sparse component bit iterator advance", "offset": "0x2702724", "length": "0x200"}
+    ,{"label": "resolved source object native class", "offset": "0x6f37508", "length": "0x200"}
+    ,{"label": "vehicle-user base constructor", "offset": "0x4d9c040", "length": "0x500"}
+    ,{"label": "vehicle actor skin apply", "offset": "0x5a403e4", "length": "0x1800"}
+    ,{"label": "vehicle actor skin callback", "offset": "0x5a81310", "length": "0x100"}
+    ,{"label": "vehicle actor native Tick body", "offset": "0x5a40be0", "length": "0x1200"}
+    ,{"label": "vehicle master avatar handle getter", "offset": "0x47f5f9c", "length": "0x500"}
+    ,{"label": "vehicle avatar handle by slot getter", "offset": "0x47f27d0", "length": "0x600"}
+    ,{"label": "vehicle use DoRepOnce native predicate", "offset": "0x5aac7f4", "length": "0x600"}
+    ,{"label": "avatar base component tick", "offset": "0xa314ef0", "length": "0x600"}
+    ,{"label": "vehicle avatar OnRep initialization", "offset": "0x47ebb2c", "length": "0x800"}
+    ,{"label": "vehicle avatar OnRep tail", "offset": "0x47ef090", "length": "0x380"}
+    ,{"label": "vehicle master handle indexed lookup", "offset": "0x47fad00", "length": "0x600"}
+    ,{"label": "avatar handle indexed lookup", "offset": "0x42dd238", "length": "0x600"}
+    ,{"label": "avatar handle to entity cast", "offset": "0x42d9824", "length": "0x380"}
+    ,{"label": "native vehicle avatar changed callback", "offset": "0x5bd7fb4", "length": "0xa00"}
+    ,{"label": "native vehicle avatar async completion", "offset": "0x5c272c4", "length": "0x600"}
+    ,{"label": "avatar handle mapping find", "offset": "0x3796f3c", "length": "0x500"}
+    ,{"label": "vehicle avatar install loaded entity", "offset": "0x47ed4f8", "length": "0x1000"}
+    ,{"label": "avatar handle mapping fallback", "offset": "0x42e3290", "length": "0x600"}
+    ,{"label": "master vehicle entity constructor wrapper", "offset": "0x68b4074", "length": "0x180"}
+    ,{"label": "master vehicle entity native registration", "offset": "0x68ad16c", "length": "0x500"}
+    ,{"label": "vehicle entity constructor wrapper", "offset": "0x72419ec", "length": "0x180"}
+    ,{"label": "base avatar entity constructor wrapper", "offset": "0x6118550", "length": "0x180"}
+    ,{"label": "base avatar entity native constructor", "offset": "0x42f07ec", "length": "0x600"}
+    ,{"label": "vehicle avatar entity native constructor", "offset": "0x42f0644", "length": "0x200"}
+    ,{"label": "master getter return class", "offset": "0x611b984", "length": "0x180"}
+    ,{"label": "vehicle pendant getter return class", "offset": "0x61f6afc", "length": "0x180"}
+    ,{"label": "loaded item handle native class getter", "offset": "0x74bb1dc", "length": "0x180"}
+    ,{"label": "base avatar entity native method registration", "offset": "0x61142e8", "length": "0x500"}
+    ,{"label": "loaded item handle actual class getter", "offset": "0x74bb434", "length": "0x180"}
+    ,{"label": "vehicle entity loaded handle setup", "offset": "0x45dabbc", "length": "0x1000"}
+    ,{"label": "vehicle entity deferred render dispatcher", "offset": "0x45d9000", "length": "0x4800"}
+    ,{"label": "base avatar entity render entry", "offset": "0x42f1574", "length": "0x400"}
+    ,{"label": "avatar component entity render map iteration", "offset": "0x42e53e8", "length": "0x300"}
+    ,{"label": "native method registration record iterator", "offset": "0x8cd5a0c", "length": "0x600"}
+    ,{"label": "vehicle entity renderer and post-render", "offset": "0x480a42c", "length": "0xa00"}
+    ,{"label": "vehicle avatar resource completion dispatcher", "offset": "0x47eb43c", "length": "0x1000"}
+    ,{"label": "vehicle skin trigger native implementation", "offset": "0x47f3104", "length": "0x500"}
+    ,{"label": "IsSafeForGameThread native predicate", "offset": "0x42c4c9c", "length": "0x200"}
+    ,{"label": "GetGameThreadId native", "offset": "0x7522a68", "length": "0x100"}
+    ,{"label": "GetGameThreadId companion", "offset": "0x7522a78", "length": "0x100"}
+    ,{"label": "UpdateFinishPending_GameThread native", "offset": "0x3750630", "length": "0x400"}
+    ,{"label": "PutOnEquipmentByResID native implementation", "offset": "0x47f2824", "length": "0x120"}
+    ,{"label": "TaskGraph wait/assert region", "offset": "0x8aff500", "length": "0xa00"}
+    ,{"label": "TaskGraph helper cluster", "offset": "0x8b00900", "length": "0x300"}
+    ,{"label": "PixUI AddAsyncTask enqueue", "offset": "0x26dc768", "length": "0x200"}
+    ,{"label": "PixUI DoAsyncTask body", "offset": "0x26df35c", "length": "0x300"}
+    ,{"label": "PixUI WaitCallInGameThread timeout path", "offset": "0x2714528", "length": "0x200"}
+    ,{"label": "PixUI async task submit helper", "offset": "0x26dbe80", "length": "0x200"}
+    ,{"label": "current thread id helper A", "offset": "0xaf28744", "length": "0x80"}
+    ,{"label": "current thread id helper B", "offset": "0xaf2866c", "length": "0x80"}
+    ,{"label": "GGameThreadId store / TaskGraph startup", "offset": "0x35d8200", "length": "0x400"}
+    ,{"label": "TaskGraph queue helper 0x35e3c10", "offset": "0x35e3c10", "length": "0x400"}
+    ,{"label": "TaskGraph queue helper 0x35e3f2c", "offset": "0x35e3f2c", "length": "0x300"}
+    ,{"label": "TaskGraph pool alloc A", "offset": "0x3568bdc", "length": "0x100"}
+    ,{"label": "TaskGraph pool alloc B", "offset": "0x3568c2c", "length": "0x100"}
+    ,{"label": "TaskGraph ProcessThreadUntilRequestReturn", "offset": "0x8aff5e8", "length": "0x300"}
+    ,{"label": "TaskGraph task setup/dispatch candidate", "offset": "0x8aff814", "length": "0x300"}
+    ,{"label": "TaskGraph ConstructFromCreateTask", "offset": "0x35e3d38", "length": "0x200"}
+    ,{"label": "TaskGraph DispatchWhenReady wrapper", "offset": "0x35e3d50", "length": "0x200"}
+    ,{"label": "FTaskGraphInterface Get", "offset": "0x8af6894", "length": "0x80"}
+    ,{"label": "CreateGraphEvent", "offset": "0x8af6900", "length": "0x80"}
+    ,{"label": "TaskGraph named-thread wake", "offset": "0x8afeb0c", "length": "0x200"}
+    ,{"label": "sample CreateTask caller engine init", "offset": "0x35dd6c0", "length": "0x100"}
+    ,{"label": "sample CreateTask caller render flush", "offset": "0xa2cc860", "length": "0x100"}
+    ,{"label": "FFunctionGraphTask CreateAndDispatch candidate", "offset": "0x3765444", "length": "0x300"}
+    ,{"label": "sample function-task body from CreateAndDispatch", "offset": "0x33f3578", "length": "0x100"}
+    ,{"label": "sample CreateAndDispatch caller with code pointer", "offset": "0x33cb8a8", "length": "0x100"}
+    ,{"label": "sample CreateAndDispatch caller with built object", "offset": "0xa4ef550", "length": "0x100"}
+    ,{"label": "sample TFunction/delegate builder before CreateAndDispatch", "offset": "0xa4ef624", "length": "0x200"}
+    ,{"label": "TaskGraphInterface vtable Dispatch slot helper", "offset": "0x35e3f00", "length": "0x40"}
+    ,{"label": "CreateAndDispatch internal implementation", "offset": "0x3769108", "length": "0x400"}
+    ,{"label": "CreateAndDispatch prerequisite helper", "offset": "0x3768fe0", "length": "0x120"}
+    ,{"label": "TFunction place/allocate helper", "offset": "0x2705f64", "length": "0x100"}
+    ,{"label": "TFunction destroy helper", "offset": "0x2704da4", "length": "0x80"}
+    ,{"label": "GT CreateAndDispatch invoker thunk A", "offset": "0x2341f04", "length": "0x40"}
+    ,{"label": "GT CreateAndDispatch invoker thunk B", "offset": "0x35b8540", "length": "0x40"}
+    ,{"label": "GT CreateAndDispatch invoker thunk C", "offset": "0x37735dc", "length": "0x40"}
+    ,{"label": "sample GT CreateAndDispatch caller simple capture", "offset": "0x232ab7c", "length": "0x120"}
+    ,{"label": "sample GT CreateAndDispatch near helper", "offset": "0x3764fe8", "length": "0x100"}
+    ,{"label": "dispatch_async stub", "offset": "0xaf26f44", "length": "0x10"}
+    ,{"label": "dispatch_sync stub", "offset": "0xaf27100", "length": "0x10"}
+    ,{"label": "sample dispatch_async block caller", "offset": "0x357ee6c", "length": "0x200"}
+    ,{"label": "TFunction operator() invoke", "offset": "0x26df230", "length": "0x80"}
+    ,{"label": "TFunction copy into graph task", "offset": "0x2714300", "length": "0x100"}
+  ]
+}

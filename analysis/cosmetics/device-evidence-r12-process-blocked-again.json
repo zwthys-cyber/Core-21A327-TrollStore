@@ -1,0 +1,18 @@
+{
+  "captured_at_unix": 1792212727.0515571,
+  "schema_version": 12,
+  "probe_revision": 12,
+  "mode": "process-name-visibility",
+  "status": "game-process-visible",
+  "lookup_result": "located",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": false,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 1,
+  "quarantine_after": 1,
+  "quarantine_changed": false,
+  "prior_clear_report_unix": 1792211416.507266,
+  "interpretation": "This is another name lookup, not the schema 13 game-process-open-attempt. ShadowTrackerExtra is still visible. The quarantine word was already 1 before the lookup and the lookup did not change it. The earlier clear value of 0 did not remain.",
+  "game_open_attempted": false
+}

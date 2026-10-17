@@ -1,0 +1,18 @@
+{
+  "captured_at_unix": 1792210726.760818,
+  "schema_version": 11,
+  "probe_revision": 11,
+  "mode": "process-name-visibility",
+  "status": "game-process-visible",
+  "lookup_result": "located",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": false,
+  "vehicle_appearance_changes_implemented": false,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 1,
+  "quarantine_after": 1,
+  "quarantine_changed": false,
+  "interpretation": "The existing kernel name lookup sees ShadowTrackerExtra. The lookup did not open a remote session and did not change the quarantine word. The word is already 1, which is the only fault code paired with bootstrap-first-exception-timeout. The open entry rejects every nonzero value, and its teardown clears only value 2.",
+  "game_open_attempted": false
+}
