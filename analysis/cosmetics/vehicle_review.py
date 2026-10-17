@@ -75,6 +75,7 @@ def main():
         'entry': instructions(0x1047F2834, 4),
         'decoder': instructions(0x107403B28, 10),
         'registry_lookup': instructions(0x1074007D0, 4),
+        'completion_gadget': instructions(0x100334AD4, 2),
     }
     if puton_abi['entry'] != [
             'mov x19, x0', 'add x8, sp, #0x18', 'mov x0, x1', 'bl #0x10383be84']:
@@ -86,6 +87,8 @@ def main():
     if puton_abi['registry_lookup'] != [
             'mov x20, x1', 'mov x19, x0', 'str w1, [sp, #0xc]', 'add x0, x0, #0xd0']:
         raise ValueError('PutOn resource registry key ABI changed')
+    if puton_abi['completion_gadget'] != ['str w1, [x0]', 'ret']:
+        raise ValueError('PutOn completion gadget changed')
     report['puton_resource_abi'] = dict(
         **puton_abi, receiver_register='x0', resource_id_register='x1',
         registry_key_width_bits=32, output_register='x8')
