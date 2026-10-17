@@ -75,13 +75,13 @@ int main(void) {
     }
     category = 5; page = 0; clickedButton = 'v'; unsigned previousActions = actions;
     Draw(1, CCPMenuVehicleWaiting, false, 0, &category, &page);
-    assert(controls == 0 && buttons == 6 && actions == previousActions + 1);
+    assert(controls == 0 && buttons == 7 && actions == previousActions + 1);
     assert(requested && requestedPreset == CCP_VEHICLE_CAPTURE_INDEX && strstr(title, "车辆适配"));
     clickedButton = 't';
     previousActions = actions;
     Draw(1, CCPMenuIdle, false, 0, &category, &page);
     assert(actions == previousActions + 1 && requested && requestedPreset == CCP_VEHICLE_TRIAL_INDEX);
-    assert(buttons == 6);
+    assert(buttons == 7);
     assert(buttonPositions['t'].y == buttonPositions['r'].y);
     assert(buttonPositions['r'].x != buttonPositions['t'].x);
     assert(buttonPositions['g'].y != buttonPositions['r'].y);
@@ -105,7 +105,7 @@ int main(void) {
     previousActions = actions;
     Draw(1, CCPMenuExecChecking, false, 0, &category, &page);
     assert(actions == previousActions + 1 && requested && requestedPreset == CCP_REMOTE_EXEC_INDEX);
-    assert(strstr(title, "正在核对进程号") && buttons == 6);
+    assert(strstr(title, "正在核对进程号") && buttons == 7);
     clickedButton = 0;
     Draw(1, CCPMenuExecMatched, false, CCP_REMOTE_EXEC_INDEX, &category, &page);
     assert(strstr(title, "远程进程号一致"));
