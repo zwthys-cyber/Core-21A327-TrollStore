@@ -189,6 +189,15 @@ def main():
     source_ids = {row['item_id'] for _, source_rows in vehicle_recipes for row in source_rows}
     vehicle_presets = []
     covered_recipes = set()
+    vehicle_display_labels = {
+        3304066: '法拉利Purosangue(幻流光)',
+        3308015: '杜卡迪 Panigale V4',
+        3314004: '特斯拉Cybertruck(极昼黑)',
+        3314005: '特斯拉Cybertruck(荒芜蓝)',
+        3314006: '特斯拉Cybertruck(镭光铂)',
+        3348011: '保时捷Taycan 旅行版(琉光青)',
+        3349021: '包内车辆目标',
+    }
     for source_id in sorted(source_ids & remaps.keys()):
         target_id = remaps[source_id]['target_id']
         matches = [(recipe, source_rows) for recipe, source_rows in vehicle_recipes
@@ -217,12 +226,13 @@ def main():
             raise ValueError(f'No reviewed resource ID for non-vehicle target {target_id}')
         source_labels = sorted({row['label'] for row in source_rows})
         target_labels = sorted({recipe['target'].strip() for recipe, _ in selected})
+        target_label = vehicle_display_labels.get(target_id, ' / '.join(target_labels))
         recipe_evidence = [dict(archive=recipe['archive'], text=recipe['text'], line=recipe['line'])
                            for recipe, _ in selected]
         vehicle_presets.append(dict(
             source_item_id=source_id, source_resource_id=next(iter(source_resources)),
             source_label=' / '.join(source_labels), target_item_id=target_id,
-            target_resource_id=target_resource, target_label=' / '.join(target_labels),
+            target_resource_id=target_resource, target_label=target_label,
             resource_method=resource_method,
             package_mapping=dict(baseline_pak=baseline_key[1], vehicle_pak=vehicle_key[1],
                                  name_map_index=remaps[source_id]['name_map_index']),

@@ -1298,7 +1298,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @37, @"probe_revision": @37,
+        self.trialReport = [@{@"schema_version": @38, @"probe_revision": @38,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),

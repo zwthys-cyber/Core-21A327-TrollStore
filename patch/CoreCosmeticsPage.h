@@ -57,8 +57,9 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
                 uint32_t menuIndex = CCP_VEHICLE_PRESET_BASE + i;
                 bool checked = enabled && selected == menuIndex;
                 char label[256];
-                snprintf(label, sizeof(label), "%s → %s##vehicle-%u",
-                         CCPVehiclePresets[i].sourceLabel, CCPVehiclePresets[i].targetLabel, i);
+                snprintf(label, sizeof(label), "%s [%u] → %s [%u]##vehicle-%u",
+                         CCPVehiclePresets[i].sourceLabel, CCPVehiclePresets[i].sourceItem,
+                         CCPVehiclePresets[i].targetLabel, CCPVehiclePresets[i].targetItem, i);
                 if (ui.checkbox(label, &checked, 0)) action(menuIndex, checked);
             }
         }

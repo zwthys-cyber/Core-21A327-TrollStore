@@ -95,7 +95,7 @@
       "source_label": "布篷UAZ越野车",
       "target_item_id": 3304066,
       "target_resource_id": 330406600,
-      "target_label": "法拉利Purosangue(幻流光",
+      "target_label": "法拉利Purosangue(幻流光)",
       "resource_method": "vehicle-item-resource-contract",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",
@@ -284,7 +284,7 @@
       "source_label": "双人摩托(棕)",
       "target_item_id": 3308015,
       "target_resource_id": 330801500,
-      "target_label": "杜卡迪 Panigale V4(霓",
+      "target_label": "杜卡迪 Panigale V4",
       "resource_method": "pinned-catalog",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",
@@ -452,7 +452,7 @@
       "source_label": "Mirado敞篷跑车(金)",
       "target_item_id": 3349021,
       "target_resource_id": 334902100,
-      "target_label": "乘!",
+      "target_label": "包内车辆目标",
       "resource_method": "vehicle-item-resource-contract",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",
@@ -473,7 +473,7 @@
       "source_label": "罗尼皮卡(白)",
       "target_item_id": 3314004,
       "target_resource_id": 331400400,
-      "target_label": "特斯拉Cybertruck(极昼黑",
+      "target_label": "特斯拉Cybertruck(极昼黑)",
       "resource_method": "pinned-catalog",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",
@@ -494,7 +494,7 @@
       "source_label": "罗尼皮卡(蓝)",
       "target_item_id": 3314005,
       "target_resource_id": 331400500,
-      "target_label": "特斯拉Cybertruck(荒芜蓝",
+      "target_label": "特斯拉Cybertruck(荒芜蓝)",
       "resource_method": "pinned-catalog",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",
@@ -515,7 +515,7 @@
       "source_label": "罗尼皮卡(绿)",
       "target_item_id": 3314006,
       "target_resource_id": 331400600,
-      "target_label": "特斯拉Cybertruck(镭光铂",
+      "target_label": "特斯拉Cybertruck(镭光铂)",
       "resource_method": "pinned-catalog",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",
@@ -599,7 +599,7 @@
       "source_label": "旅行车",
       "target_item_id": 3348011,
       "target_resource_id": 334801100,
-      "target_label": "保时捷Taycan 旅行版(琉光青",
+      "target_label": "保时捷Taycan 旅行版(琉光青)",
       "resource_method": "vehicle-item-resource-contract",
       "package_mapping": {
         "baseline_pak": "game_patch_1.38.12.16050.pak",

@@ -28,6 +28,10 @@ class VehicleCatalogTests(unittest.TestCase):
         self.assertGreater(coverage[0]["vehicle_rows_checked"], 500)
         self.assertEqual(len({row["source_item_id"] for row in presets}), 35)
         self.assertTrue(all(row["source_item_id"] != row["target_item_id"] for row in presets))
+        self.assertFalse(any(
+            row["target_label"].endswith(("(", "霓")) or row["target_label"] == "乘!"
+            for row in presets
+        ))
 
     def test_known_ambiguous_labels_use_the_package_mapping(self):
         pairs = {
