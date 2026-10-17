@@ -624,6 +624,14 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
+    self.trialReport = [@{@"schema_version": @20, @"probe_revision": @20,
+        @"mode": @"early-game-session", @"status": @"early-session-started",
+        @"game_version": @"1.38.12", @"game_build": @"15915",
+        @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
+        @"call_result": @"not-called", @"session_open_attempted": @NO,
+        @"vehicle_appearance_changes_implemented": @NO,
+        @"ui_location": @"native-menu-below-position"} mutableCopy];
+    [self writeTrialReport];
     uint32_t generation = ++self.generation;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
     dispatch_async(self.captureQueue, ^{
@@ -649,7 +657,13 @@ static NSDictionary *VehicleTrialObservation(void) {
         entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
         if (!identity) status = @"core-identity-mismatch";
         else if (!prefixes) status = @"core-entry-mismatch";
-        else for (waits = 0; waits < 600 && !called; waits++) {
+        self.trialReport[@"status"] = status;
+        [self writeTrialReport];
+        if (identity && prefixes) for (waits = 0; waits < 600 && !called; waits++) {
+            self.trialReport[@"wait_ticks"] = @(waits);
+            self.trialReport[@"wait_blocker"] = waitBlocker;
+            self.trialReport[@"status"] = status;
+            [self writeTrialReport];
             uint32_t quarantine = 0, pid = 0, port = 0;
             uint8_t fatal = 0, ready = 0;
             BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
@@ -718,7 +732,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         }
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        self.trialReport = [@{@"schema_version": @19, @"probe_revision": @19,
+        self.trialReport = [@{@"schema_version": @20, @"probe_revision": @20,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
