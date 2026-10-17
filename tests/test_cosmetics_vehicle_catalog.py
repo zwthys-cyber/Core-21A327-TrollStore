@@ -19,6 +19,10 @@ class VehicleCatalogTests(unittest.TestCase):
         self.assertEqual(self.catalog["resolved_pair_count"], 35)
         self.assertEqual(self.catalog["unresolved_recipe_count"], 0)
         self.assertEqual(self.catalog["unresolved"], [])
+        self.assertGreater(
+            self.catalog["package_mapping_evidence"]["vehicle_resource_contract_rows"],
+            100,
+        )
         self.assertEqual(len({row["source_item_id"] for row in presets}), 35)
         self.assertTrue(all(row["source_item_id"] != row["target_item_id"] for row in presets))
 
