@@ -414,7 +414,7 @@ def chained_slot(blob, image, target):
         return dict(status='segment-cap', segments=seg_count)
     specials = {0: 'self', 0xFD: 'weak-lookup', 0xFE: 'flat-lookup', 0xFF: 'main-executable'}
     strides = {1: 8, 7: 8, 9: 8, 10: 8, 12: 8, 2: 4, 6: 4, 8: 4}
-    found = None
+    coverage = []
     for index in range(seg_count):
         info_offset = struct.unpack_from('<I', blob, starts + 4 + index * 4)[0]
         if not info_offset:
@@ -426,6 +426,10 @@ def chained_slot(blob, image, target):
             return dict(status='page-or-format-cap', pointer_format=pointer_format, page_count=page_count, segment_index=index)
         words = list(struct.unpack_from('<' + 'H' * ((size - 22) // 2), blob, info + 22))
         segment = image.segments[index]
+        if page_size and segment['address'] + segment_offset <= target < segment['address'] + segment_offset + page_count * page_size:
+            page_index = (target - segment['address'] - segment_offset) // page_size
+            coverage.append(dict(segment=segment['name'], page_index=page_index, page_start=hex(words[page_index]),
+                page_size=page_size, segment_offset=hex(segment_offset)))
         stride = strides[pointer_format]
         for page in range(page_count):
             start = words[page]
@@ -481,7 +485,9 @@ def chained_slot(blob, image, target):
                     if step == 0:
                         break
                     address += step * stride
-    return dict(status='not-in-chain', imports_format=imports_format, imports_count=imports_count, symbols_format=symbols_format)
+    return dict(status='not-in-chain', imports_format=imports_format, imports_count=imports_count, symbols_format=symbols_format,
+        coverage=coverage,
+        segments=[dict(name=item['name'], address=hex(item['address']), file_length=hex(item['length'])) for item in image.segments])
 
 def nxt_from(address):
     if not any(item['address'] <= address < item['address'] + item['length'] for item in offline.segments):
@@ -495,6 +501,30 @@ if fixup.get('status') == 'found' and not fixup.get('bind'):
     if any(item['address'] <= target < item['address'] + item['length'] for item in offline.segments):
         execution_lines += [f'\n### CoreOffline fixup target plus 0x3710 {target:#x}'] + disassemble(offline, target, 0x60)
         fixup['resolved_plus_3710'] = hex(target)
+slot_refs = []
+text_bytes = offline_data[offline.text['offset']:offline.text['offset'] + (offline.text['length'] & ~3)]
+for index, (word,) in enumerate(struct.iter_unpack('<I', text_bytes)):
+    pc = offline.text['address'] + index * 4
+    if word & 0x9F000000 != 0x90000000:
+        continue
+    relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
+    if relative & (1 << 20):
+        relative -= 1 << 21
+    page, register = (pc & ~4095) + relative * 4096, word & 31
+    if page != 0x10000:
+        continue
+    for delta in range(1, 8):
+        if (index + delta) * 4 + 4 > len(text_bytes):
+            break
+        following = struct.unpack_from('<I', text_bytes, (index + delta) * 4)[0]
+        if following & 0xFFC00000 in (0xF9400000, 0xF9000000) and ((following >> 5) & 31) == register and ((following >> 10) & 4095) * 8 == 0x2F0:
+            slot_refs.append(hex(pc + delta * 4))
+            break
+    if len(slot_refs) == 8:
+        break
+for site in slot_refs:
+    address = int(site, 16)
+    execution_lines += [f'\n### CoreOffline image-slot reference {address:#x}'] + disassemble(offline, max(offline.text['address'], address - 0x60), 0xC0)
 pretext_end = data.find(b'\0', core.offset(0x100003664), core.offset(0x100003664) + 64)
 pretext_symbol = data[core.offset(0x100003664):pretext_end].decode('utf-8', 'replace')
 execution_lines += ['\n### Core pre-text target 0x100003710'] + disassemble(core, 0x100003710, 0x80)
@@ -504,7 +534,7 @@ if offline.code_address(0x102F0) or any(segment['address'] <= 0x102F0 < segment[
     pointer_bits = hex(struct.unpack_from('<Q', offline_data, offline.offset(0x102F0))[0])
 offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
     literals=offline_literals, image_pointer_raw=pointer_bits, fixup=fixup,
-    loaded_libraries=offline_dylibs, pretext_symbol=pretext_symbol,
+    loaded_libraries=offline_dylibs, pretext_symbol=pretext_symbol, image_slot_references=slot_refs,
     text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
