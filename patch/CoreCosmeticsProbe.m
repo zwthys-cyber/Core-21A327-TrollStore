@@ -185,12 +185,10 @@ static void AttemptPutOnEnqueue(NSMutableDictionary *out, uintptr_t base, uint64
                                 uint64_t avatar, uint64_t vehicle, uint32_t skinBefore) {
     out[@"put_on_attempted"] = @NO;
     out[@"enqueue_status"] = @"not-started";
+    // Lobby does not need an owned Bentley. Any current vehicle Avatar is enough;
+    // PutOnEquipmentByResID installs target 3349002 onto that Avatar.
     if (skinBefore == CCPTargetSkinResID) {
         out[@"enqueue_status"] = @"skipped-already-target-skin";
-        return;
-    }
-    if (skinBefore != CCPSourceTrialSkinID) {
-        out[@"enqueue_status"] = @"skipped-source-skin-not-trial";
         return;
     }
     if (!EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) ||
@@ -1036,7 +1034,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @28, @"probe_revision": @28,
+        self.trialReport = [@{@"schema_version": @29, @"probe_revision": @29,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),

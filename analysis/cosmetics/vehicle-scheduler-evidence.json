@@ -92,5 +92,10 @@
       "Readback vehicle+0x20AC skin after enqueue"
     ],
     "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation"
+  },
+  "r29_probe": {
+    "revision": 29,
+    "change": "Drop 3349001-only gate. Lobby need not own Bentley; any current vehicle Avatar enqueues PutOn 3349002. Use training ground if lobby has no current vehicle.",
+    "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation"
   }
 }

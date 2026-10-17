@@ -1,30 +1,30 @@
-Core 远程 GameThread 入队试换 r28
+Core 远程 GameThread 入队试换 r29
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
-r28 在 r27 诊断之上：CI 确认游戏镜像内没有现成的 `mov x8,xN; b CreateAndDispatch` 跳板。
-因此在远程进程 calloc 一块缓冲，写入：
-- CAD 跳板：`mov x8,x3; br x4`（x3=事件输出，x4=CreateAndDispatch）
-- PutOn 调用体：从字面量池加载 Avatar / 3349002 / PutOn 地址后 br
-再 mprotect(RX)，经 Core 0x39A80 调用跳板，以 w2=#4 入队到 GameThread。
+大厅不需要有宾利。PutOn 作用在「当前载具」的 VehicleAvatarComponent 上：
+进训练场或对局，坐上任意车即可尝试把该车外观装成目标 3349002（宾利火焰橘）。
 
-仅当当前车辆皮肤为试驾源 3349001 时才入队；目标 3349002。
+r29 相对 r28：去掉「必须已是试驾源 3349001」限制；只要解析到当前载具 Avatar
+且皮肤还不是 3349002，就安装 RX 跳板并 CreateAndDispatch(w2=#4) 入队 PutOn。
+
+技术路径与 r28 相同：远程 calloc → 写 CAD/PutOn 跳板 → mprotect(RX) → 0x39A80。
 vehicle_appearance_changes_implemented 仍为 false，直到画面确认变化。
-报告 schema / probe 为 28；关注 game_thread_probe.enqueue_status、
-create_and_dispatch_status、skin_id_changed、vehicle_skin_id_after。
+报告 schema / probe 为 29。
 
-使用方法（大厅即可）：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r28.ipa。安装会重启 Core。
+使用方法：
+1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r29.ipa。安装会重启 Core。
 2. 先让游戏留在前台。完全划掉 Core 后再打开它。
 3. 点“内核利用”完成初始化；不要点“获取信息”。
-4. 切回游戏前台，再按提示让 Core 进后台以打开游戏会话（与 r26 相同）。
-5. 坐上/选中试驾宾利（皮肤 3349001）。
-6. 导出“文件 → 浏览 → 我的 iPhone → Core → Core-cosmetics-probe.json”。
+4. 切回游戏，进训练场（或对局），坐上任意载具。
+5. 再按 r26 方式让 Core 打开游戏会话（游戏前台 ↔ Core 后台）。
+6. 导出 Core-cosmetics-probe.json。
 
-enqueue_status 含义：
-- create-and-dispatch-returned：入队调用返回成功（不等于画面已换）
-- mprotect-failed：系统拒绝 RX（需换方案）
-- skipped-source-skin-not-trial / skipped-already-target-skin：未入队条件
-- skipped-avatar-not-ready：当前没有可解析车辆
+关键字段：
+- vehicle_resolve=avatar-ready：已找到当前车
+- vehicle_resolve=no-current-vehicle：还没坐上车（大厅空闲常见）
+- enqueue_status=create-and-dispatch-returned：入队调用返回（≠已换肤）
+- mprotect-failed：系统拒绝 RX
+- skipped-already-target-skin：当前皮已是 3349002
+- skin_id_changed / vehicle_skin_id_after：内存侧是否变化
 
-历史：r26 会话成功；r27 诊断 TaskGraph；r28 安装跳板并尝试 PutOn。
 所有编译与二进制分析均在 GitHub Actions 执行。
