@@ -30,7 +30,18 @@ def main():
     discovered = sorted(set(discovered))
     if len(discovered) > 256:
         raise ValueError('Vehicle discovery exceeded the reviewed name bound')
-    analyze.TERMS = list(dict.fromkeys(config['terms'] + discovered))
+    scheduler_names = []
+    scheduler_fragments = [term.encode() for term in config.get('scheduler_terms', [])]
+    cstring_data = image.data[section['offset']:section['offset'] + section['length']]
+    for value in cstring_data.split(b'\0'):
+        if len(value) <= 128 and any(term.lower() in value.lower() for term in scheduler_fragments):
+            name = value.decode('ascii', errors='ignore')
+            if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9:]*', name):
+                scheduler_names.append(name)
+    scheduler_names = sorted(set(scheduler_names))
+    if len(scheduler_names) > 256:
+        raise ValueError('Scheduler name discovery exceeded the reviewed bound')
+    analyze.TERMS = list(dict.fromkeys(config['terms'] + discovered + scheduler_names))
     properties, functions = analyze.inspect_properties(image)
     clusters = []
     for region in config['property_regions']:
@@ -54,7 +65,7 @@ def main():
         tables.append(dict(label=entry['label'], address=hex(address), rows=rows))
     report = dict(status='static-vehicle-candidates-only', runtime_validated=False,
                   properties=properties, functions=functions, clusters=clusters, pointer_tables=tables,
-                  discovered_names=discovered)
+                  discovered_names=discovered, scheduler_names=scheduler_names)
     report['reviewed_strings'] = []
     for entry in config.get('strings', []):
         offset = image.offset(int(entry['address'], 16))
