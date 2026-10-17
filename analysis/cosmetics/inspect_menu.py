@@ -525,6 +525,67 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', text_bytes)):
 for site in slot_refs:
     address = int(site, 16)
     execution_lines += [f'\n### CoreOffline image-slot reference {address:#x}'] + disassemble(offline, max(offline.text['address'], address - 0x60), 0xC0)
+slot_stores = []
+for index, (word,) in enumerate(struct.iter_unpack('<I', text_bytes)):
+    if word & 0xFFC00000 != 0xF9000000 or ((word >> 10) & 4095) * 8 != 0x2F0:
+        continue
+    register = (word >> 5) & 31
+    page = None
+    for back in range(1, 49):
+        if index - back < 0:
+            break
+        earlier = struct.unpack_from('<I', text_bytes, (index - back) * 4)[0]
+        if earlier & 0x9F000000 != 0x90000000 or (earlier & 31) != register:
+            continue
+        relative = (((earlier >> 5) & 0x7FFFF) << 2) | ((earlier >> 29) & 3)
+        if relative & (1 << 20):
+            relative -= 1 << 21
+        page = ((offline.text['address'] + (index - back) * 4) & ~4095) + relative * 4096
+        break
+    if page == 0x10000:
+        slot_stores.append(hex(offline.text['address'] + index * 4))
+    if len(slot_stores) == 12:
+        break
+for site in slot_stores:
+    address = int(site, 16)
+    execution_lines += [f'\n### CoreOffline image-slot store {address:#x}'] + disassemble(offline, max(offline.text['address'], address - 0x80), 0xC0)
+initializers = []
+for section in offline.sections:
+    if section['name'] not in ('__mod_init_func', '__init_offsets'):
+        continue
+    count = min(section['length'] // 8, 8)
+    for item in range(count):
+        pointer = struct.unpack_from('<Q', offline_data, section['offset'] + item * 8)[0]
+        initializers.append(dict(section=section['name'], value=hex(pointer)))
+        if offline.code_address(pointer & 0xFFFFFFFFFFFF):
+            execution_lines += [f'\n### CoreOffline initializer {pointer:#x}'] + disassemble(offline, pointer & ~3, 0x180)
+veneer_symbols = []
+cursor = core.offset(0x100003000)
+limit = core.offset(0x100004000)
+while cursor < limit and len(veneer_symbols) < 32:
+    if data[cursor] == 0:
+        cursor += 1
+        continue
+    end = data.find(b'\0', cursor, limit)
+    if end < 0:
+        break
+    blob = data[cursor:end]
+    if 3 <= len(blob) <= 80 and all(32 <= byte < 127 for byte in blob):
+        veneer_symbols.append(dict(address=hex(core.address(cursor)), text=blob.decode('ascii')))
+    cursor = end + 1
+veneer_calls = []
+main_code = data[core.text['offset']:core.text['offset'] + (core.text['length'] & ~3)]
+for index, (word,) in enumerate(struct.iter_unpack('<I', main_code)):
+    if word & 0xFC000000 not in (0x14000000, 0x94000000):
+        continue
+    relative = word & 0x3FFFFFF
+    if relative & (1 << 25):
+        relative -= 1 << 26
+    target = core.text['address'] + index * 4 + relative * 4
+    if 0x100003000 <= target < 0x100004000:
+        veneer_calls.append(dict(address=hex(core.text['address'] + index * 4), target=hex(target)))
+    if len(veneer_calls) == 48:
+        break
 pretext_end = data.find(b'\0', core.offset(0x100003664), core.offset(0x100003664) + 64)
 pretext_symbol = data[core.offset(0x100003664):pretext_end].decode('utf-8', 'replace')
 execution_lines += ['\n### Core pre-text target 0x100003710'] + disassemble(core, 0x100003710, 0x80)
@@ -535,6 +596,8 @@ if offline.code_address(0x102F0) or any(segment['address'] <= 0x102F0 < segment[
 offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
     literals=offline_literals, image_pointer_raw=pointer_bits, fixup=fixup,
     loaded_libraries=offline_dylibs, pretext_symbol=pretext_symbol, image_slot_references=slot_refs,
+    image_slot_stores=slot_stores, initializers=initializers, veneer_symbols=veneer_symbols,
+    veneer_calls=veneer_calls,
     text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
