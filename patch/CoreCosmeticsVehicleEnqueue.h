@@ -14,7 +14,8 @@
 #define CCP_ENQUEUE_PUTON_RVA 0x47f2824u
 #define CCP_ENQUEUE_TF_DESTROY_RVA 0x2704da4u
 #define CCP_ENQUEUE_EVENT_RELEASE_RVA 0x35691fcu
-#define CCP_ENQUEUE_TARGET_RES 3349002u
+#define CCP_ENQUEUE_TARGET_ITEM_ID 3349002u
+#define CCP_ENQUEUE_TARGET_RES_ID 334900200u
 #define CCP_ENQUEUE_PAGE 0x1000u
 
 typedef uint64_t (*CCPEnqueueRemoteCall)(uint64_t timeout, uint64_t function, const char *label,
@@ -29,9 +30,15 @@ typedef struct {
     const char *status;
     uint32_t remoteStatus;
     uint64_t codePage, dataPage;
-    uint32_t skinBefore, skinAfter;
+    uint32_t skinBefore, skinAfter, targetItem, targetResource;
     bool skinChanged, putOnAttempted;
 } CCPVehicleEnqueueResult;
+
+static inline bool CCPEnqueueResourceIDForItem(uint32_t itemID, uint32_t *resourceID) {
+    if (!resourceID || itemID == 0 || itemID > UINT32_MAX / 100u) return false;
+    *resourceID = itemID * 100u;
+    return true;
+}
 
 static inline bool CCPEnqueueWrite(CCPEnqueueReadFn read, CCPEnqueueWriteFn write, uint32_t pid,
                                    uint64_t address, const void *data, size_t length) {
@@ -54,16 +61,21 @@ static inline bool CCPEnqueueWrite(CCPEnqueueReadFn read, CCPEnqueueWriteFn writ
 }
 
 // Explicit-apply only. Never call from session-open probes.
-// targetRes is the PutOn resource id (product target or original for restore).
+// Vehicle state stores item IDs (for example 3349002), while PutOnEquipmentByResID
+// takes the catalog resource ID (item ID * 100, for example 334900200).
 static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
     uint32_t pid, uint64_t game, uint64_t avatar, uint64_t vehicle, uint32_t skinBefore,
-    uint32_t targetRes, CCPEnqueueReadFn read, CCPEnqueueWriteFn write,
+    uint32_t targetItem, CCPEnqueueReadFn read, CCPEnqueueWriteFn write,
     CCPEnqueueSymbolCall symbolCall, CCPEnqueueRemoteCall remoteCall) {
     CCPVehicleEnqueueResult out = {0};
     out.status = "not-started";
     out.skinBefore = skinBefore;
-    if (targetRes == 0) { out.status = "bad-arguments"; return out; }
-    if (skinBefore == targetRes) { out.status = "skipped-already-target"; return out; }
+    out.targetItem = targetItem;
+    if (!CCPEnqueueResourceIDForItem(targetItem, &out.targetResource)) {
+        out.status = "bad-arguments";
+        return out;
+    }
+    if (skinBefore == targetItem) { out.status = "skipped-already-target"; return out; }
     if (!CCPPointer(game) || !CCPPointer(avatar) || !CCPPointer(vehicle) || !read || !write ||
         !symbolCall || !remoteCall) {
         out.status = "bad-arguments";
@@ -88,7 +100,8 @@ static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
     // code+0x10: ldr x0,#16; ldr x1,#20; ldr x16,#24; br x16  pools at +0x20/+0x28/+0x30
     const uint32_t cadCode[2] = {0xAA0303E8u, 0xD61F0080u};
     const uint32_t putOnCode[4] = {0x58000080u, 0x580000A1u, 0x580000D0u, 0xD61F0200u};
-    uint64_t avatarWord = avatar, resWord = targetRes, putOnFn = game + CCP_ENQUEUE_PUTON_RVA;
+    uint64_t avatarWord = avatar, resWord = out.targetResource;
+    uint64_t putOnFn = game + CCP_ENQUEUE_PUTON_RVA;
     uint64_t invoker = code + 0x10, tfunction = data + 0x00, event = data + 0x08;
     if (!CCPEnqueueWrite(read, write, pid, code + 0x00, cadCode, sizeof(cadCode)) ||
         !CCPEnqueueWrite(read, write, pid, code + 0x10, putOnCode, sizeof(putOnCode)) ||
@@ -130,7 +143,7 @@ static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
         uint32_t skinAfter[4] = {0};
         if (!read(pid, vehicle + 0x20AC, sizeof(skinAfter), skinAfter)) continue;
         out.skinAfter = skinAfter[1];
-        if (skinAfter[1] == targetRes || skinAfter[1] != skinBefore) break;
+        if (skinAfter[1] == targetItem || skinAfter[1] != skinBefore) break;
     }
     out.skinChanged = out.skinAfter != skinBefore;
     out.status = "create-and-dispatch-returned";

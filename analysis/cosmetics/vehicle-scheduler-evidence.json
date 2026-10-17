@@ -122,11 +122,13 @@
       "No further mid-build device testing requests until a finished IPA"
     ]
   },
-  "r33_product": {
-    "revision": 33,
+  "r34_resource_id_fix": {
+    "revision": 34,
     "cad_abi": "x0=&TFunction, x1=prerequisites(null), w2=desired thread(#4), x8=&FGraphEventRef; trampoline mov x8,x3; br x4 with remote args (tf,0,4,event,cad)",
     "menu": "装目标车皮 / 恢复原车 on dedicated row; diagnostics below; no hit-rect overlap",
     "enqueue": "CCPEnqueuePutOnByResID split RX/RW; session-open enqueue_status=menu-explicit-only",
+    "id_contract": "vehicle state/report uses item ID; PutOnEquipmentByResID receives catalog resource ID=item ID*100 (3349002 -> 334900200); restore converts the captured original item ID the same way",
+    "scope": "single hard-coded target is superseded; final product requires a generated catalog covering all unambiguous vehicle recipes in the supplied packages",
     "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation on finished IPA"
   }
 }

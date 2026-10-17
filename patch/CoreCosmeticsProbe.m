@@ -101,7 +101,8 @@ enum {
     CCPGameTaskGraphGetRVA = 0x8af6894,
     CCPGameCreateAndDispatchRVA = 0x3765444,
     CCPGamePutOnByResRVA = 0x47f2824,
-    CCPTargetSkinResID = 3349002,
+    CCPTargetSkinItemID = 3349002,
+    CCPTargetSkinResourceID = 334900200,
     CCPSourceTrialSkinID = 3349001
 };
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
@@ -243,7 +244,8 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
             out[@"vehicle_resolve"] = @"avatar-ready";
             out[@"vehicle_skin_id"] = @(sample.skin);
             out[@"source_skin_is_trial"] = @(sample.skin == CCPSourceTrialSkinID);
-            out[@"target_skin_res_id"] = @(CCPTargetSkinResID);
+            out[@"target_skin_item_id"] = @(CCPTargetSkinItemID);
+            out[@"target_skin_resource_id"] = @(CCPTargetSkinResourceID);
         } else if (sample.status == CCPVehicleUnavailable) {
             out[@"vehicle_resolve"] = @"no-current-vehicle";
         } else {
@@ -1276,9 +1278,11 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         }
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
-        self.trialReport = [@{@"schema_version": @33, @"probe_revision": @33,
+        self.trialReport = [@{@"schema_version": @34, @"probe_revision": @34,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
-            @"preset": @"宾利欧陆GT敞篷（火焰橘）", @"target_id": @(CCP_ENQUEUE_TARGET_RES),
+            @"preset": @"宾利欧陆GT敞篷（火焰橘）",
+            @"target_item_id": @(CCP_ENQUEUE_TARGET_ITEM_ID),
+            @"target_resource_id": @(CCP_ENQUEUE_TARGET_RES_ID),
             @"refresh_strategy": @"create-and-dispatch-puton-split-rx-rw",
             @"vehicle_appearance_changes_implemented": @NO, @"visual_effect_verified": @NO,
             @"auto_enqueue_on_session_open": @NO, @"ui_location": @"native-menu-below-position"} mutableCopy];
@@ -1319,11 +1323,13 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
     CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
         VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle, skinBefore,
-        CCP_ENQUEUE_TARGET_RES, VehicleContext.target.read, VehicleContext.target.write, symbolCall, remoteCall);
+        CCP_ENQUEUE_TARGET_ITEM_ID, VehicleContext.target.read, VehicleContext.target.write, symbolCall, remoteCall);
     self.trialReport[@"enqueue"] = @{
         @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
         @"remote_status": @(enqueued.remoteStatus),
         @"put_on_attempted": @(enqueued.putOnAttempted),
+        @"target_item_id": @(enqueued.targetItem),
+        @"target_resource_id": @(enqueued.targetResource),
         @"skin_before": @(enqueued.skinBefore),
         @"skin_after": @(enqueued.skinAfter),
         @"skin_id_changed": @(enqueued.skinChanged),
@@ -1351,7 +1357,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
         EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && TrialBindingValid(&VehicleContext)) {
         atomic_store(&MenuStatus, CCPMenuVehicleRestoring);
-        uint32_t skinNow = CCP_ENQUEUE_TARGET_RES;
+        uint32_t skinNow = CCP_ENQUEUE_TARGET_ITEM_ID;
         uint32_t skinWords[4] = {0};
         if (VehicleContext.target.read(VehicleContext.target.pid, VehicleContext.vehicle + 0x20AC,
                                        sizeof(skinWords), skinWords))
@@ -1368,6 +1374,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         self.trialReport[@"restore"] = @{
             @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
             @"original_skin_id": @(original),
+            @"restore_resource_id": @(enqueued.targetResource),
             @"skin_before": @(skinNow),
             @"put_on_attempted": @(enqueued.putOnAttempted),
             @"skin_after": @(enqueued.skinAfter)
