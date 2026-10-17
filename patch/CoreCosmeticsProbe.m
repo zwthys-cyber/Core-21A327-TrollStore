@@ -225,7 +225,9 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
     uint8_t config[0x3A8], configAfter[sizeof(config)];
     if (!CCPReadBytes(local, base + 0xC54270, config, sizeof(config))) return @{@"status": @"core-context-unavailable"};
     uint64_t game = CCPU64(config + 0x18), pawn = CCPU64(config + 0x3A0);
-    if (!CCPIdentity(remote, game, CCPGameUUID)) return @{@"status": @"game-identity-unconfirmed"};
+    const char *gameIdentity = CCPIdentityDetail(remote, game, CCPGameUUID);
+    if (gameIdentity) return @{@"status": [NSString stringWithUTF8String:gameIdentity],
+        @"identity_scope": @"core-cached-game-image"};
     if (!CCPPointer(pawn)) return @{@"status": @"local-character-unavailable", @"game_uuid_matches": @YES,
         @"core_controller_available": @(CCPPointer(CCPU64(config + 0x390))),
         @"core_world_available": @(CCPPointer(CCPU64(config + 0x370)))};
@@ -569,7 +571,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         }
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        self.trialReport = [@{@"schema_version": @11, @"probe_revision": @11,
+        self.trialReport = [@{@"schema_version": @12, @"probe_revision": @12,
             @"mode": @"process-name-visibility", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": result, @"status": status,
             @"session_open_attempted": @NO, @"vehicle_appearance_changes_implemented": @NO,
@@ -670,7 +672,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         self.trialFinishing = NO;
         self.samples = [NSMutableArray array];
         self.vehicleAttempts = [NSMutableArray array];
-        self.trialReport = [@{@"schema_version": @10, @"probe_revision": @10, @"mode": @"vehicle-entity-resource-diagnostics",
+        self.trialReport = [@{@"schema_version": @12, @"probe_revision": @12, @"mode": @"vehicle-entity-resource-diagnostics",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"vehicle_writes_implemented": @NO, @"vehicle_appearance_changes_implemented": @NO,
@@ -696,6 +698,12 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.trialReport[@"samples"] = self.samples.copy;
     self.trialReport[@"status"] = self.samples.count ? @"sampling-current-vehicle" : @"waiting-for-current-vehicle";
     [self writeTrialReport];
+    NSString *vehicleStatus = vehicle[@"status"] ?: @"";
+    if ([vehicleStatus hasPrefix:@"image-"] && attempt >= 1) {
+        self.trialReport[@"game_identity_status"] = vehicleStatus;
+        [self finishVehicleCaptureOnQueue:generation reason:@"game-image-unconfirmed"];
+        return;
+    }
     if (self.samples.count >= 8 || attempt >= 60) {
         [self finishVehicleCaptureOnQueue:generation reason:self.samples.count >= 8 ? @"capture-complete" : @"readiness-timeout"];
     } else dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), self.captureQueue,

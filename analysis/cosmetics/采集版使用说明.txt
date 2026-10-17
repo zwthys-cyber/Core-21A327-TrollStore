@@ -1,4 +1,4 @@
-Core 进程名可见性探测 r11
+Core 游戏映像身份与进程名探测 r12
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
 r9 实机已确认：三字段写入成功，但 Pending 未被消费、游戏缓存计数没有推进，且你确认画面完全没变。
@@ -11,7 +11,11 @@ lookup_result 为 located 表示这条查找看见了游戏进程；not-found �
 这不是车辆换肤包。r10 的实体采集仍然保留。
 
 使用方法：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r11.ipa。
+这次车辆采集如果 Core 当前目标不是 1.38.12 的游戏映像，会在第二次同样失败后停止，不再空转到约 60 秒。
+latest_vehicle.status 会写成 image-pointer-unavailable、image-header-unreadable、image-header-not-macho、image-uuid-mismatch、image-uuid-unreadable 或 image-load-commands-unconfirmed。
+这表示游戏绑定还没对上，不表示没上车。请先重新初始化 Core 的游戏采集，再使用“探测游戏进程”。
+
+1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r12.ipa。
 2. 按原流程初始化 Core 和游戏采集，坐进上次原车 ID 为 3349001 的四座敞篷车驾驶位。
 3. 原生菜单“位置”下面“美化”→“换分类”到“车辆适配”→“采集车辆”。
 4. 通常取得 8 个车辆样本后自动保存；未就绪时最多约 60 秒，也可手动停止。

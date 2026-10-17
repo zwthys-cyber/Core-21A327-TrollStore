@@ -36,7 +36,12 @@ int main(void) {
     Fixture f; Package(&f);
     CCPReader reader = {Read, &f};
     assert(CCPIdentity(reader, Base, CCPGameUUID));
-    f.bytes[40] ^= 1; assert(!CCPIdentity(reader, Base, CCPGameUUID)); f.bytes[40] ^= 1;
+    assert(CCPIdentityDetail(reader, Base, CCPGameUUID) == NULL);
+    f.bytes[40] ^= 1;
+    assert(!CCPIdentity(reader, Base, CCPGameUUID));
+    assert(!strcmp(CCPIdentityDetail(reader, Base, CCPGameUUID), "image-uuid-mismatch"));
+    f.bytes[40] ^= 1;
+    assert(!strcmp(CCPIdentityDetail(reader, 0, CCPGameUUID), "image-pointer-unavailable"));
     Put32(&f, 4, 0x1000007); assert(!CCPIdentity(reader, Base, CCPGameUUID));
     Package(&f); Put32(&f, 36, 7); assert(!CCPIdentity(reader, Base, CCPGameUUID));
     Package(&f); Put32(&f, 20, 32); assert(!CCPIdentity(reader, Base, CCPGameUUID));

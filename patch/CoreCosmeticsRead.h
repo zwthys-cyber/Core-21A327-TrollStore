@@ -40,25 +40,32 @@ static inline bool CCPReadBytes(CCPReader reader, uint64_t address, void *out, s
     }
     return true;
 }
-static inline bool CCPIdentity(CCPReader reader, uint64_t base, const uint8_t uuid[16]) {
+static inline const char *CCPIdentityDetail(CCPReader reader, uint64_t base, const uint8_t uuid[16]) {
     uint8_t header[32], command[24];
-    if (!CCPPointer(base) || !CCPReadBytes(reader, base, header, sizeof(header)) ||
-        CCPU32(header) != 0xFEEDFACF || CCPU32(header + 4) != 0x100000C) return false;
+    if (!CCPPointer(base)) return "image-pointer-unavailable";
+    if (!CCPReadBytes(reader, base, header, sizeof(header))) return "image-header-unreadable";
+    if (CCPU32(header) != 0xFEEDFACF || CCPU32(header + 4) != 0x100000C) return "image-header-not-macho";
     uint32_t count = CCPU32(header + 16), size = CCPU32(header + 20);
-    if (!count || count > 512 || size < 8 || size > 65536) return false;
+    if (!count || count > 512 || size < 8 || size > 65536) return "image-load-commands-unconfirmed";
     uint32_t offset = 0; unsigned matches = 0;
     for (uint32_t i = 0; i < count; i++) {
-        if (size - offset < 8 || !CCPReadBytes(reader, base + 32 + offset, command, 8)) return false;
+        if (size - offset < 8 || !CCPReadBytes(reader, base + 32 + offset, command, 8))
+            return "image-load-commands-unconfirmed";
         uint32_t kind = CCPU32(command), length = CCPU32(command + 4);
-        if (length < 8 || (length & 7) || length > size - offset) return false;
+        if (length < 8 || (length & 7) || length > size - offset) return "image-load-commands-unconfirmed";
         if (kind == 0x1B) {
             if (length != 24 || ++matches > 1 ||
-                !CCPReadBytes(reader, base + 32 + offset, command, sizeof(command)) ||
-                memcmp(command + 8, uuid, 16)) return false;
+                !CCPReadBytes(reader, base + 32 + offset, command, sizeof(command)))
+                return "image-uuid-unreadable";
+            if (memcmp(command + 8, uuid, 16)) return "image-uuid-mismatch";
         }
         offset += length;
     }
-    return matches == 1 && offset == size;
+    if (matches != 1 || offset != size) return "image-load-commands-unconfirmed";
+    return NULL;
+}
+static inline bool CCPIdentity(CCPReader reader, uint64_t base, const uint8_t uuid[16]) {
+    return CCPIdentityDetail(reader, base, uuid) == NULL;
 }
 static inline bool CCPReadItems(CCPReader reader, uint64_t address, CCPItems *out) {
     if (!out) return false;
