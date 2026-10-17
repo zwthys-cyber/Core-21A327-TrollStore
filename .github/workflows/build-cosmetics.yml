@@ -1,6 +1,14 @@
 name: Build Core cosmetics adaptation
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [feat/kernel-cosmetics]
+    paths:
+      - 'patch/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'analysis/cosmetics/采集版使用说明.txt'
+      - '.github/workflows/build*.yml'
   push:
     branches: [feat/kernel-cosmetics]
     paths:
