@@ -28,7 +28,16 @@
   ],
   "global_field_loads": ["0x20ac", "0x20b0", "0x3710"],
   "global_field_constants": ["0x20ac", "0x20b0", "0x20b4", "0x20b8", "0x20bc"],
-  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8", "0x42c4c9c", "0x7522a68", "0x7522a78", "0x3750630", "0x47f2824"],
+  "game_thread_globals": [
+    {
+      "page": "0x11114c000",
+      "offsets": {
+        "0x5ec": "GGameThreadId",
+        "0x600": "GIsGameThreadIdInitialized"
+      }
+    }
+  ],
+  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8", "0x42c4c9c", "0x7522a68", "0x7522a78", "0x3750630", "0x47f2824", "0x8aff5a0", "0x8b0097c", "0x8b00994", "0x35e3c10", "0x26dc768", "0x26df35c", "0x26df258", "0x26dbe80", "0x26df2f8"],
   "native_registration_tables": [
     {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
     {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
@@ -103,5 +112,13 @@
     ,{"label": "GetGameThreadId companion", "offset": "0x7522a78", "length": "0x100"}
     ,{"label": "UpdateFinishPending_GameThread native", "offset": "0x3750630", "length": "0x400"}
     ,{"label": "PutOnEquipmentByResID native implementation", "offset": "0x47f2824", "length": "0x120"}
+    ,{"label": "TaskGraph wait/assert region", "offset": "0x8aff500", "length": "0xa00"}
+    ,{"label": "TaskGraph helper cluster", "offset": "0x8b00900", "length": "0x300"}
+    ,{"label": "PixUI AddAsyncTask enqueue", "offset": "0x26dc768", "length": "0x200"}
+    ,{"label": "PixUI DoAsyncTask body", "offset": "0x26df35c", "length": "0x300"}
+    ,{"label": "PixUI WaitCallInGameThread timeout path", "offset": "0x2714528", "length": "0x200"}
+    ,{"label": "PixUI async task submit helper", "offset": "0x26dbe80", "length": "0x200"}
+    ,{"label": "current thread id helper A", "offset": "0xaf28744", "length": "0x80"}
+    ,{"label": "current thread id helper B", "offset": "0xaf2866c", "length": "0x80"}
   ]
 }

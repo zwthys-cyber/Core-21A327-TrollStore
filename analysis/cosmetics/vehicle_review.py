@@ -196,13 +196,75 @@ def main():
     global_references = []
     scheduler_adrp_add_count = 0
     scheduler_adrp_ldr_count = 0
+    game_thread_global_count = 0
     wanted = {int(value, 16) for value in config.get('global_field_loads', [])}
     field_constants = {int(value, 16) for value in config.get('global_field_constants', [])}
     call_targets = {0x100000000 + int(value, 16) for value in config.get('call_targets', [])}
+    game_thread_pages = {}
+    for entry in config.get('game_thread_globals', []):
+        page = int(entry['page'], 16)
+        game_thread_pages[page] = {
+            int(offset, 16): label for offset, label in entry.get('offsets', {}).items()
+        }
     code_offset, code_size = image.text['offset'], image.text['length']
     code = image.data[code_offset:code_offset + (code_size & ~3)]
     for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
         pc = image.text['address'] + index * 4
+        if word & 0x9F000000 == 0x90000000 and game_thread_pages:
+            relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
+            if relative & (1 << 20):
+                relative -= 1 << 21
+            page = (pc & ~0xFFF) + relative * 4096
+            offsets = game_thread_pages.get(page)
+            if offsets:
+                register = word & 31
+                for delta in range(1, 12):
+                    position = (index + delta) * 4
+                    if position + 4 > len(code):
+                        break
+                    following = struct.unpack_from('<I', code, position)[0]
+                    # LDRB/STRB imm12 and LDR/STR imm12 (W/X) against the page register.
+                    kinds = []
+                    if following & 0xFFC00000 == 0x39400000 and ((following >> 5) & 31) == register:
+                        kinds.append(('ldrb', (following >> 10) & 4095))
+                    elif following & 0xFFC00000 == 0x39000000 and ((following >> 5) & 31) == register:
+                        kinds.append(('strb', (following >> 10) & 4095))
+                    elif following & 0xFFC00000 == 0xB9400000 and ((following >> 5) & 31) == register:
+                        kinds.append(('ldr-w', ((following >> 10) & 4095) * 4))
+                    elif following & 0xFFC00000 == 0xB9000000 and ((following >> 5) & 31) == register:
+                        kinds.append(('str-w', ((following >> 10) & 4095) * 4))
+                    elif following & 0xFFC00000 == 0xF9400000 and ((following >> 5) & 31) == register:
+                        kinds.append(('ldr-x', ((following >> 10) & 4095) * 8))
+                    elif following & 0xFFC00000 == 0xF9000000 and ((following >> 5) & 31) == register:
+                        kinds.append(('str-x', ((following >> 10) & 4095) * 8))
+                    elif following & 0xFFC00000 == 0x91000000 and ((following >> 5) & 31) == register:
+                        add_imm = (following >> 10) & 4095
+                        add_reg = following & 31
+                        for add_delta in range(1, 8):
+                            add_position = (index + delta + add_delta) * 4
+                            if add_position + 4 > len(code):
+                                break
+                            add_following = struct.unpack_from('<I', code, add_position)[0]
+                            if ((add_following >> 5) & 31) != add_reg:
+                                continue
+                            if add_following & 0xFFC00000 == 0x39400000:
+                                kinds.append(('add-ldrb', add_imm + ((add_following >> 10) & 4095)))
+                            elif add_following & 0xFFC00000 == 0x39000000:
+                                kinds.append(('add-strb', add_imm + ((add_following >> 10) & 4095)))
+                            elif add_following & 0xFFC00000 == 0xB9400000:
+                                kinds.append(('add-ldr-w', add_imm + ((add_following >> 10) & 4095) * 4))
+                            elif add_following & 0xFFC00000 == 0xB9000000:
+                                kinds.append(('add-str-w', add_imm + ((add_following >> 10) & 4095) * 4))
+                    for access, offset in kinds:
+                        label = offsets.get(offset)
+                        if not label:
+                            continue
+                        global_references.append(dict(
+                            address=hex(pc), game_thread_global=label, offset=hex(offset),
+                            access=access, use_address=hex(pc + delta * 4), kind='game-thread-global'))
+                        game_thread_global_count += 1
+                        if game_thread_global_count <= 128:
+                            windows.append(('game thread global ' + label, pc - 0x80, 0x200))
         if word & 0x9F000000 == 0x10000000 and scheduler_addresses:
             relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
             if relative & (1 << 20):
@@ -280,8 +342,11 @@ def main():
         adrp_add=sum(1 for row in global_references if row.get('kind') == 'adrp-add'),
         adrp_ldr=sum(1 for row in global_references if row.get('kind') == 'adrp-ldr'),
         adr=sum(1 for row in global_references if row.get('kind') == 'adr'),
+        game_thread_global=sum(1 for row in global_references if row.get('kind') == 'game-thread-global'),
         is_safe_native_callers=sum(1 for row in global_references if row.get('target') == '0x1042c4c9c'),
         put_on_native_callers=sum(1 for row in global_references if row.get('target') == '0x1047f2824'),
+        taskgraph_helper_callers=sum(1 for row in global_references if row.get('target') == '0x108b0097c'),
+        pixui_add_async_callers=sum(1 for row in global_references if row.get('target') == '0x1026dc768'),
     )
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))
