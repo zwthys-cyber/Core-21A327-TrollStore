@@ -76,6 +76,39 @@ def main():
             cursor = hit + len(needle)
     report['utf16_literals'] = literal_terms
     literal_addresses = {int(row['address'], 16) for row in literal_terms}
+    scheduler_strings = []
+    scheduler_terms = [term.encode() for term in config.get('scheduler_terms', [])]
+    cstrings = image.data[section['offset']:section['offset'] + section['length']]
+    cursor = 0
+    while cursor < len(cstrings):
+        end = cstrings.find(b'\0', cursor)
+        if end < 0:
+            break
+        value = cstrings[cursor:end]
+        if value and any(term.lower() in value.lower() for term in scheduler_terms):
+            scheduler_strings.append(dict(address=hex(image.address(section['offset'] + cursor)),
+                                          value=value.decode('utf-8', errors='replace')))
+            if len(scheduler_strings) > 128:
+                raise ValueError('Scheduler string discovery exceeded its bound')
+        cursor = end + 1
+    scheduler_symbols = []
+    if image.symbols:
+        symoff, count, stroff, strsize = image.symbols
+        for index in range(count):
+            name_offset, kind, symbol_section, desc, value = struct.unpack_from(
+                '<IBBHQ', image.data, symoff + index * 16)
+            if name_offset >= strsize:
+                continue
+            end = image.data.find(b'\0', stroff + name_offset, stroff + strsize)
+            name = image.data[stroff + name_offset:end]
+            if any(term.lower() in name.lower() for term in scheduler_terms):
+                scheduler_symbols.append(dict(name=name.decode('utf-8', errors='replace'),
+                                              kind=kind, section=symbol_section, value=hex(value)))
+                if len(scheduler_symbols) > 256:
+                    raise ValueError('Scheduler symbol discovery exceeded its bound')
+    report['scheduler_strings'] = scheduler_strings
+    report['scheduler_symbols'] = scheduler_symbols
+    scheduler_addresses = {int(row['address'], 16) for row in scheduler_strings}
     lines = []
     windows = [(entry['label'], 0x100000000 + int(entry['offset'], 16), int(entry['length'], 16))
                for entry in config['windows']]
@@ -138,10 +171,18 @@ def main():
     code = image.data[code_offset:code_offset + (code_size & ~3)]
     for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
         pc = image.text['address'] + index * 4
+        if word & 0x9F000000 == 0x10000000 and scheduler_addresses:
+            relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
+            if relative & (1 << 20):
+                relative -= 1 << 21
+            target = pc + relative
+            if target in scheduler_addresses:
+                global_references.append(dict(address=hex(pc), scheduler_literal=hex(target), kind='adr'))
+                windows.append(('scheduler literal reference', pc - 0x100, 0x400))
         # Reviewed class registration names use ADRP + ADD and UTF-16 strings.
         # Keep raw references as candidates; the surrounding function still
         # needs manual review before assigning a class or constructor identity.
-        if word & 0x9F000000 == 0x90000000 and literal_addresses:
+        if word & 0x9F000000 == 0x90000000 and (literal_addresses or scheduler_addresses):
             relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)
             if relative & (1 << 20):
                 relative -= 1 << 21
@@ -158,6 +199,10 @@ def main():
                         if address in literal_addresses:
                             global_references.append(dict(address=hex(pc), literal=hex(address), add_address=hex(pc + delta * 4)))
                             windows.append(('native class literal reference', pc - 0x100, 0x500))
+                        if address in scheduler_addresses:
+                            global_references.append(dict(address=hex(pc), scheduler_literal=hex(address),
+                                                          add_address=hex(pc + delta * 4), kind='adrp-add'))
+                            windows.append(('scheduler literal reference', pc - 0x100, 0x500))
         kind = word & 0xFFC00000
         scale = 4 if kind == 0xB9400000 else 8 if kind == 0xF9400000 else 0
         displacement = ((word >> 10) & 4095) * scale
