@@ -5,8 +5,8 @@
   "game_thread_dispatch_verified": false,
   "new_runtime_code": false,
   "latest_installable_revision": 10,
-  "cloud_runs": [38997584258, 38997728564, 38997837603, 38998163729, 38998232648, 38998851479, 38999428964, 38999489946],
-  "latest_analysis_commit": "b25d70d",
+  "cloud_runs": [38997584258, 38997728564, 38997837603, 38998163729, 38998232648, 38998851479, 38999428964, 38999489946, 38999815492, 38999900378, 38999962851],
+  "latest_analysis_commit": "07eb9fa",
   "cloud_artifact": "Core-native-menu-review",
   "local_text_report_directory": "/root/和平精英/Core美化映射分析/Core远程会话归属与初始化",
   "function_boundary_caveat": "The pinned image has no decoded LC_FUNCTION_STARTS entries; disassembly windows and raw data pointer candidates are not recovered complete functions or decoded dispatch tables",
@@ -34,6 +34,7 @@
     "bootstrap_entry_caveat": "0x3A7D4 is only a branch to 0x3800. That address is in the __TEXT segment but outside __text and outside every section. The veneer calls dlsym(RTLD_DEFAULT, CoreRemoteOpen) through stub 0x725A10 and branches to the resolved symbol; if lookup fails it returns 0 and does not execute the local body at 0x3A7D8. No direct branch to 0x3A7D8 exists. A zero return therefore does not prove the local body ran.",
     "bootstrap_symbol": "CoreRemoteOpen",
     "bootstrap_symbol_in_pinned_image": false,
+    "bootstrap_provider": "Payload/Core.app/CoreOffline.work.dylib exports _CoreRemoteOpen at its VA 0x4894. Core links this image through @executable_path/CoreOffline.work.dylib. CCCoreLicense.dylib does not contain the string. The main image export trie is empty and its only CoreRemoteOpen string is the veneer literal.",
     "bootstrap_evidence": "The local body at 0x3A7D8 still contains the previously reviewed session, pthread and getpid checks, but it is not on the direct caller path. Callers pass a process-name string and a zero second argument.",
     "ownership": "Uses global session state separate from the cosmetics memory backend binding at 0xc288b0; no PID argument is present in the reviewed low-level function call",
     "device_scope": "The only direct callers pass the exact strings launchd and SpringBoard. The pinned image has no ShadowTrackerExtra, backboardd or com.tencent.tmgp.pubgmhd literal. This does not establish a game session.",
@@ -45,6 +46,7 @@
         "literal_va": "0x10073cc28",
         "second_argument": 0,
         "gate": "Returns 1 without opening when Core+0xC1C258 or +0xC1C259 is already set. Otherwise requires 0x2DCC0 to return nonzero, clears those bytes and +0xC1C25A, then calls the entry.",
+        "zero_return": "Calls 0x2E140, which continues with the ports at Core+0xC52E00 and +0xC52E04, then still calls teardown.",
         "cleanup": "Both the nonzero and zero return paths call teardown 0x39F00 before the wrapper returns.",
         "only_direct_caller_rva": "0x4e420",
         "caller_gate": "0x4E3F8 tails into the wrapper only when 0x4E378 returns nonzero. 0x4E378 returns 0 unless the byte at Core+0xC27B2C is 1 and the word at +0xC27B28 is 2; on that match it tails to 0x2DCC0."
@@ -56,6 +58,7 @@
         "literal_va": "0x1007401bf",
         "second_argument": 0,
         "gate": "Calls only after three object fields are pairwise different and the third is nonzero. No direct branch to 0x5625C was found in __text.",
+        "zero_return": "Does not stop. 0x3C61C exchanges Core+0xBD4C60 with 0x1388 and the routine continues into the remote calls, then teardown at 0x56648 restores that word.",
         "cleanup": "The zero-return continuation calls teardown 0x39F00 at 0x56648. The nonzero path calls status helper 0x38DF0, which returns 1 when fatal byte 0xC1D2E8 or quarantine word 0xC1D2F8 is set."
       }
     ]
@@ -95,9 +98,18 @@
     "direct_callers": ["0x38ccc", "0x390cc", "0x390f0"],
     "scope": "Sets ARM thread state with flavor 6 and count 0x44 inside the existing remote-call implementation. This is Core's remote thread register write, not an identified Unreal game-thread scheduler."
   },
+  "core_offline_open": {
+    "symbol": "_CoreRemoteOpen",
+    "va": "0x4894",
+    "entry_log": "remote.open enter name=%s options=%llu",
+    "call": "Authenticated call to the qword at CoreOffline+0x102F0 plus 0x3710, passing the original name and options. The file contains 0 in that qword, so the target image is a runtime fixup and is not proven to be the main Core image.",
+    "after_call": "Reads base+0xC1D2F8 and base+0xC1D300 through the same pointer, logs them with the call result, and returns that result.",
+    "shared_gate_rva": "0x2dcc0",
+    "shared_gate": "Returns 0 when Core+0xC1C258 or +0xC1C259 is set, when 0x2DA7C or fatal/quarantine helper 0x38DF0 reports a block, or when the words at +0xC52E00 and +0xC52E04 are not both at least 1. Otherwise validates three pointers at +0xC52E08, +0xC52E10 and +0xC52E18."
+  },
   "next_unresolved_work": [
-    "Find which loaded image, if any, defines CoreRemoteOpen; do not call the local body at 0x3A7D8 by skipping the veneer",
-    "Do not treat a zero return from 0x3A7D4 as proof that the local initializer succeeded",
+    "Decode the runtime fixup for CoreOffline+0x102F0 before treating addend 0x3710 as an address in the main image",
+    "Do not call the local body at 0x3A7D8 by skipping the veneer, and do not treat a zero return from 0x3A7D4 as a completed open",
     "Establish a dedicated game target session without altering global capability or quarantine flags",
     "Identify a verified game-thread scheduler and the lifetime of its component/handle inputs before using the native vehicle loader",
     "Do not equate NSInvocation main-thread support, kernel memory readiness or symbol presence with working vehicle refresh"
