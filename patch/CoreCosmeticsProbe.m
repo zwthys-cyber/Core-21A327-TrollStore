@@ -624,7 +624,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @21, @"probe_revision": @21,
+    self.trialReport = [@{@"schema_version": @22, @"probe_revision": @22,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
         @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
@@ -659,7 +659,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         else if (!prefixes) status = @"core-entry-mismatch";
         self.trialReport[@"status"] = status;
         [self writeTrialReport];
-        CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 180;
+        CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 600;
         if (identity && prefixes) while (!called && CFAbsoluteTimeGetCurrent() < deadline) {
             if ((waits % 25) == 0) {
                 self.trialReport[@"wait_ticks"] = @(waits);
@@ -695,6 +695,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             CCPSnapshot readyState = {0};
             if (!snapshot(&readyState) || !readyState.words[1]) {
                 waitBlocker = @"snapshot-not-ready";
+                status = @"waiting-for-kernel";
                 usleep(200000);
                 continue;
             }
@@ -737,7 +738,8 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
-        self.trialReport = [@{@"schema_version": @21, @"probe_revision": @21,
+        if (!called && [waitBlocker isEqualToString:@"snapshot-not-ready"]) status = @"kernel-snapshot-not-ready";
+        self.trialReport = [@{@"schema_version": @22, @"probe_revision": @22,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
