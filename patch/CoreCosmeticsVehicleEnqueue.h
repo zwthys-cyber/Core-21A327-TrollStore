@@ -53,14 +53,16 @@ static inline bool CCPEnqueueWrite(CCPEnqueueReadFn read, CCPEnqueueWriteFn writ
 }
 
 // Explicit-apply only. Never call from session-open probes.
+// targetRes is the PutOn resource id (product target or original for restore).
 static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
     uint32_t pid, uint64_t game, uint64_t avatar, uint64_t vehicle, uint32_t skinBefore,
-    CCPEnqueueReadFn read, CCPEnqueueWriteFn write,
+    uint32_t targetRes, CCPEnqueueReadFn read, CCPEnqueueWriteFn write,
     CCPEnqueueSymbolCall symbolCall, CCPEnqueueRemoteCall remoteCall) {
     CCPVehicleEnqueueResult out = {0};
     out.status = "not-started";
     out.skinBefore = skinBefore;
-    if (skinBefore == CCP_ENQUEUE_TARGET_RES) { out.status = "skipped-already-target"; return out; }
+    if (targetRes == 0) { out.status = "bad-arguments"; return out; }
+    if (skinBefore == targetRes) { out.status = "skipped-already-target"; return out; }
     if (!CCPPointer(game) || !CCPPointer(avatar) || !CCPPointer(vehicle) || !read || !write ||
         !symbolCall || !remoteCall) {
         out.status = "bad-arguments";
@@ -85,7 +87,7 @@ static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
     // code+0x10: ldr x0,#16; ldr x1,#20; ldr x16,#24; br x16  pools at +0x20/+0x28/+0x30
     const uint32_t cadCode[2] = {0xAA0303E8u, 0xD61F0080u};
     const uint32_t putOnCode[4] = {0x58000080u, 0x580000A1u, 0x580000D0u, 0xD61F0200u};
-    uint64_t avatarWord = avatar, resWord = CCP_ENQUEUE_TARGET_RES, putOnFn = game + CCP_ENQUEUE_PUTON_RVA;
+    uint64_t avatarWord = avatar, resWord = targetRes, putOnFn = game + CCP_ENQUEUE_PUTON_RVA;
     uint64_t invoker = code + 0x10, tfunction = data + 0x00, event = data + 0x08;
     if (!CCPEnqueueWrite(read, write, pid, code + 0x00, cadCode, sizeof(cadCode)) ||
         !CCPEnqueueWrite(read, write, pid, code + 0x10, putOnCode, sizeof(putOnCode)) ||

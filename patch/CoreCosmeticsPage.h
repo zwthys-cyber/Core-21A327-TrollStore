@@ -30,7 +30,7 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
     const char *states[] = {
         "15 秒试穿", "等待角色", "试穿中", "已恢复原外观",
         "请先穿戴对应物品", "请查看报告", "等待恢复", "正在读取车辆", "车辆报告已保存",
-        "等待4座敞篷跑车", "车辆限时试换", "请驾驶4座敞篷跑车", "正在恢复原车", "原车数据已恢复",
+        "等待当前载具", "车皮入队中", "请先坐上载具", "正在恢复原车", "原车数据已恢复",
         "正在检查进程", "游戏进程可见", "未找到游戏进程",
         "正在打开游戏", "打开调用已返回", "隔离状态挡住打开",
         "正在核对进程号", "远程进程号一致", "远程进程号未对上", "远程会话未就绪"
@@ -56,13 +56,13 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
                 action(CCP_VEHICLE_CAPTURE_INDEX, true);
             row.x = 155 * scale; ui.cursor(&row);
             if (ui.button("s", "停止采集", false)) action(CCP_VEHICLE_CAPTURE_INDEX, false);
-            // r9 confirmed request writes without native consumption. Keep
-            // recovery available for an owned journal; do not offer that
-            // ineffective request as a new appearance trial.
-            if (enabled && selected == CCP_VEHICLE_TRIAL_INDEX) {
-                row.x = 8 * scale; row.y = 70 * scale; ui.cursor(&row);
-                if (ui.button("r", "恢复原车", false)) action(CCP_VEHICLE_TRIAL_INDEX, false);
-            }
+            // Explicit PutOn enqueue only — never runs from session-open probes.
+            row.x = 8 * scale; row.y = 70 * scale; ui.cursor(&row);
+            if (ui.button("t", "装目标车皮", enabled && selected == CCP_VEHICLE_TRIAL_INDEX))
+                action(CCP_VEHICLE_TRIAL_INDEX, true);
+            row.x = 155 * scale; row.y = 70 * scale; ui.cursor(&row);
+            if (ui.button("r", "恢复原车", enabled && selected == CCP_VEHICLE_TRIAL_INDEX))
+                action(CCP_VEHICLE_TRIAL_INDEX, false);
             // Name lookup only. It does not call the remote open entry.
             row.x = 155 * scale; row.y = 70 * scale; ui.cursor(&row);
             if (ui.button("g", "探测游戏进程", enabled && selected == CCP_PROCESS_PROBE_INDEX))

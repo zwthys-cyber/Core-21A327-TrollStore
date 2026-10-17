@@ -1,17 +1,13 @@
-Core 美化车辆换肤 — 开发中（r32）
-适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
+Core 美化车辆换肤 — r33（成品候选，实机测试仍暂停）
 
 【实机测试暂停】
-成品 IPA 交付之前，不要安装中间构建，不要导出探测 JSON，不要再做实机试验。
-当前仓库仅在 GitHub Actions 内编译与静态分析。
+在维护者明确交付「成品 IPA」之前，不要安装中间构建，不要做实机试验。
 
-r30 卡死原因（已确认，不是猜测）：
-对同一块 calloc 缓冲做 mprotect(RX) 后，CreateAndDispatch 仍要通过该缓冲写入
-FGraphEventRef / TFunction，写只读页导致 GameThread 故障，表现为画面卡死无法移动。
+r33 变更（仅 CI 验证）：
+- 会话打开：只读诊断，绝不自动入队
+- 菜单「车辆适配」→「装目标车皮」：显式触发 PutOn 入队
+- 入队使用分离页：代码页 mprotect(RX)，数据页保持可写（修 r30 卡死根因）
+- 「恢复原车」：对捕获的原皮肤 ID 再入队 PutOn
 
-r32：
-- 删除自动入队代码
-- 会话探测只读（getpid / IsSafe / TaskGraph Get / 车辆解析）
-- 正确的成品路径将使用「代码页 RX + 数据页 RW 分离」，且改为菜单显式触发，不再会话一开就入队
-
-换肤未完成。vehicle_appearance_changes_implemented=false。
+目标资源：3349002（宾利欧陆GT敞篷火焰橘）。
+vehicle_appearance_changes_implemented 仍为 false，直到画面确认。
