@@ -1,25 +1,20 @@
-Core 远程 GameThread 入队试换 r30
+Core 远程 GameThread 诊断 r31（已停用入队）
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
-r29 实机：getpid 已对齐（pid_matches_published=true），但 game_thread_probe 报
-core-session-not-ready——探测仍要求 snapshot.words[1]，而 r26 打开路径只发布
-C53460/BD4C5C/C534B0。r30 改为与 getpid 相同的已发布会话门闩。
+紧急：r30 在 getpid 对齐后会安装 RX 跳板并 CreateAndDispatch / PutOn，
+实机出现游戏卡死、无法移动画面。r31 已完全禁用该入队路径，只保留只读诊断。
 
-大厅不需要宾利。进训练场坐上任意车后再开会话。
+请先强制划掉游戏与 Core，再覆盖安装 r31。不要继续使用 r28–r30 做换肤入队。
 
-使用方法：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r30.ipa。
-2. 游戏前台 → 划掉 Core 再开 →「内核利用」（不要「获取信息」）。
-3. 进训练场坐上任意载具。
-4. 切回游戏前台，再让 Core 进后台打开会话。
-5. 导出 Core-cosmetics-probe.json。
+r31 仍会：
+- 打开游戏远程会话并 getpid 核对
+- 调用 IsSafeForGameThread / FTaskGraphInterface::Get（只读）
+- 解析当前载具 Avatar（需训练场坐上车才有）
+不会再 calloc / mprotect / CreateAndDispatch / PutOn。
 
-关注：
-- game_thread_probe.session_source：应为 published-globals 或 snapshot
-- taskgraph_present / vehicle_resolve / enqueue_status
-- vehicle_resolve=no-current-vehicle：还没坐上车
-- enqueue_status=create-and-dispatch-returned：入队返回（≠已换肤）
-- mprotect-failed：RX 被拒
+导出 JSON 关注：
+- session_source、taskgraph_present、vehicle_resolve
+- enqueue_status 应为 disabled-after-device-freeze
 
-vehicle_appearance_changes_implemented 仍为 false，直到画面确认。
+vehicle_appearance_changes_implemented=false。换肤未完成。
 所有编译与二进制分析均在 GitHub Actions 执行。

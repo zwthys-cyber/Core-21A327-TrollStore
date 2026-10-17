@@ -155,6 +155,7 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
 }
+#if 0 // Disabled: r30 device freeze after calloc/mprotect + CreateAndDispatch/PutOn.
 // Compare-write remote bytes using the live expected contents (calloc is zero).
 static bool RemoteWriteBytes(CCPTarget *target, uint64_t address, const void *data, size_t length) {
     if (!target || !target->write || !data || length == 0) return false;
@@ -381,13 +382,13 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     } else {
         out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
     }
-    if (graphOK && avatarReady) {
-        AttemptPutOnEnqueue(out, base, game, &target, remoteCall, avatar, vehicle, skinBefore);
-    } else if (!graphOK) {
-        out[@"enqueue_status"] = @"skipped-taskgraph-unavailable";
-    } else {
-        out[@"enqueue_status"] = @"skipped-avatar-not-ready";
-    }
+    // Device report: r30 enqueue (calloc/mprotect + CreateAndDispatch/PutOn) can
+    // freeze the game GameThread. Keep diagnostics only until a safer path exists.
+    (void)avatarReady;
+    out[@"put_on_attempted"] = @NO;
+    out[@"enqueue_status"] = @"disabled-after-device-freeze";
+    out[@"enqueue_disabled_reason"] = @"r30-create-and-dispatch-or-puton-froze-game";
+    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"disabled-after-device-freeze";
     if (![out[@"status"] isEqualToString:@"put-on-enqueued"])
         out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
     return out;
@@ -1055,7 +1056,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @30, @"probe_revision": @30,
+        self.trialReport = [@{@"schema_version": @31, @"probe_revision": @31,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),

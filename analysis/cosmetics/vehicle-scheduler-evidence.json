@@ -105,6 +105,11 @@
       "game_thread_probe_status": "core-session-not-ready",
       "cause": "RunGameThreadProbe required snapshot.words[1]; r26 open publishes C53460/BD4C5C/C534B0 instead"
     },
-    "fix": "Accept published pid/ready/port when snapshot words[1] is unset after getpid match"
+    "fix": "Accept published pid/ready/port when snapshot words[1] is unset after getpid match",
+    "device_freeze": "User reports game freeze / cannot move after r30 path that could reach calloc/mprotect+CAD+PutOn"
+  },
+  "r31_probe": {
+    "revision": 31,
+    "change": "Disable AttemptPutOnEnqueue entirely. Diagnostics only (IsSafe/Get/vehicle resolve). No remote code install or CreateAndDispatch until safer enqueue is proven."
   }
 }
