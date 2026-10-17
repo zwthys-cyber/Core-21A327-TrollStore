@@ -608,6 +608,32 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', main_code)):
         veneer_calls.append(dict(address=hex(core.text['address'] + index * 4), target=hex(target)))
     if len(veneer_calls) == 48:
         break
+name_lookup_prefix = data[core.offset(0x100035F08):core.offset(0x100035F08) + 32].hex()
+compare_stub = disassemble(core, 0x100726AC0, 0x10)
+thread_terms = ['GameThread', 'com.apple.main-thread', 'pthread_getname_np', 'ShadowTracker', 'thread_info']
+thread_hits = []
+cstring_bytes = data[core.cstrings['offset']:core.cstrings['offset'] + core.cstrings['length']]
+for term in thread_terms:
+    thread_hits.append(dict(term=term, found=cstring_bytes.find(term.encode()) >= 0))
+interpose_symbols = []
+pretext = data[core.offset(0x100003000):core.offset(0x100004000)]
+for index in range(0, len(pretext) - 12, 4):
+    if struct.unpack_from('<I', pretext, index)[0] != 0x92800020:
+        continue
+    adr = struct.unpack_from('<I', pretext, index + 4)[0]
+    if adr & 0x9F000000 != 0x10000000:
+        continue
+    pc = 0x100003000 + index + 4
+    relative = ((adr & 0x60000000) >> 29) | ((adr >> 5) & 0x7FFFF) << 2
+    if relative & (1 << 20):
+        relative -= 1 << 21
+    symbol_at = pc + relative
+    if not 0x100003000 <= symbol_at < 0x100004000:
+        continue
+    end = data.find(b'\0', core.offset(symbol_at), core.offset(symbol_at) + 80)
+    interpose_symbols.append(dict(veneer=hex(0x100003000 + index), symbol=data[core.offset(symbol_at):end].decode('utf-8', 'replace')))
+    if len(interpose_symbols) == 16:
+        break
 pretext_end = data.find(b'\0', core.offset(0x100003664), core.offset(0x100003664) + 64)
 pretext_symbol = data[core.offset(0x100003664):pretext_end].decode('utf-8', 'replace')
 execution_lines += ['\n### Core pre-text target 0x100003710'] + disassemble(core, 0x100003710, 0x80)
@@ -644,6 +670,10 @@ offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=o
     export_trie_status=export_status,
     export_trie_meta=export_meta,
     core_offline=offline_report,
+    process_name_lookup_prefix=name_lookup_prefix,
+    process_name_compare_stub=compare_stub,
+    thread_name_literals=thread_hits,
+    interpose_symbols=interpose_symbols,
     pre_text_strings=gap_strings,
     ipa_core_remote_open=image_hits,
     process_name_literals=process_literal_records,
