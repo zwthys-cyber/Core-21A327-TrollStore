@@ -628,7 +628,6 @@ static NSDictionary *VehicleTrialObservation(void) {
 - (void)startVehicleTrial;
 - (void)prepareVehicleTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)finishVehicleTrialOnQueue:(uint32_t)generation reason:(NSString *)reason;
-- (void)observeVehicleRestoreOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 @end
 
 @implementation CCPCosmeticsController
