@@ -7,6 +7,8 @@ on:
       - 'analysis/cosmetics/**'
       - '!analysis/cosmetics/vehicle_review.py'
       - '!analysis/cosmetics/vehicle-windows.json'
+      - '!analysis/cosmetics/inspect_menu.py'
+      - '!analysis/cosmetics/menu-windows.json'
       - '.github/workflows/analyze-cosmetics.yml'
 permissions:
   # GitHub limits draft releases to identities with repository push access.

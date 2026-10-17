@@ -12,5 +12,8 @@
   {"label": "existing Core execution capability and quarantine", "rva": "0x54a00", "length": "0x1800"},
   {"label": "existing Core public memory and operation bridge", "rva": "0x61c00", "length": "0x4c00"},
   {"label": "Core remote target context and low-level call ABI", "rva": "0x37d00", "length": "0x2900"},
+  {"label": "Core remote target initialization and teardown ownership", "rva": "0x3a600", "length": "0x1000"},
+  {"label": "Core remote bootstrap callers", "rva": "0x2ee00", "length": "0xe00"},
+  {"label": "Core higher-level remote call session gates", "rva": "0x5a480", "length": "0x500"},
   {"label": "Core remote invocation selector and function literals (edge strings may be partial)", "rva": "0x73ce00", "length": "0xc00", "kind": "cstring"}
 ]
