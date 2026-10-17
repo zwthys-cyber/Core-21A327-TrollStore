@@ -16,5 +16,6 @@
   {"label": "Core remote bootstrap callers", "rva": "0x2ee00", "length": "0xe00"},
   {"label": "Core remote target selection and primitive helpers", "rva": "0x35400", "length": "0x1600"},
   {"label": "Core higher-level remote call session gates", "rva": "0x5a480", "length": "0x500"},
+  {"label": "Core SpringBoard remote session attempt", "rva": "0x56200", "length": "0x700"},
   {"label": "Core remote invocation selector and function literals (edge strings may be partial)", "rva": "0x73ce00", "length": "0xc00", "kind": "cstring"}
 ]
