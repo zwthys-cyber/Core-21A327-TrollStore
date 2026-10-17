@@ -105,6 +105,25 @@ if function_starts_data:
         starts.append(address)
 literal_targets = {address: name for name in ['remote_call', 'remote-call-quarantined', 'invoke']
                    for address in core.string_addresses(name)}
+literal_data_references = []
+for segment in core.segments:
+    if not segment['name'].startswith('__DATA'):
+        continue
+    for offset in range(segment['offset'], segment['offset'] + segment['length'] - 7, 8):
+        value = core.qword(offset)
+        for address, name in literal_targets.items():
+            if value != address and (value & 0xFFFFFFFF) != address - 0x100000000:
+                continue
+            context = []
+            for cursor in range(max(segment['offset'], offset - 48), min(offset + 56, segment['offset'] + segment['length']), 8):
+                word = core.qword(cursor)
+                candidate = 0x100000000 + (word & 0xFFFFFFFF)
+                context.append(dict(address=hex(core.address(cursor)), raw=hex(word),
+                    string=core.string(word), code=core.code_address(word),
+                    low32_code_candidate=hex(candidate) if core.code_address(candidate) else None))
+            literal_data_references.append(dict(name=name, address=hex(core.address(offset)), raw=hex(value), context=context))
+            if len(literal_data_references) > 128:
+                raise ValueError('Core literal pointer review exceeded bounded output')
 stub_targets = {0x100000000 + int(row['rva'], 16): row['symbol'] for row in records
                 if any(term in row['symbol'] for term in execution_terms)}
 execution_references = []
@@ -155,5 +174,6 @@ for row in execution_references:
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
     status='static-candidates-only', runtime_invocation_verified=False,
     symbols=execution_symbols, strings=execution_strings, references=execution_references,
+    literal_data_references=literal_data_references,
     function_windows_limited_to=64, function_candidates=len(review_functions)), indent=2) + '\n')
 binary.unlink()
