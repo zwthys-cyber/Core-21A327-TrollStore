@@ -6,6 +6,12 @@
   "related_device_evidence": "device-evidence-r10.json",
   "runtime_refresh_implemented": false,
   "target_resource_availability": "not-checked",
+  "subsequent_user_observation": {
+    "received_date": "2026-10-17",
+    "target": "Bentley Continental GT convertible flame orange, target ID 3349002",
+    "preview_reply": "可以正常显示",
+    "scope": "User confirms in-game target preview displays normally; not an automatic per-file check or proof of all live-match dependencies"
+  },
   "native_registration_layout": {
     "iterator_rva": "0x8cd5a0c",
     "record_stride": 24,

@@ -91,5 +91,11 @@
     "entity_material_rva": "0x45e012c",
     "entity_behavior_rva": "0x42f1af4"
   },
-  "conclusion": "The r10 entity map, native hash lookup, class and owner gates, loaded item type/ID and current mesh presence are supported by eight stable device samples. Only original item 3349001 is loaded; no target load or new write was attempted. Empty current entity soft-path records do not establish missing target assets. Native and cached counters both equal 1 in this capture; continuity with earlier r9 object instances is not established. Vehicle appearance refresh remains unresolved."
+  "user_target_preview_observation": {
+    "received_date": "2026-10-17",
+    "prompt_context": "Whether the in-game preview of Bentley Continental GT convertible flame orange displays its model",
+    "user_reply": "可以正常显示",
+    "interpretation": "The user confirms the target preview model can display; at least its preview resources are usable. This is additional user observation, not an automatic per-file or in-match dependency check."
+  },
+  "conclusion": "The r10 entity map, native hash lookup, class and owner gates, loaded item type/ID and current mesh presence are supported by eight stable device samples. Only original item 3349001 is loaded in this capture; no target load or new write was attempted. The user subsequently confirms the target preview displays normally, so lack of preview resources is not the leading explanation. Native and cached counters both equal 1 in this capture; continuity with earlier r9 object instances is not established. Vehicle appearance refresh remains unresolved."
 }

@@ -1,0 +1,72 @@
+{
+  "scope": "Cloud-only static review of the pinned original Core remote invocation session; no runtime call capability added",
+  "core_sha256": "ed69f33902e17c499aa7904751a01ce3521a663503fb8958ea01a7c5489d5c58",
+  "game_process_invocation_verified": false,
+  "game_thread_dispatch_verified": false,
+  "new_runtime_code": false,
+  "latest_installable_revision": 10,
+  "cloud_runs": [38997584258, 38997728564, 38997837603, 38998163729, 38998232648],
+  "latest_analysis_commit": "d9196dbb3871ace05d7ad169f239a906a8bc84e6",
+  "cloud_artifact": "Core-native-menu-review",
+  "local_text_report_directory": "/root/和平精英/Core美化映射分析/Core远程会话归属与初始化",
+  "function_boundary_caveat": "The pinned image has no decoded LC_FUNCTION_STARTS entries; disassembly windows and raw data pointer candidates are not recovered complete functions or decoded dispatch tables",
+  "confirmed_literal_identities": [
+    {"rva": "0x73ce58", "value": "malloc"},
+    {"rva": "0x73ce5f", "value": "free"},
+    {"rva": "0x73d7e9", "value": "sel_registerName"},
+    {"rva": "0x73d7fa", "value": "objc_getClass"},
+    {"rva": "0x73d808", "value": "objc_msgSend"},
+    {"rva": "0x73d831", "value": "NSInvocation"},
+    {"rva": "0x73d8ac", "value": "performSelectorOnMainThread:withObject:waitUntilDone:"},
+    {"rva": "0x73d8e2", "value": "invoke"}
+  ],
+  "remote_session": {
+    "target_getter_rva": "0x38d80",
+    "target_pid_global_rva": "0xc53460",
+    "stable_mode_byte_rva": "0xc53464",
+    "readiness_predicate_rva": "0x38d8c",
+    "fatal_state_byte_rva": "0xc1d2e8",
+    "quarantine_state_word_rva": "0xc1d2f8",
+    "bootstrap_candidate_entry_rva": "0x3a7d4",
+    "bootstrap_entry_caveat": "Entry branches to 0x3800 before the body at 0x3a7d8; entry veneer and target-name argument need further review before any binding",
+    "bootstrap_evidence": "Refuses existing remote ports/mode flags and fatal/quarantine states; creates a suspended pthread and exception-port state; checks remote getpid result before publishing target PID at 0x3aeb8",
+    "ownership": "Uses global session state separate from the cosmetics memory backend binding at 0xc288b0; no PID argument is present in the reviewed low-level function call",
+    "device_scope": "Historical successful remote open was SpringBoard; launchd had a timeout/quarantine. This does not establish a game session."
+  },
+  "call_candidates": [
+    {
+      "rva": "0x398c8",
+      "kind": "remote function by symbol name",
+      "observed_inputs": "x0 timeout, x1 symbol name, x2..x7 plus two stack words as eight argument words",
+      "context": "Looks up the symbol with dlsym and dispatches through the already selected global remote session; known callers use malloc, free and Objective-C runtime helpers"
+    },
+    {
+      "rva": "0x39a80",
+      "kind": "remote function by address, two result words",
+      "observed_inputs": "x0 timeout, x1 function address, x2 call label, x3..x7 plus first three stack words as eight argument words; fourth/fifth stack words are output pointers",
+      "abi_scope": "Static register and stack data flow only; not a declared adapter API or runtime-verified C prototype",
+      "context": "Clears output pointers, refuses a quarantined session, uses existing temporary/stable exception dispatch, returns integer states including 0, 1 and 2. Callers require exactly 1."
+    },
+    {
+      "rva": "0x3cb70",
+      "kind": "Objective-C NSInvocation construction and dispatch",
+      "context": "Resolves selectors and NSInvocation, supplies arguments and return storage, optionally uses performSelectorOnMainThread. Does not independently establish arbitrary Unreal game-thread dispatch."
+    },
+    {
+      "rva": "0x3d624",
+      "kind": "checked remote objc_msgSend wrapper",
+      "context": "Resolves objc_msgSend then invokes the two-result bridge with timeout 10000 and label objc_msgSend.checked; success requires return state 1"
+    }
+  ],
+  "raw_remote_call_string_reference": {
+    "string_rva": "0x7405cc",
+    "data_reference_rva": "0xbaa7b8",
+    "caveat": "Nearby string lengths and authenticated metadata words are not proof of a callable function table; chained fixups/type metadata were not decoded"
+  },
+  "next_unresolved_work": [
+    "Review the remote bootstrap entry veneer and real callers, preserving ownership and cleanup of existing hosted sessions",
+    "Establish a dedicated game target session without altering global capability or quarantine flags",
+    "Identify a verified game-thread scheduler and the lifetime of its component/handle inputs before using the native vehicle loader",
+    "Do not equate NSInvocation main-thread support, kernel memory readiness or symbol presence with working vehicle refresh"
+  ]
+}

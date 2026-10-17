@@ -1,6 +1,6 @@
 # Core 17.0 / 21A327 巨魔适配补丁
 
-接手项目先读 [AI 项目交接文档](docs/AI_HANDOFF_ZH.md)：包含用户目标、完整经过、输入与构建路径、实机证据和当前车辆卡点。[r8](docs/cosmetics-r8.md) 已实机确认车辆读取；[r9](docs/cosmetics-r9.md) 写入成功但请求未消费，用户确认画面完全没变。[r10](docs/cosmetics-r10.md) 已实机确认 8 次实体、加载物品和模型组件读取，当前仍为原车 3349001；目标宾利资源是否下载未检查，车辆换肤尚未完成。
+接手项目先读 [AI 项目交接文档](docs/AI_HANDOFF_ZH.md)：包含用户目标、完整经过、输入与构建路径、实机证据和当前车辆卡点。[r8](docs/cosmetics-r8.md) 已实机确认车辆读取；[r9](docs/cosmetics-r9.md) 写入成功但请求未消费，用户确认画面完全没变。[r10](docs/cosmetics-r10.md) 已实机确认 8 次实体、加载物品和模型组件读取，当前仍为原车 3349001。用户随后确认目标宾利预览能正常显示，目前继续核对原生刷新和 Core 调用会话，车辆换肤尚未完成。
 
 适用于提供的 Core 1.6 IPA（输入 SHA-256 在 `scripts/build.py` 中固定）。
 
@@ -8,7 +8,7 @@
 
 当前版本为 **v19 · 0fe975f 基础 / 600 米测试版（1.6 / build 20 / patch 19）**：恢复用户指定提交 `0fe975fc6053a0af8cac90c4a860696d08dec8c2` 的显示逻辑，将姓名、方框、射线、骨骼、屏幕外方向提示和顶部敌人数的范围统一提高到 600 米；射线起点改为屏幕上方中央，向下连接目标。真人红名、人机白名，不显示身份文字。射线使用原数量和透明度规则：100 米内不透明白色，超过 100 米采用透明度 112 的白色。详见 [v19 说明](docs/releases/v19-600m.md)。
 
-主安装包为 `Core-17.0-21A327-TrollStore-v19-600m.ipa`，构建及发布结果将在完成后记录。仓库私有，浏览器需登录有访问权限的 GitHub 账号。600 米实机效果仍待确认，显示依赖原采集流程能获取的目标。
+主安装包为 `Core-17.0-21A327-TrollStore-v19-600m.ipa`。仓库已按用户要求公开；600 米实机效果仍待确认，显示依赖原采集流程能获取的目标。
 
 用户已确认 [v12 遮挡启动修复版](https://github.com/zwthys-cyber/Core-21A327-TrollStore/releases/tag/v12-200m) 可用。历史版本见 [v18](docs/releases/v18-300m.md)、[v17](docs/releases/v17-300m.md)、[v16](docs/releases/v16-300m.md)、[v15](docs/releases/v15-300m.md)、[v14](docs/releases/v14-300m.md)、[v13](docs/releases/v13-300m.md)、[v11](docs/releases/v11-200m.md)、[v10](docs/releases/v10-200m.md)、[v9](docs/releases/v9-minimal.md) 和 [v8](docs/releases/v8.md)。后续 launchd 超时仍未解决，先前游戏封禁原因未知。
 
@@ -20,9 +20,9 @@ AppleDB 的 21A327 记录没有 `sources`；原程序无法下载该出厂预装
 
 按用户要求，服务器不运行编译和自动化回归；编译、测试及最终签名核验均放在 GitHub Actions。此处只修改文件、执行 Git 操作、查看 CI、下载发布产物和轻量核对版本及摘要。
 
-在私有仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v19-600m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
+在仓库的 Actions 中运行 **Build TrollStore IPA**，下载 `Core-17.0-21A327-TrollStore-v19-600m` artifact，解压得到 Core 和“Core 环境准备”两个 IPA。原应用没有完整源码，此处编译适配 dylib、独立读取程序和缓存准备应用，按固定输入摘要实施显示修改，再注入并重签用户提供的 IPA。编译和最终包核验均保存完整的允许修改范围。
 
-输入 IPA、已有库只在私有仓库保存，不包含用户崩溃报告或本地凭据。请保持仓库私有。
+被 Git 跟踪的输入 IPA 和已有库随仓库公开可访问；游戏主程序和美化包的分析素材 Release 仍为草稿，不要发布该素材草稿。
 
 ## 安装和核验
 
