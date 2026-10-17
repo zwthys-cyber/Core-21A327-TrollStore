@@ -1,0 +1,53 @@
+{
+  "scope": "Static method identity and call-context evidence after the r10 device capture; not an implemented refresh protocol",
+  "game_version": "1.38.12",
+  "game_build": "15915",
+  "game_uuid": "34B785B2-0DAB-3992-985D-359E6BF45585",
+  "related_device_evidence": "device-evidence-r10.json",
+  "runtime_refresh_implemented": false,
+  "target_resource_availability": "not-checked",
+  "native_registration_layout": {
+    "iterator_rva": "0x8cd5a0c",
+    "record_stride": 24,
+    "name_pointer_offset": 0,
+    "function_pointer_offset": 8,
+    "additional_registration_word_offset": 16,
+    "avatar_entity_table_rva": "0xedce658",
+    "avatar_entity_count": 71,
+    "vehicle_avatar_table_rva": "0xfc51d00",
+    "vehicle_avatar_count": 97,
+    "all_names_and_executable_targets_confirmed_in_cloud": true
+  },
+  "entity_virtual_methods": [
+    {"name": "PutOnEquipmentLogic", "slot": "0x3c0", "implementation_rva": "0x45dabbc", "reflected_wrapper_rva": "0x61159f0", "context": "Receives a loaded item handle, installs it and performs further setup; not a bare item-ID setter"},
+    {"name": "RenderEntity", "slot": "0x478", "implementation_rva": "0x45e012c", "reflected_wrapper_rva": "0x6115e48"},
+    {"name": "RefreshEntityRender", "slot": "0x480", "implementation_rva": "0x42f1680", "reflected_wrapper_rva": "0x6115c18"},
+    {"name": "CreateAndApplyResource", "slot": "0x488", "implementation_rva": "0x45e0194", "reflected_wrapper_rva": "0x6114a30", "context": "Requires owner component, existing loaded handle and mesh reference/resource context; assigns current mesh component"},
+    {"name": "EnterRenderPipeline", "slot": "0x498", "implementation_rva": "0x45dd5c8", "reflected_wrapper_rva": "0x6114c24", "context": "Calls further vehicle-specific processing; not established as an independently sufficient target resource loader"}
+  ],
+  "vehicle_resource_callback": {
+    "name": "OnItemHandleListLoaded",
+    "reflected_wrapper_rva": "0x723bb14",
+    "implementation_rva": "0x47eb43c",
+    "arguments": "Owner VehicleAvatarComponent, a handle array reference, and request-generation value",
+    "generation_member_offset": "0xb68",
+    "onrep_rva": "0x47ee7c8",
+    "onrep_request_context": "After comparing sync counters, native OnRep gathers definition keys, advances request generation and submits or completes native loading; the r9 three-field transaction did not execute this logic"
+  },
+  "vehicle_method_boundaries": [
+    {"name": "PutOnEquipmentByResID", "slot": "0x968", "implementation_rva": "0x47f2824", "reflected_wrapper_rva": "0x723c67c", "context": "Converts a resource ID to a definition and handle, sets up that handle and dispatches by slot; no game-thread call mechanism has been implemented in the adapter"},
+    {"name": "SetVehicleSkinTrigger", "implementation_rva": "0x47f3104", "reflected_wrapper_rva": "0x723ccbc", "context": "Receives an object argument and passes Avatar+0x10c0 to helper 0x8dfddac; not a proven writable boolean skin-refresh trigger"},
+    {"name": "NetSyncData", "slot": "0xac0", "implementation_rva": "0x47ee508", "context": "Starts with owner role == 3 gate; not an established local client appearance refresh API"},
+    {"name": "GetAvatarDownloadManager", "slot": "0xc30", "implementation_rva": "0x47f4c10", "context": "Conditional getter based on component/world mode and global settings, not a per-ID resource availability check"},
+    {"name": "TryDownloadNotExistAvatar", "slot": "0x820", "implementation_rva": "0x47f52ec", "context": "Download/request flow with configuration and owner checks; not a read-only missing-file predicate"}
+  ],
+  "constraints": [
+    "No new runtime writes, game-thread calls, vtable changes or resource loading were added during this analysis",
+    "Eight r10 samples establish only the reported original-vehicle entity and current loaded item state",
+    "Do not interpret empty entity soft paths as proof that Bentley assets are absent",
+    "Do not call reflected wrappers as ordinary game methods; they consume an Unreal script frame",
+    "Method addresses alone do not provide a verified game-thread invocation mechanism through the current Core adapter",
+    "Do not alter the shared loaded handle key, blindly set render flags, or repeat r9 as a refresh fix"
+  ],
+  "cloud_runs": [38996884265, 38997001715, 38997119495]
+}
