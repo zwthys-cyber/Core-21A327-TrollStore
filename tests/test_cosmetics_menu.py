@@ -11,9 +11,7 @@ import test_minimal_features as minimal_tests
 from build import commands
 from minimal_features import minimal_core
 from cosmetics_menu import (cosmetics_core, MENU_SYMBOL, MENU_SYMBOL_RVA, MENU_BRIDGE, MENU_RETURN,
-                            DLSYM_STUB, GAME_PROCESS_NAME, GAME_PROCESS_NAME_RVA,
-                            LAUNCHD_NAME_LOAD_RVA, LAUNCHD_OPEN_CALL_RVA, LAUNCHD_OPEN_CALL,
-                            LAUNCHD_SUCCESS_BRANCH_RVA, GAME_SESSION_RETURN_RVA)
+                            DLSYM_STUB, LAUNCHD_OPEN_CALL_RVA, LAUNCHD_OPEN_CALL, REMOTE_OPEN_FAILURE)
 from unicorn import UC_HOOK_CODE
 from unicorn import arm64_const as r
 BASE = minimal_tests.BASE
@@ -33,9 +31,8 @@ class CosmeticsMenuTests(unittest.TestCase):
 
     def test_only_native_row_page_dispatch_and_callback_region_change(self):
         baseline = minimal_core(self.original)
-        allowed = {i for start, size in [(LAUNCHD_NAME_LOAD_RVA, 4), (LAUNCHD_SUCCESS_BRANCH_RVA, 4),
-                    (0xD07E0, 4), (0xD0814, 28), (MENU_SYMBOL_RVA, len(MENU_SYMBOL)),
-                    (GAME_PROCESS_NAME_RVA, len(GAME_PROCESS_NAME)), (0xD098C, 12), (0x744529, 6)]
+        allowed = {i for start, size in [(LAUNCHD_OPEN_CALL_RVA, 4), (0xD07E0, 4), (0xD0814, 28),
+                    (MENU_SYMBOL_RVA, len(MENU_SYMBOL)), (0xD098C, 12), (0x744529, 6)]
                    for i in range(start, start + size)}
         changed = {i for i, (a, b) in enumerate(zip(baseline, self.binary)) if a != b}
         self.assertTrue(changed)
@@ -47,23 +44,13 @@ class CosmeticsMenuTests(unittest.TestCase):
         for offset, size in [(0x620B8, 0x2000), (0xC54270, 0x400), (0xD33F4, 0x54CC)]:
             self.assertEqual(self.binary[offset:offset + size], baseline[offset:offset + size])
 
-    def test_automatic_open_targets_game_through_original_veneer_and_keeps_session(self):
+    def test_launchd_open_uses_existing_failure_path_without_calling_remote_open(self):
         self.assertEqual(self.original[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], LAUNCHD_OPEN_CALL)
-        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], LAUNCHD_OPEN_CALL)
-        self.assertEqual(self.binary[GAME_PROCESS_NAME_RVA:GAME_PROCESS_NAME_RVA + len(GAME_PROCESS_NAME)],
-                         GAME_PROCESS_NAME)
-        self.assertNotEqual(self.binary[LAUNCHD_NAME_LOAD_RVA:LAUNCHD_NAME_LOAD_RVA + 4],
-                            self.original[LAUNCHD_NAME_LOAD_RVA:LAUNCHD_NAME_LOAD_RVA + 4])
-        self.assertNotEqual(self.binary[LAUNCHD_SUCCESS_BRANCH_RVA:LAUNCHD_SUCCESS_BRANCH_RVA + 4],
-                            self.original[LAUNCHD_SUCCESS_BRANCH_RVA:LAUNCHD_SUCCESS_BRANCH_RVA + 4])
-        mu = self.emulator()
-        mu.emu_start(BASE + LAUNCHD_NAME_LOAD_RVA, BASE + LAUNCHD_OPEN_CALL_RVA)
-        self.assertEqual(mu.reg_read(r.UC_ARM64_REG_X0), BASE + GAME_PROCESS_NAME_RVA)
-        for returned, destination in [(0, GAME_SESSION_RETURN_RVA), (1, LAUNCHD_SUCCESS_BRANCH_RVA + 4)]:
-            mu = self.emulator()
-            mu.reg_write(r.UC_ARM64_REG_W0, returned)
-            mu.emu_start(BASE + LAUNCHD_SUCCESS_BRANCH_RVA, BASE + GAME_SESSION_RETURN_RVA + 4, count=1)
-            self.assertEqual(mu.reg_read(r.UC_ARM64_REG_PC), BASE + destination)
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA:LAUNCHD_OPEN_CALL_RVA + 4], REMOTE_OPEN_FAILURE)
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA - 8:LAUNCHD_OPEN_CALL_RVA],
+                         self.original[LAUNCHD_OPEN_CALL_RVA - 8:LAUNCHD_OPEN_CALL_RVA])
+        self.assertEqual(self.binary[LAUNCHD_OPEN_CALL_RVA + 4:LAUNCHD_OPEN_CALL_RVA + 8],
+                         self.original[LAUNCHD_OPEN_CALL_RVA + 4:LAUNCHD_OPEN_CALL_RVA + 8])
 
     def test_page_routing_and_stale_preferences(self):
         destinations = {BASE + 0xD09C8, BASE + 0xD09D0, BASE + MENU_BRIDGE}

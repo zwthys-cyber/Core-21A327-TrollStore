@@ -64,6 +64,11 @@ static const uint8_t ProcessLookupByPidPrefix[32] = {
     0xfd,0x83,0x00,0x91,0xf3,0x03,0x00,0xaa,0xae,0xff,0xff,0x97,0xf4,0x03,0x00,0xaa
 };
 typedef uint64_t (*CCPProcessLookupByPid)(uint32_t);
+static const uint8_t KernelSessionGatePrefix[32] = {
+    0x7f,0x23,0x03,0xd5,0xfd,0x7b,0xbf,0xa9,0xfd,0x03,0x00,0x91,0x68,0x5f,0x00,0xf0,
+    0x08,0x61,0x09,0x91,0x08,0xc1,0xbf,0x38,0xa8,0x04,0x00,0x37,0x68,0x5f,0x00,0xf0
+};
+typedef bool (*CCPKernelSessionGate)(void);
 static const uint8_t RemoteOpenPrefix[32] = {
     0x0b,0x24,0xff,0x17,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
     0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
@@ -629,7 +634,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @25, @"probe_revision": @25,
+    self.trialReport = [@{@"schema_version": @26, @"probe_revision": @26,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
         @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
@@ -639,6 +644,8 @@ static NSDictionary *VehicleTrialObservation(void) {
     [self writeTrialReport];
     uint32_t generation = ++self.generation;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
+    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core foreground-game session"
+        expirationHandler:^{}];
     dispatch_async(self.captureQueue, ^{
         if (self.generation != generation) return;
         CCPReader local = {LocalRead, NULL};
@@ -652,11 +659,13 @@ static NSDictionary *VehicleTrialObservation(void) {
         NSString *callResult = @"not-called";
         NSString *status = @"early-window-missed";
         NSString *waitBlocker = @"not-started";
+        NSString *openAppState = @"not-called";
         BOOL called = NO, execCalled = NO, pidMatches = NO, entry = NO;
         unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
         BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
             EntryMatches(base + 0x35E60, ProcessLookupByPidPrefix) &&
+            EntryMatches(base + 0x2DCC0, KernelSessionGatePrefix) &&
             EntryMatches(base + 0x64C7C, SnapshotPrefix) && EntryMatches(base + 0x3A7D4, RemoteOpenPrefix);
         uint8_t seenEntry[32] = {0};
         BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
@@ -718,10 +727,8 @@ static NSDictionary *VehicleTrialObservation(void) {
                 usleep(20000);
                 continue;
             }
-            CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
-            CCPSnapshot readyState = {0};
-            if (!snapshot(&readyState) || !readyState.words[1]) {
-                waitBlocker = @"snapshot-not-ready";
+            if (!((CCPKernelSessionGate)SignedEntry(base + 0x2DCC0))()) {
+                waitBlocker = @"waiting-for-kernel-gate";
                 status = @"waiting-for-kernel";
                 usleep(200000);
                 continue;
@@ -735,6 +742,13 @@ static NSDictionary *VehicleTrialObservation(void) {
                 usleep(200000);
                 continue;
             }
+            if (UIApplication.sharedApplication.applicationState != UIApplicationStateBackground) {
+                waitBlocker = @"waiting-for-game-foreground";
+                status = @"switch-to-game";
+                usleep(200000);
+                continue;
+            }
+            openAppState = @"background";
             called = YES;
             uint64_t returned = ((CCPRemoteOpen)SignedEntry(base + 0x3A7D4))("ShadowTrackerExtra", 0);
             uint32_t code = (uint32_t)returned;
@@ -765,12 +779,11 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
-        if (!called && [waitBlocker isEqualToString:@"snapshot-not-ready"]) status = @"kernel-snapshot-not-ready";
-        self.trialReport = [@{@"schema_version": @25, @"probe_revision": @25,
+        self.trialReport = [@{@"schema_version": @26, @"probe_revision": @26,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
-            @"wait_blocker": waitBlocker,
+            @"wait_blocker": waitBlocker, @"app_state_at_open": openAppState,
             @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
             @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
             @"vehicle_appearance_changes_implemented": @NO,
