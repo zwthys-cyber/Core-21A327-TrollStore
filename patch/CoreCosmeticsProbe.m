@@ -639,7 +639,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         NSString *callResult = @"not-called";
         NSString *status = @"early-window-missed";
         NSString *waitBlocker = @"not-started";
-        BOOL called = NO, sessionReady = NO, execCalled = NO, pidMatches = NO, entry = NO;
+        BOOL called = NO, execCalled = NO, pidMatches = NO, entry = NO;
         unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
         BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
@@ -649,7 +649,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
         if (!identity) status = @"core-identity-mismatch";
         else if (!prefixes) status = @"core-entry-mismatch";
-        else for (waits = 0; waits < 600 && !called && !sessionReady; waits++) {
+        else for (waits = 0; waits < 600 && !called; waits++) {
             uint32_t quarantine = 0, pid = 0, port = 0;
             uint8_t fatal = 0, ready = 0;
             BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
@@ -664,14 +664,13 @@ static NSDictionary *VehicleTrialObservation(void) {
                 status = @"open-blocked-by-recorded-fault";
                 break;
             }
-            if (readyRead && ready != 0 && pidRead && pid != 0 && portRead && port != 0 && entry) {
-                sessionReady = YES;
-                status = @"existing-session";
-                break;
-            }
+            // A published port here belongs to Core's own SpringBoard session.
+            // Opening the game while it is held returns immediately, so wait for
+            // that session to release the port and then open before launchd does.
+            (void)pidRead; (void)readyRead; (void)pid; (void)ready;
             if (portRead && port != 0) {
                 waitBlocker = @"remote-port-in-progress";
-                usleep(200000);
+                usleep(20000);
                 continue;
             }
             CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
@@ -703,7 +702,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
         BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
         BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
-        if ((called && [openResult isEqualToString:@"returned-zero"]) || sessionReady) {
+        if (called && [openResult isEqualToString:@"returned-zero"]) {
             if (quarantineAfter == 0 && fatalAfter == 0 && pidRead && targetPid != 0 &&
                 readyRead && remoteReady != 0 && portRead && remotePort != 0 && entry) {
                 execCalled = YES;
@@ -719,7 +718,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         }
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        self.trialReport = [@{@"schema_version": @18, @"probe_revision": @18,
+        self.trialReport = [@{@"schema_version": @19, @"probe_revision": @19,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),

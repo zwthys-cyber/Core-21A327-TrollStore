@@ -716,6 +716,14 @@ r16 的按钮点下去时隔离字已经是 1。r17 不再等菜单点击。构�
 
 r18 把等待加到 600 次、约两分钟，并写入 `wait_blocker`。快照未就绪时记 `snapshot-not-ready`。隔离字变非 0 时仍然不调用、不改这个字。车辆换肤仍未完成。
 
+### 11.31 r18 核对到的是 SpringBoard，不是游戏
+
+用户报告 `captured_at_unix=1792215520.1275301`，schema / probe 18，`status=existing-session`，`call_result=returned-success`，`pid_matches_published=true`。隔离字保持 0。打开游戏没有调用。`wait_ticks=47`，`wait_blocker=remote-port-in-progress`。摘要在 `device-evidence-r18-springboard-getpid.json`。
+
+同时上传的 Core 日志显示，这条已发布会话来自 `remote.open enter name=SpringBoard` 且返回 0。随后 `remote.open enter name=launchd` 收到 `bootstrap-first-exception-timeout`，隔离字变成 1。先前唯一一次 `ShadowTrackerExtra` 返回 0 出现在 SpringBoard 已返回、launchd 尚未进入的间隔里。r18 把 SpringBoard 会话当成目标去做了 getpid，所以没有打开游戏。
+
+r19 看到端口字非 0 时只以 20 毫秒为间隔等待，不再对这个会话调用 getpid。端口释放且隔离字仍是 0、快照就绪、游戏进程可见时，才调用 `0x3A7D4` 打开 `ShadowTrackerExtra`。成功后才做 getpid。不主动拆除 SpringBoard 会话，也不清隔离字。车辆换肤仍未完成。
+
 `0x39C74` 在端口等待失败时直接返回 0，不写隔离字。后续调度失败会以代码 3 调用故障入口 `0x39844`，隔离字可能因此变成 3。入口前缀不匹配或会话门闩不满足时，r14 不会发起调用。不要把这份尚未实机返回的包说成远程执行已经证实，更不要说车皮已经换上。
 
 ## 12. 下一位 AI 的建议接手顺序
