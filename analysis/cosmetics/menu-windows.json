@@ -14,6 +14,8 @@
   {"label": "Core remote target context and low-level call ABI", "rva": "0x37d00", "length": "0x2900"},
   {"label": "Core remote target initialization and teardown ownership", "rva": "0x3a600", "length": "0x1000"},
   {"label": "Core remote bootstrap callers", "rva": "0x2ee00", "length": "0xe00"},
+  {"label": "Core launchd zero-return and shared gate", "rva": "0x2dc00", "length": "0x1200"},
+  {"label": "Core remote session result helper", "rva": "0x3c580", "length": "0x180"},
   {"label": "Core remote target selection and primitive helpers", "rva": "0x35400", "length": "0x1600"},
   {"label": "Core higher-level remote call session gates", "rva": "0x5a480", "length": "0x500"},
   {"label": "Core SpringBoard remote session attempt", "rva": "0x56200", "length": "0x700"},

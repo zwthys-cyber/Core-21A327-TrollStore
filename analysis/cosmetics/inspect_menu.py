@@ -56,12 +56,19 @@ position = 32
 sections = []
 indirect = None
 function_starts_data = None
+export_trie = None
 for _ in range(core.u32(16)):
     command, size = struct.unpack_from('<II', data, position)
     if command == 0xB:
         indirect = struct.unpack_from('<II', data, position + 56)
     if command == 0x26:
         function_starts_data = struct.unpack_from('<II', data, position + 8)
+    if command in (0x22, 0x80000022) and export_trie is None:
+        export_off, export_size = struct.unpack_from('<II', data, position + 40)
+        export_trie = data[export_off:export_off + export_size]
+    if command == 0x80000033:
+        export_off, export_size = struct.unpack_from('<II', data, position + 8)
+        export_trie = data[export_off:export_off + export_size]
     if command == 0x19:
         for index in range(core.u32(position + 64)):
             start = position + 72 + index * 80
@@ -260,6 +267,88 @@ process_rows = [row for row in execution_references if row['label'] in process_l
 for row in process_rows:
     address = int(row['address'], 16)
     execution_lines += [f'\n### Core process literal {row["label"]} reference {address:#x}'] + bounded_text(address, 0x80, 0x180)
+def read_uleb(blob, cursor):
+    value = shift = 0
+    while True:
+        if cursor >= len(blob) or shift > 63:
+            raise ValueError('Core export trie exceeded its bounded encoding')
+        byte = blob[cursor]
+        cursor += 1
+        value |= (byte & 127) << shift
+        if byte < 128:
+            return value, cursor
+        shift += 7
+
+def export_matches(blob):
+    if not blob or len(blob) > 0x200000:
+        return [], 'absent-or-unbounded'
+    stack = [(0, b'', 0)]
+    seen = set()
+    matches = []
+    while stack:
+        offset, prefix, depth = stack.pop()
+        if offset in seen or offset >= len(blob) or depth > 24 or len(seen) > 8192:
+            continue
+        seen.add(offset)
+        cursor = offset
+        terminal, cursor = read_uleb(blob, cursor)
+        payload = cursor
+        if cursor + terminal >= len(blob):
+            return matches, 'truncated'
+        cursor += terminal
+        children = blob[cursor]
+        cursor += 1
+        for _ in range(children):
+            end = blob.find(b'\0', cursor, min(cursor + 96, len(blob)))
+            if end < 0:
+                return matches, 'truncated'
+            edge = blob[cursor:end]
+            cursor = end + 1
+            child, cursor = read_uleb(blob, cursor)
+            name = prefix + edge
+            if b'CoreRemote' in name:
+                address = None
+                if terminal:
+                    flags, value_cursor = read_uleb(blob, payload)
+                    if not flags & 0x18:
+                        address, _ = read_uleb(blob, value_cursor)
+                matches.append(dict(name=name.decode('utf-8', 'replace'), address=hex(address) if address is not None else None))
+                if len(matches) > 32:
+                    return matches, 'match-cap'
+            stack.append((child, name, depth + 1))
+    return matches, 'complete'
+
+remote_exports, export_status = export_matches(export_trie)
+string_sites = []
+cursor = 0
+while len(string_sites) < 8:
+    hit = data.find(b'CoreRemoteOpen\0', cursor)
+    if hit < 0:
+        break
+    string_sites.append(hex(core.address(hit)))
+    cursor = hit + 1
+gap = data[max(0, core.text['offset'] - 0x1800):core.text['offset']]
+gap_strings = []
+for part in gap.split(b'\0'):
+    if 4 <= len(part) <= 80 and all(32 <= byte < 127 for byte in part):
+        gap_strings.append(part.decode('ascii'))
+        if len(gap_strings) == 64:
+            break
+image_hits = []
+with zipfile.ZipFile(root / 'input/Core.ipa') as archive:
+    machos = []
+    for info in archive.infolist():
+        if info.is_dir() or not 32 <= info.file_size <= 32_000_000:
+            continue
+        with archive.open(info) as handle:
+            header = handle.read(8)
+        if header[:4] == b'\xcf\xfa\xed\xfe':
+            machos.append(info.filename)
+        if len(machos) == 16:
+            break
+    for name in machos:
+        blob = archive.read(name)
+        image_hits.append(dict(name=name, size=len(blob), core_remote_open=blob.find(b'CoreRemoteOpen\0') >= 0))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
     status='static-candidates-only', runtime_invocation_verified=False, game_thread_dispatch_verified=False,
@@ -267,6 +356,11 @@ for row in process_rows:
     literal_data_references=literal_data_references,
     text=dict(address=hex(core.text['address']), length=hex(core.text['length'])),
     bootstrap_veneer=bootstrap_veneer,
+    core_remote_open_strings=string_sites,
+    core_remote_exports=remote_exports,
+    export_trie_status=export_status,
+    pre_text_strings=gap_strings,
+    ipa_core_remote_open=image_hits,
     process_name_literals=process_literal_records,
     function_windows_limited_to=64, function_candidates=len(review_functions),
     session_reference_windows_limited_to=40), indent=2) + '\n')
