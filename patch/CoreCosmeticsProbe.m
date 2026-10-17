@@ -660,7 +660,19 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core cosmetics trial"
         expirationHandler:^{
             if (self.generation != generation || !self.capturing) return;
-            dispatch_async(self.captureQueue, ^{ [self finishTrialOnQueue:generation reason:@"background-expiration"]; });
+            dispatch_async(self.captureQueue, ^{
+                if (self.trialGeneration != generation || self.trialFinishing) return;
+                // Never auto-restore appearance. An owned change stays until the user cancels.
+                if (TrialState.active) {
+                    dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+                    return;
+                }
+                self.trialReport[@"finish_reason"] = @"background-expiration";
+                self.trialReport[@"status"] = @"background-expiration-before-apply";
+                atomic_store(&MenuStatus, CCPMenuFailed);
+                [self writeTrialReport];
+                dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+            });
         }];
     dispatch_async(self.captureQueue, ^{
         self.trialGeneration = generation;
@@ -672,14 +684,15 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         }
         self.trialPresetIndex = presetIndex;
         CCPAppearancePreset preset = CCPAppearancePresets[presetIndex];
-        self.trialReport = [@{@"schema_version": @5, @"trial_revision": @5, @"mode": @"single-slot-appearance-trial",
+        self.trialReport = [@{@"schema_version": @6, @"trial_revision": @6, @"mode": @"explicit-menu-appearance-apply",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @YES,
             @"preset_visual_effect_previously_verified": @(preset.slot == 5 && preset.target == CCP_TRIAL_COAT),
             @"current_trial_visual_confirmed": @NO, @"ui_location": @"native-menu-below-position",
             @"preset": [NSString stringWithUTF8String:preset.label], @"category": [NSString stringWithUTF8String:preset.category],
-            @"slot_index": @(preset.slot), @"target_id": @(preset.target), @"automatic_restore_seconds": @15} mutableCopy];
+            @"slot_index": @(preset.slot), @"target_id": @(preset.target),
+            @"automatic_restore_seconds": @0, @"restore_mode": @"manual-cancel-only"} mutableCopy];
         [self prepareTrialOnQueue:generation attempt:0];
     });
 }
@@ -711,32 +724,15 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             atomic_store(&MenuOwned, TrialState.active);
             atomic_store(&MenuStatus, applied.idConfirmed ? CCPMenuApplied :
                 (applied.status == CCPTrialWrongOutfit ? CCPMenuWrongOutfit : CCPMenuFailed));
-            self.trialReport[@"status"] = applied.idConfirmed ? @"id-applied-awaiting-visual-confirmation" : @"apply-not-confirmed";
+            self.trialReport[@"status"] = applied.idConfirmed ? @"appearance-applied-awaiting-manual-restore" : @"apply-not-confirmed";
             [self writeTrialReport];
             if (!applied.idConfirmed) {
                 [self finishTrialOnQueue:generation reason:@"apply-failed"];
                 return;
             }
-            self.samples = [NSMutableArray array];
-            self.trialTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.captureQueue);
-            dispatch_source_set_timer(self.trialTimer, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
-                                      3 * NSEC_PER_SEC, NSEC_PER_SEC / 4);
-            dispatch_source_set_event_handler(self.trialTimer, ^{
-                @autoreleasepool {
-                    if (self.trialGeneration != generation || self.trialFinishing) return;
-                    uint32_t current = 0; uint8_t pending = 0;
-                    BOOL bound = TrialBindingValid(&TrialContext);
-                    BOOL sameLayout = bound && CCPTrialLayout(reader, &TrialState, &current);
-                    BOOL flagRead = sameLayout && CCPReadBytes(reader, TrialState.avatar + CCP_REFRESH_PENDING, &pending, 1);
-                    [self.samples addObject:@{@"binding_matches": @(bound), @"layout_matches": @(sameLayout),
-                        @"current_item_id": @(current), @"refresh_flag_read": @(flagRead), @"refresh_pending": @(pending)}];
-                    self.trialReport[@"observations"] = self.samples.copy;
-                    [self writeTrialReport];
-                    if (!bound || !sameLayout || self.samples.count >= 5)
-                        [self finishTrialOnQueue:generation reason:bound && sameLayout ? @"automatic-restore" : @"context-changed"];
-                }
-            });
-            dispatch_resume(self.trialTimer);
+            // Keep the owned appearance until the user cancels the menu option.
+            // Do not auto-restore after a timed trial window.
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
         });
 }
 - (void)restoreTrial {
@@ -1329,7 +1325,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @39, @"probe_revision": @39,
+        self.trialReport = [@{@"schema_version": @40, @"probe_revision": @40,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),

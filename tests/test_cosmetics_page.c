@@ -56,7 +56,7 @@ int main(void) {
     assert(origin.x == 340 && origin.y == 76 && dimensions.x == 952 && dimensions.y == 450);
     nextEnabled = false;
     Draw(1, CCPMenuApplied, true, 0, &category, &page);
-    assert(actions == 2 && !requested && requestedPreset == 0 && strstr(title, "试穿中"));
+    assert(actions == 2 && !requested && requestedPreset == 0 && strstr(title, "已应用"));
     clickedPreset = -1; clickedButton = 'n';
     Draw(1, CCPMenuIdle, false, 0, &category, &page); assert(page == 1);
     clickedButton = 0;

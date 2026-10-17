@@ -157,7 +157,7 @@ def main(ipa, cosmetics_probe=False):
         assert info["CFBundleVersion"] == (COSMETICS_BUNDLE_BUILD if cosmetics_probe else BUNDLE_BUILD)
         assert info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         if cosmetics_probe:
-            assert info["CoreCosmeticsProbeVersion"] == "39" and info["CoreCosmeticsMode"] == "early-game-session"
+            assert info["CoreCosmeticsProbeVersion"] == "40" and info["CoreCosmeticsMode"] == "early-game-session"
             assert info["CoreCosmeticsUILocation"] == "native-menu-below-position"
             assert b"CCPCosmeticsController\0" in patch_library
             assert b"_CoreCosmeticsRenderPage" in exported
@@ -167,8 +167,9 @@ def main(ipa, cosmetics_probe=False):
                 b"target-observed\0", b"target-not-observed\0", b"CAD-x8-tramp\0",
                 b"target-render-state-observed\0", b"task-not-completed\0",
                 b"sys_icache_invalidate\0", b"restore-conflict-third-party-skin\0",
+                b"manual-cancel-only\0", b"appearance-applied-awaiting-manual-restore\0",
             ):
-                assert product_marker in patch_library, f"Missing r39 product marker: {product_marker!r}"
+                assert product_marker in patch_library, f"Missing r40 product marker: {product_marker!r}"
         else:
             assert "CoreCosmeticsProbeVersion" not in info and b"CCPCosmeticsController\0" not in patch_library
         assert info["CoreFeatureProfile"] == PROFILE

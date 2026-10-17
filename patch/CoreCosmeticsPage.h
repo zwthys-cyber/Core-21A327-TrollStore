@@ -29,7 +29,7 @@ typedef enum { CCPMenuIdle, CCPMenuWaiting, CCPMenuApplied, CCPMenuRestored,
 static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus status,
     bool enabled, uint32_t selected, unsigned *category, unsigned *page, void (*action)(uint32_t, bool)) {
     const char *states[] = {
-        "15 秒试穿", "等待角色", "试穿中", "已恢复原外观",
+        "选择外观", "等待角色", "已应用", "已恢复原外观",
         "请先穿戴对应物品", "请查看报告", "等待恢复", "正在读取车辆", "车辆报告已保存",
         "等待当前载具", "车皮已提交", "当前原车不兼容", "正在恢复原车", "原车数据已恢复",
         "正在检查进程", "游戏进程可见", "未找到游戏进程",
