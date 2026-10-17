@@ -157,7 +157,7 @@ def main(ipa, cosmetics_probe=False):
         assert info["CFBundleVersion"] == (COSMETICS_BUNDLE_BUILD if cosmetics_probe else BUNDLE_BUILD)
         assert info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         if cosmetics_probe:
-            assert info["CoreCosmeticsProbeVersion"] == "10" and info["CoreCosmeticsMode"] == "character-and-vehicle-diagnostics"
+            assert info["CoreCosmeticsProbeVersion"] == "11" and info["CoreCosmeticsMode"] == "process-name-visibility-probe"
             assert info["CoreCosmeticsUILocation"] == "native-menu-below-position"
             assert b"CCPCosmeticsController\0" in patch_library
             assert b"_CoreCosmeticsRenderPage" in exported

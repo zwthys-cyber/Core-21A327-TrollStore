@@ -53,6 +53,11 @@ static const uint8_t WritePrefix[32] = {
     0x7f,0x23,0x03,0xd5,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
     0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
 };
+static const uint8_t ProcessLookupPrefix[32] = {
+    0x7f,0x23,0x03,0xd5,0xf8,0x5f,0xbc,0xa9,0xf6,0x57,0x01,0xa9,0xf4,0x4f,0x02,0xa9,
+    0xfd,0x7b,0x03,0xa9,0xfd,0xc3,0x00,0x91,0xf3,0x03,0x00,0xaa,0x83,0xff,0xff,0x97
+};
+typedef uint64_t (*CCPProcessLookup)(const char *);
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
     return vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)length,
@@ -531,7 +536,61 @@ static NSDictionary *VehicleTrialObservation(void) {
         [self finishTrialOnQueue:generation reason:@"manual-restore"];
     });
 }
+- (void)startProcessProbe {
+    if (self.capturing || atomic_load(&MenuOwned)) return;
+    self.capturing = YES;
+    atomic_store(&MenuBusy, true);
+    atomic_store(&MenuPresetIndex, CCP_PROCESS_PROBE_INDEX);
+    atomic_store(&MenuStatus, CCPMenuProcessChecking);
+    uint32_t generation = ++self.generation;
+    if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
+    dispatch_async(self.captureQueue, ^{
+        if (self.generation != generation) return;
+        CCPReader local = {LocalRead, NULL};
+        uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+        uint32_t quarantineBefore = 0, quarantineAfter = 0;
+        uint8_t fatalBefore = 0, fatalAfter = 0;
+        BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineBefore, sizeof(quarantineBefore));
+        BOOL fatalRead = CCPReadBytes(local, base + 0xC1D2E8, &fatalBefore, sizeof(fatalBefore));
+        NSString *result = @"unavailable";
+        NSString *status = @"core-identity-mismatch";
+        if (CCPIdentity(local, base, CoreUUID) && EntryMatches(base + 0x35F08, ProcessLookupPrefix)) {
+            CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
+            CCPSnapshot ready = {0};
+            if (!EntryMatches(base + 0x64C7C, SnapshotPrefix) || !snapshot(&ready) || !ready.words[1]) {
+                status = @"core-session-not-ready";
+            } else {
+                uint64_t lookup = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+                if (lookup == 0) result = @"zero";
+                else if (lookup == ~(uint64_t)0) result = @"not-found";
+                else result = @"located";
+                status = [result isEqualToString:@"located"] ? @"game-process-visible" : @"game-process-not-visible";
+            }
+        }
+        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
+        self.trialReport = [@{@"schema_version": @11, @"probe_revision": @11,
+            @"mode": @"process-name-visibility", @"game_version": @"1.38.12", @"game_build": @"15915",
+            @"process_name": @"ShadowTrackerExtra", @"lookup_result": result, @"status": status,
+            @"session_open_attempted": @NO, @"vehicle_appearance_changes_implemented": @NO,
+            @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
+            @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
+            @"quarantine_read": @(quarantineRead), @"fatal_read": @(fatalRead),
+            @"quarantine_changed": @(quarantineRead && quarantineBefore != quarantineAfter),
+            @"ui_location": @"native-menu-below-position"} mutableCopy];
+        [self writeTrialReport];
+        CCPMenuStatus shown = CCPMenuFailed;
+        if ([result isEqualToString:@"located"]) shown = CCPMenuProcessVisible;
+        else if ([result isEqualToString:@"not-found"] || [result isEqualToString:@"zero"]) shown = CCPMenuProcessAbsent;
+        atomic_store(&MenuStatus, shown);
+        dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+    });
+}
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index == CCP_PROCESS_PROBE_INDEX) {
+        if (enabled) [self startProcessProbe];
+        return;
+    }
     if (index == CCP_VEHICLE_CAPTURE_INDEX) {
         if (enabled) [self startVehicleCapture];
         else if (self.vehicleCapturing) { self.pendingPresetIndex = NSNotFound; [self restoreTrial]; }
