@@ -57,18 +57,19 @@ sections = []
 indirect = None
 function_starts_data = None
 export_trie = None
+export_meta = None
 for _ in range(core.u32(16)):
     command, size = struct.unpack_from('<II', data, position)
     if command == 0xB:
         indirect = struct.unpack_from('<II', data, position + 56)
     if command == 0x26:
         function_starts_data = struct.unpack_from('<II', data, position + 8)
-    if command in (0x22, 0x80000022) and export_trie is None:
-        export_off, export_size = struct.unpack_from('<II', data, position + 40)
-        export_trie = data[export_off:export_off + export_size]
-    if command == 0x80000033:
-        export_off, export_size = struct.unpack_from('<II', data, position + 8)
-        export_trie = data[export_off:export_off + export_size]
+    if command in (0x22, 0x80000022, 0x80000033):
+        field = 8 if command == 0x80000033 else 40
+        export_off, export_size = struct.unpack_from('<II', data, position + field)
+        export_meta = dict(command=hex(command), offset=export_off, size=export_size)
+        if export_size <= 0x200000 and export_off + export_size <= len(data):
+            export_trie = data[export_off:export_off + export_size]
     if command == 0x19:
         for index in range(core.u32(position + 64)):
             start = position + 72 + index * 80
@@ -349,6 +350,49 @@ with zipfile.ZipFile(root / 'input/Core.ipa') as archive:
     for name in machos:
         blob = archive.read(name)
         image_hits.append(dict(name=name, size=len(blob), core_remote_open=blob.find(b'CoreRemoteOpen\0') >= 0))
+    offline_path = output / 'CoreOffline-input'
+    offline_path.write_bytes(archive.read('Payload/Core.app/CoreOffline.work.dylib'))
+offline = MachO(offline_path)
+offline_symbols = []
+symoff, count, stroff, strsize = offline.symbols
+offline_data = offline_path.read_bytes()
+for index in range(min(count, 8000)):
+    name_offset, kind, section, desc, value = struct.unpack_from('<IBBHQ', offline_data, symoff + index * 16)
+    end = offline_data.find(b'\0', stroff + name_offset, stroff + strsize)
+    name = offline_data[stroff + name_offset:end].decode('utf-8', 'replace')
+    if 'CoreRemote' in name:
+        offline_symbols.append(dict(name=name, kind=kind, section=section, value=hex(value)))
+        if len(offline_symbols) == 32:
+            break
+offline_export = None
+offline_position = 32
+for _ in range(struct.unpack_from('<I', offline_data, 16)[0]):
+    command, size = struct.unpack_from('<II', offline_data, offline_position)
+    if command in (0x22, 0x80000022, 0x80000033):
+        field = 8 if command == 0x80000033 else 40
+        export_off, export_size = struct.unpack_from('<II', offline_data, offline_position + field)
+        if export_size <= 0x200000 and export_off + export_size <= len(offline_data):
+            offline_matches, offline_export_status = export_matches(offline_data[export_off:export_off + export_size])
+            offline_export = dict(command=hex(command), size=export_size, status=offline_export_status, symbols=offline_matches)
+    offline_position += size
+offline_strings = []
+cursor = 0
+while len(offline_strings) < 4:
+    hit = offline_data.find(b'CoreRemoteOpen\0', cursor)
+    if hit < 0:
+        break
+    previous = offline_data.rfind(b'\0', max(0, hit - 80), hit)
+    start = 0 if previous < 0 else previous + 1
+    offline_strings.append(dict(offset=hex(hit), text=offline_data[start:hit + len(b'CoreRemoteOpen')].decode('utf-8', 'replace')))
+    cursor = hit + 1
+for row in offline_symbols:
+    address = int(row['value'], 16)
+    if offline.code_address(address):
+        execution_lines += [f'\n### CoreOffline {row["name"]} {address:#x}'] + disassemble(offline, address, 0x80)
+offline.file.close()
+offline_path.unlink()
+offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
+    text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
     status='static-candidates-only', runtime_invocation_verified=False, game_thread_dispatch_verified=False,
@@ -359,6 +403,8 @@ with zipfile.ZipFile(root / 'input/Core.ipa') as archive:
     core_remote_open_strings=string_sites,
     core_remote_exports=remote_exports,
     export_trie_status=export_status,
+    export_trie_meta=export_meta,
+    core_offline=offline_report,
     pre_text_strings=gap_strings,
     ipa_core_remote_open=image_hits,
     process_name_literals=process_literal_records,
