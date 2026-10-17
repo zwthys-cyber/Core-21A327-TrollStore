@@ -655,10 +655,15 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     dispatch_async(self.captureQueue, ^{
         self.trialGeneration = generation;
         self.trialFinishing = NO;
-        if (TrialState.active || VehicleState.active) {
+        if ((TrialState.active || VehicleState.active) && atomic_load(&MenuOwned)) {
             atomic_store(&MenuStatus, CCPMenuRestorePending);
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
             return; // Preserve the journal of an earlier change until restored.
+        }
+        // Stale active bits without ownership must not trap the menu on 等待恢复.
+        if (!atomic_load(&MenuOwned)) {
+            TrialState.active = NO;
+            VehicleState.active = NO;
         }
         self.trialPresetIndex = presetIndex;
         CCPAppearancePreset preset = CCPAppearancePresets[presetIndex];
@@ -858,7 +863,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         if (retry) {
             if ((attempt % 25) == 0 &&
                 (!self.trialReport || [self.trialReport[@"mode"] isEqualToString:@"early-game-session"])) {
-                self.trialReport = [@{@"schema_version": @42, @"probe_revision": @42,
+                self.trialReport = [@{@"schema_version": @43, @"probe_revision": @43,
                     @"mode": @"early-game-session", @"status": status,
                     @"wait_blocker": waitBlocker, @"wait_ticks": @(attempt),
                     @"open_result": @"attach-only-never-remote-open",
@@ -908,11 +913,9 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
                 @"ui_location": @"native-menu-below-position"} mutableCopy];
             [self writeTrialReport];
         }
-        // Keep title at "选择外观" unless attach succeeded and the menu is still idle.
-        if (pidMatches) {
-            CCPMenuStatus current = (CCPMenuStatus)atomic_load(&MenuStatus);
-            if (current == CCPMenuIdle) atomic_store(&MenuStatus, CCPMenuExecMatched);
-        }
+        // Silent attach must not change the cosmetics menu title. Leaving Idle
+        // keeps "选择外观" so clothes/vehicle rows stay obviously selectable.
+        (void)pidMatches;
     });
 }
 - (void)startGameOpen {
@@ -1070,9 +1073,15 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             if (index != atomic_load(&MenuPresetIndex)) return;
             self.pendingPresetIndex = NSNotFound;
             [self restoreTrial];
-        } else if (self.capturing || atomic_load(&MenuOwned)) {
+        } else if (atomic_load(&MenuOwned) || VehicleState.active || TrialState.active) {
+            // Switch target only after an owned change is restored.
             self.pendingPresetIndex = index;
             [self restoreTrial];
+        } else if (self.capturing) {
+            // In-flight wait/probe: retarget without cancel-restore thrash.
+            // A second click used to call restoreTrial and abort the apply.
+            self.vehiclePresetIndex = index - CCP_VEHICLE_PRESET_BASE;
+            atomic_store(&MenuPresetIndex, index);
         } else {
             self.vehiclePresetIndex = index - CCP_VEHICLE_PRESET_BASE;
             self.pendingPresetIndex = NSNotFound;
@@ -1102,9 +1111,15 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         if (index != self.presetIndex) return;
         self.pendingPresetIndex = NSNotFound;
         [self restoreTrial];
-    } else if (self.capturing || atomic_load(&MenuOwned)) {
+    } else if (atomic_load(&MenuOwned) || TrialState.active || VehicleState.active) {
         self.pendingPresetIndex = index;
         [self restoreTrial];
+    } else if (self.capturing) {
+        // Waiting for character/apply: keep the in-flight generation, only retarget.
+        self.presetIndex = index;
+        self.trialPresetIndex = index;
+        atomic_store(&MenuPresetIndex, index);
+        atomic_store(&MenuStatus, CCPMenuWaiting);
     } else {
         self.presetIndex = index;
         self.pendingPresetIndex = NSNotFound;
@@ -1247,7 +1262,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @41, @"probe_revision": @41,
+        self.trialReport = [@{@"schema_version": @42, @"probe_revision": @42,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),
@@ -1562,8 +1577,10 @@ __attribute__((visibility("default"))) void CoreCosmeticsRenderPage(void) {
         .button = (bool (*)(const char *, const char *, bool))SignedEntry(base + 0xC7A60),
     };
     static unsigned category, page;
+    // Only owned changes draw as checked. MenuBusy must not force a fake
+    // selection — that made a second tap cancel the in-flight clothes apply.
     CCPDrawCosmeticsPage(ui, scale, (CCPMenuStatus)atomic_load(&MenuStatus),
-        atomic_load(&MenuBusy) || atomic_load(&MenuOwned), atomic_load(&MenuPresetIndex), &category, &page, NativeMenuAction);
+        atomic_load(&MenuOwned), atomic_load(&MenuPresetIndex), &category, &page, NativeMenuAction);
 }
 __attribute__((constructor)) static void StartCosmeticsProbe(void) {
     CCPCosmeticsController *controller = [CCPCosmeticsController new];

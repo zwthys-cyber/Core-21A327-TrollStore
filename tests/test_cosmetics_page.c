@@ -20,9 +20,12 @@ static bool Checkbox(const char *text, bool *enabled, float width) {
     assert(width == 0 && controls < 4);
     unsigned i = 0;
     const char *vehicle = strstr(text, "##vehicle-");
+    const char *appearance = strstr(text, "##appearance-");
     if (vehicle) {
         assert(sscanf(vehicle, "##vehicle-%u", &i) == 1 && i < CCP_VEHICLE_PRESET_COUNT);
         i += CCP_VEHICLE_PRESET_BASE;
+    } else if (appearance) {
+        assert(sscanf(appearance, "##appearance-%u", &i) == 1 && i < CCP_PRESET_COUNT);
     } else {
         while (i < CCP_PRESET_COUNT && strcmp(text, CCPAppearancePresets[i].label)) i++;
         assert(i < CCP_PRESET_COUNT);

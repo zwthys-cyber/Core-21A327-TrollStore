@@ -55,6 +55,7 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
         if (*category == 5) {
             for (unsigned i = *page * 4; i < count && i < (*page + 1) * 4; i++) {
                 uint32_t menuIndex = CCP_VEHICLE_PRESET_BASE + i;
+                // `enabled` means an owned change is active, not "menu busy".
                 bool checked = enabled && selected == menuIndex;
                 char label[256];
                 snprintf(label, sizeof(label), "%s [%u] → %s [%u]##vehicle-%u",
@@ -69,7 +70,9 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
             unsigned position = index++;
             if (position < *page * 4 || position >= (*page + 1) * 4) continue;
             bool checked = enabled && selected == i;
-            if (ui.checkbox(CCPAppearancePresets[i].label, &checked, 0)) action(i, checked);
+            char label[192];
+            snprintf(label, sizeof(label), "%s##appearance-%u", CCPAppearancePresets[i].label, i);
+            if (ui.checkbox(label, &checked, 0)) action(i, checked);
         }
         CCPUIVec nav = {8 * scale, 167 * scale}; ui.cursor(&nav);
         if (ui.button("p", "上一页", false)) *page = (*page + pages - 1) % pages;
