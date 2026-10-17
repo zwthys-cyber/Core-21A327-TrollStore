@@ -1,20 +1,17 @@
-Core 远程 GameThread 诊断 r31（已停用入队）
+Core 美化车辆换肤 — 开发中（r32）
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
-紧急：r30 在 getpid 对齐后会安装 RX 跳板并 CreateAndDispatch / PutOn，
-实机出现游戏卡死、无法移动画面。r31 已完全禁用该入队路径，只保留只读诊断。
+【实机测试暂停】
+成品 IPA 交付之前，不要安装中间构建，不要导出探测 JSON，不要再做实机试验。
+当前仓库仅在 GitHub Actions 内编译与静态分析。
 
-请先强制划掉游戏与 Core，再覆盖安装 r31。不要继续使用 r28–r30 做换肤入队。
+r30 卡死原因（已确认，不是猜测）：
+对同一块 calloc 缓冲做 mprotect(RX) 后，CreateAndDispatch 仍要通过该缓冲写入
+FGraphEventRef / TFunction，写只读页导致 GameThread 故障，表现为画面卡死无法移动。
 
-r31 仍会：
-- 打开游戏远程会话并 getpid 核对
-- 调用 IsSafeForGameThread / FTaskGraphInterface::Get（只读）
-- 解析当前载具 Avatar（需训练场坐上车才有）
-不会再 calloc / mprotect / CreateAndDispatch / PutOn。
+r32：
+- 删除自动入队代码
+- 会话探测只读（getpid / IsSafe / TaskGraph Get / 车辆解析）
+- 正确的成品路径将使用「代码页 RX + 数据页 RW 分离」，且改为菜单显式触发，不再会话一开就入队
 
-导出 JSON 关注：
-- session_source、taskgraph_present、vehicle_resolve
-- enqueue_status 应为 disabled-after-device-freeze
-
-vehicle_appearance_changes_implemented=false。换肤未完成。
-所有编译与二进制分析均在 GitHub Actions 执行。
+换肤未完成。vehicle_appearance_changes_implemented=false。

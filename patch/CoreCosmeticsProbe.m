@@ -7,9 +7,6 @@
 #import <math.h>
 #import <stdio.h>
 #import <unistd.h>
-#import <dlfcn.h>
-#import <sys/mman.h>
-#import <string.h>
 #import "CoreCosmeticsRead.h"
 #import "CoreCosmeticsVehicleRead.h"
 #import "CoreCosmeticsWriteCheck.h"
@@ -101,18 +98,8 @@ enum {
     CCPGameTaskGraphGetRVA = 0x8af6894,
     CCPGameCreateAndDispatchRVA = 0x3765444,
     CCPGamePutOnByResRVA = 0x47f2824,
-    CCPGameTFunctionDestroyRVA = 0x2704da4,
-    CCPGameGraphEventReleaseRVA = 0x35691fc,
     CCPTargetSkinResID = 3349002,
-    CCPSourceTrialSkinID = 3349001,
-    CCPRemoteTrampSize = 0x80,
-    CCPRemoteCadOff = 0x00,
-    CCPRemotePutOnOff = 0x10,
-    CCPRemoteAvatarOff = 0x20,
-    CCPRemoteResOff = 0x28,
-    CCPRemotePutOnFnOff = 0x30,
-    CCPRemoteTFunctionOff = 0x40,
-    CCPRemoteEventOff = 0x48
+    CCPSourceTrialSkinID = 3349001
 };
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
@@ -155,58 +142,6 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
 }
-#if 0 // Disabled: r30 device freeze after calloc/mprotect + CreateAndDispatch/PutOn.
-// Compare-write remote bytes using the live expected contents (calloc is zero).
-static bool RemoteWriteBytes(CCPTarget *target, uint64_t address, const void *data, size_t length) {
-    if (!target || !target->write || !data || length == 0) return false;
-    const uint8_t *bytes = data;
-    for (size_t offset = 0; offset < length; ) {
-        size_t chunk = length - offset;
-        if (chunk > 8) chunk = 8;
-        uint8_t expected[8] = {0}, replacement[8] = {0};
-        if (!target->read(target->pid, address + offset, chunk, expected)) return false;
-        memcpy(replacement, bytes + offset, chunk);
-        if (!memcmp(expected, replacement, chunk)) {
-            offset += chunk;
-            continue;
-        }
-        CCPNativeWriteResult native = target->write(target->pid, address + offset, expected, replacement, chunk);
-        if ((uint32_t)native.state != 1) return false;
-        uint8_t readback[8] = {0};
-        if (!target->read(target->pid, address + offset, chunk, readback) ||
-            memcmp(readback, replacement, chunk)) return false;
-        offset += chunk;
-    }
-    return true;
-}
-// Install heap RX trampolines (CI found no in-image mov x8,xN; b CAD gadget),
-// enqueue PutOnEquipmentByResID(3349002) via CreateAndDispatch(w2=#4).
-static void AttemptPutOnEnqueue(NSMutableDictionary *out, uintptr_t base, uint64_t game,
-                                CCPTarget *target, CCPRemoteCallByAddress remoteCall,
-                                uint64_t avatar, uint64_t vehicle, uint32_t skinBefore) {
-    out[@"put_on_attempted"] = @NO;
-    out[@"enqueue_status"] = @"not-started";
-    // Lobby does not need an owned Bentley. Any current vehicle Avatar is enough;
-    // PutOnEquipmentByResID installs target 3349002 onto that Avatar.
-    if (skinBefore == CCPTargetSkinResID) {
-        out[@"enqueue_status"] = @"skipped-already-target-skin";
-        return;
-    }
-    if (!EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) ||
-        !EntryMatches(base + 0x620B8, WritePrefix)) {
-        out[@"enqueue_status"] = @"write-or-symbol-entry-mismatch";
-        return;
-    }
-    void *mprotectSym = dlsym(RTLD_DEFAULT, "mprotect");
-    if (!mprotectSym) {
-        out[@"enqueue_status"] = @"mprotect-symbol-missing";
-        return;
-    }
-#if __has_feature(ptrauth_calls)
-    uint64_t mprotectAddr = (uint64_t)ptrauth_strip(mprotectSym, ptrauth_key_function_pointer);
-#else
-    uint64_t mprotectAddr = (uint64_t)mprotectSym;
-#endif
     target->write = (CCPWriteFunction)SignedEntry(base + 0x620B8);
     CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
     uint64_t buf = 0, unused = 0;
@@ -361,20 +296,16 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     out[@"create_and_dispatch_blocked_by"] = graphOK ? @"x8-sret-trampoline" : @"taskgraph-unavailable";
     out[@"create_and_dispatch_rva"] = @"0x3765444";
     out[@"put_on_rva"] = @"0x47f2824";
-    uint64_t avatar = 0, vehicle = 0;
-    uint32_t skinBefore = 0;
-    BOOL avatarReady = NO;
     if (CCPPointer(pawn) && CCPPointer(controller)) {
         CCPVehicleSample sample = {0};
-        uint64_t actor = 0, user = 0;
+        uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0;
         out[@"vehicle_resolve"] = @"attempted";
         if (CCPVehicleSource(remote, game, pawn, controller, &actor, &user, &vehicle, &sample) &&
             CCPVehicleOwner(remote, vehicle, &avatar)) {
             out[@"vehicle_resolve"] = @"avatar-ready";
             out[@"vehicle_skin_id"] = @(sample.skin);
             out[@"source_skin_is_trial"] = @(sample.skin == CCPSourceTrialSkinID);
-            skinBefore = sample.skin;
-            avatarReady = YES;
+            out[@"target_skin_res_id"] = @(CCPTargetSkinResID);
         } else if (sample.status == CCPVehicleUnavailable) {
             out[@"vehicle_resolve"] = @"no-current-vehicle";
         } else {
@@ -383,15 +314,16 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     } else {
         out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
     }
-    // Device report: r30 enqueue (calloc/mprotect + CreateAndDispatch/PutOn) can
-    // freeze the game GameThread. Keep diagnostics only until a safer path exists.
-    (void)avatarReady;
+    // r30 auto-enqueued PutOn after mprotect(RX) on a buffer that also held the
+    // writable FGraphEventRef/TFunction slots; CreateAndDispatch then faulted the
+    // GameThread. Early-session path stays diagnostics-only until a split RX/RW
+    // product path is finished — no mid-build device testing.
     out[@"put_on_attempted"] = @NO;
-    out[@"enqueue_status"] = @"disabled-after-device-freeze";
-    out[@"enqueue_disabled_reason"] = @"r30-create-and-dispatch-or-puton-froze-game";
-    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"disabled-after-device-freeze";
-    if (![out[@"status"] isEqualToString:@"put-on-enqueued"])
-        out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
+    out[@"enqueue_status"] = @"disabled-pending-product";
+    out[@"enqueue_disabled_reason"] =
+        @"r30-mprotect-rx-covered-writable-event-slot;auto-enqueue-removed";
+    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"disabled-pending-product";
+    out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
     return out;
 }
 static NSArray *ItemsJSON(const CCPItems *items) {
@@ -1057,7 +989,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @31, @"probe_revision": @31,
+        self.trialReport = [@{@"schema_version": @32, @"probe_revision": @32,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),

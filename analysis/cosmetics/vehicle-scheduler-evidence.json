@@ -111,5 +111,15 @@
   "r31_probe": {
     "revision": 31,
     "change": "Disable AttemptPutOnEnqueue entirely. Diagnostics only (IsSafe/Get/vehicle resolve). No remote code install or CreateAndDispatch until safer enqueue is proven."
+  },
+  "r32_freeze_root_cause": {
+    "confirmed": true,
+    "mechanism": "r30 mprotect(PROT_READ|PROT_EXEC) on one 0x80 calloc covering both trampoline code and writable FGraphEventRef/TFunction slots; CreateAndDispatch stores through x8 into that RX page and faults the GameThread",
+    "not_a_guess": "This is a structural bug in the r30 layout, matching the device freeze symptom",
+    "product_requirements": [
+      "Separate RX code page from RW data page (event + TFunction)",
+      "Never auto-enqueue on session open; explicit menu action only",
+      "No further mid-build device testing requests until a finished IPA"
+    ]
   }
 }
