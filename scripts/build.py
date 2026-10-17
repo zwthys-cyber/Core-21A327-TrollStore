@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-vehicle-r36.ipa"
-COSMETICS_BUNDLE_BUILD = "20.36"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-vehicle-r37.ipa"
+COSMETICS_BUNDLE_BUILD = "20.37"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -253,7 +253,7 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="36",
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="37",
                     CoreCosmeticsMode="early-game-session", CoreCosmeticsUILocation="native-menu-below-position")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
@@ -306,6 +306,7 @@ def main():
                   cosmetics_vehicle_trial_available=args.cosmetics_probe,
                   cosmetics_vehicle_catalog_pairs=35 if args.cosmetics_probe else 0,
                   cosmetics_vehicle_source_gate="exact-item-id" if args.cosmetics_probe else None,
+                  cosmetics_vehicle_success_gate="target-item-master-sync-loaded-handle-mesh-clean" if args.cosmetics_probe else None,
                   cosmetics_vehicle_capture_read_only=True,
                   cosmetics_vehicle_entity_diagnostics=args.cosmetics_probe,
                   cosmetics_target_vehicle_resource_availability="package-catalog-verified" if args.cosmetics_probe else None,

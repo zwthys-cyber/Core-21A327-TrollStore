@@ -1298,7 +1298,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @36, @"probe_revision": @36,
+        self.trialReport = [@{@"schema_version": @37, @"probe_revision": @37,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),
@@ -1368,11 +1368,29 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         @"code_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.codePage],
         @"data_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.dataPage]
     };
-    BOOL confirmed = CCPVehicleTargetObserved(&enqueued);
+    BOOL stateObserved = CCPVehicleTargetObserved(&enqueued);
+    CCPVehicleSample rendered = {0};
+    BOOL confirmed = NO;
+    if (stateObserved) {
+        CCPReader reader = {TargetRead, &VehicleContext.target};
+        for (unsigned settle = 0; settle < 20 && !confirmed; settle++) {
+            confirmed = CCPReadVehicle(reader, VehicleContext.game, VehicleContext.pawn,
+                                       VehicleContext.controller, &rendered) &&
+                        CCPVehicleAppearanceReady(&rendered, preset.targetItem);
+            if (!confirmed) usleep(250000);
+        }
+    }
     BOOL dispatched = CCPVehiclePutOnDispatched(&enqueued);
-    self.trialReport[@"state_change_confirmed"] = @(confirmed);
-    self.trialReport[@"status"] = confirmed ? @"target-item-observed" :
-        (dispatched ? @"puton-dispatched-target-not-observed" : @"puton-enqueue-failed");
+    self.trialReport[@"target_state_observed"] = @(stateObserved);
+    self.trialReport[@"render_entity_observed"] = @(confirmed);
+    self.trialReport[@"loaded_handle_item_id"] = @(rendered.entity.loadedID);
+    self.trialReport[@"master_sync_item_id"] = @(rendered.count ? rendered.items[0].item : 0);
+    self.trialReport[@"mesh_path_present"] = @(rendered.entity.meshPathPresent);
+    self.trialReport[@"state_change_confirmed"] = @(stateObserved);
+    self.trialReport[@"appearance_ready_confirmed"] = @(confirmed);
+    self.trialReport[@"status"] = confirmed ? @"target-render-state-observed" :
+        (stateObserved ? @"target-item-observed-render-not-ready" :
+        (dispatched ? @"puton-dispatched-target-not-observed" : @"puton-enqueue-failed"));
     atomic_store(&MenuOwned, dispatched);
     atomic_store(&MenuStatus, confirmed ? CCPMenuVehicleTrialApplied :
         (dispatched ? CCPMenuRestorePending : CCPMenuFailed));
@@ -1405,14 +1423,29 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle,
             skinNow, original, preset.sourceResource, VehicleContext.target.read, VehicleContext.target.write,
             symbolCall, remoteCall);
-        restored = CCPVehicleRestoreObserved(&enqueued);
+        BOOL restoreStateObserved = CCPVehicleRestoreObserved(&enqueued);
+        CCPVehicleSample rendered = {0};
+        if (restoreStateObserved) {
+            CCPReader reader = {TargetRead, &VehicleContext.target};
+            for (unsigned settle = 0; settle < 20 && !restored; settle++) {
+                restored = CCPReadVehicle(reader, VehicleContext.game, VehicleContext.pawn,
+                                          VehicleContext.controller, &rendered) &&
+                           CCPVehicleAppearanceReady(&rendered, original);
+                if (!restored) usleep(250000);
+            }
+        }
         self.trialReport[@"restore"] = @{
             @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
             @"original_skin_id": @(original),
             @"restore_resource_id": @(enqueued.targetResource),
             @"skin_before": @(skinNow),
             @"put_on_attempted": @(enqueued.putOnAttempted),
-            @"skin_after": @(enqueued.skinAfter)
+            @"skin_after": @(enqueued.skinAfter),
+            @"state_observed": @(restoreStateObserved),
+            @"render_entity_observed": @(restored),
+            @"loaded_handle_item_id": @(rendered.entity.loadedID),
+            @"master_sync_item_id": @(rendered.count ? rendered.items[0].item : 0),
+            @"mesh_path_present": @(rendered.entity.meshPathPresent)
         };
     }
     if (restored) VehicleState.active = NO;

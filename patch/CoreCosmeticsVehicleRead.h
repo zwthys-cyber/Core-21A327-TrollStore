@@ -38,6 +38,16 @@ typedef struct {
     CCPVehicleItem items[CCP_MAX_VEHICLE_SLOTS];
 } CCPVehicleSample;
 
+static inline bool CCPVehicleAppearanceReady(const CCPVehicleSample *sample, uint32_t targetItem) {
+    return sample && targetItem && sample->status == CCPVehicleSampled &&
+        sample->skin == targetItem && sample->count > 0 && sample->items[0].item == targetItem &&
+        sample->entity.status == CCPEntitySampled && sample->entity.handleKeyRead &&
+        sample->entity.loadedID == targetItem && sample->entity.meshComponentAvailable &&
+        sample->entity.meshPathPresent && sample->entity.renderFlagsRead &&
+        !sample->entity.renderDirty && !sample->entity.delayedRenderDirty &&
+        !sample->entity.appearanceDirty;
+}
+
 static inline bool CCPVehicleResolveActor(CCPReader reader, uint64_t game, uint64_t pawn, uint64_t controller,
                                          uint64_t *actor, CCPVehicleSample *out) {
     *actor = 0;
