@@ -93,6 +93,21 @@ static void *SignedEntry(uintptr_t address) {
     return (void *)address;
 #endif
 }
+static NSString *QuarantineReason(uintptr_t base) {
+    CCPReader local = {LocalRead, NULL};
+    uint64_t pointer = 0;
+    if (!CCPReadBytes(local, base + 0xC1D300, &pointer, sizeof(pointer)) || pointer == 0) return @"none";
+    if (pointer < base + 0x4000 || pointer >= base + 0xB88000) return @"outside-image";
+    uint8_t bytes[96];
+    if (!CCPReadBytes(local, pointer, bytes, sizeof(bytes))) return @"unreadable";
+    unsigned length = 0;
+    while (length < sizeof(bytes) && bytes[length] != 0) {
+        if (bytes[length] < 0x20 || bytes[length] > 0x7e) return @"unreadable";
+        length++;
+    }
+    if (length == 0 || length == sizeof(bytes)) return @"unreadable";
+    return [[NSString alloc] initWithBytes:bytes length:length encoding:NSUTF8StringEncoding] ?: @"unreadable";
+}
 static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     uint8_t bytes[32];
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
@@ -658,6 +673,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             @"vehicle_appearance_changes_implemented": @NO, @"target_pid_published": @(pidRead && targetPid != 0),
             @"remote_ready": @(readyRead && remoteReady != 0),
             @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
+            @"quarantine_reason": QuarantineReason(base),
             @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
             @"quarantine_read": @(quarantineRead), @"fatal_read": @(fatalRead),
             @"quarantine_changed": @(quarantineRead && quarantineBefore != quarantineAfter),
@@ -723,7 +739,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         uint8_t remoteReadyAfter = 0;
         BOOL readyAfterRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReadyAfter, sizeof(remoteReadyAfter));
-        self.trialReport = [@{@"schema_version": @15, @"probe_revision": @15,
+        self.trialReport = [@{@"schema_version": @16, @"probe_revision": @16,
             @"mode": @"remote-getpid-check", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"symbol": @"getpid", @"call_result": callResult, @"status": status,
             @"entry_matches": @(entry), @"entry_prefix": seenHex,
@@ -736,6 +752,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             @"stable_mode_set": @(stableRead && (stableMode & 1) != 0),
             @"pid_matches_published": @(pidMatches),
             @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
+            @"quarantine_reason": QuarantineReason(base),
             @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
             @"quarantine_read": @(quarantineRead), @"fatal_read": @(fatalRead),
             @"quarantine_changed": @(quarantineRead && quarantineBefore != quarantineAfter),

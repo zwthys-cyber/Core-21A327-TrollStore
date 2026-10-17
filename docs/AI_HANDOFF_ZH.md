@@ -694,13 +694,19 @@ r14 在车辆适配页增加“核对远程进程号”。它不调用进程名�
 
 固定 Core 文件里这段入口是 `7f2303d5ff4301d1f65702a9f44f03a9fd7b04a9fd030191f30303aaf40302aa`。r14 把其中的 `fd7b04a9` 写成了 `fd7f04a9`。r15 改为文件原字节。这次失败没有改隔离字，也没有调用 getpid。车辆换肤仍未完成。
 
+### 11.27 r15 入口已匹配，会话仍未就绪
+
+用户报告 `captured_at_unix=1792214446.1791`，schema / probe 15，mode 为 `remote-getpid-check`。`entry_matches=true`，前缀与固定 Core 文件一致。`status=remote-session-not-ready`，`call_result=not-called`。隔离字前后都是 1，致命字节是 0，ready 是 0，已发布 PID 是 0，端口字非 0。核对没有调用，隔离字没有被这次操作改掉。摘要在 `device-evidence-r15-exec-not-ready.json`。
+
+端口字非 0 而 PID 和 ready 都没有，说明这个 Core 进程里已经有一次打开走到了保存端口，随后故障把隔离字写成 1 并清掉 ready。r15 的核对按钮不会在这个状态下调用。r16 只在报告里增加隔离原因字符串，不清除隔离字，也不调用 getpid。车辆换肤仍未完成。
+
 `0x39C74` 在端口等待失败时直接返回 0，不写隔离字。后续调度失败会以代码 3 调用故障入口 `0x39844`，隔离字可能因此变成 3。入口前缀不匹配或会话门闩不满足时，r14 不会发起调用。不要把这份尚未实机返回的包说成远程执行已经证实，更不要说车皮已经换上。
 
 ## 12. 下一位 AI 的建议接手顺序
 
 1. 先读 `AGENTS.md`、本文，查看分支与工作区状态。不要重跑本机编译或分析。
 2. 先读 `device-evidence-r8.json` 和 `device-evidence-r9.json`：取车已成功；r9 写入成功，但 Pending 未消费、缓存计数一直 1，用户确认画面没变。不要再重复 r6～r9 的同一失败流程。
-3. 最新代码包为 r15。r14 的 getpid 核对没有调用：入口 32 字节写错，而且当时隔离字已经是 1。先读 `device-evidence-r14-exec-mismatch.json` 和 11.26。不要重复 r6～r9 的写入，也不要在 getpid 对上之前调用 PutOnEquipmentByResID。
+3. 最新代码包为 r16。r15 入口字节已经匹配，但隔离字为 1，核对没有调用。先读 `device-evidence-r15-exec-not-ready.json` 和 11.27。不要清隔离字，也不要在 getpid 对上之前调用 PutOnEquipmentByResID。
 4. 在云端分析中以实机 Vehicle vtable `0x10EBC1680` 为依据，不能直接套用角色 F50、调用未经确认的函数或修改能力标志。
 5. 若 r9 主槽 / Pending 写成 3349002、原生 Skin / Real 却一直为 3349001，不能宣称生效；下一步核对真实消费者。静态主程序未证明 Pending 字段单独可驱动完整刷新，不能盲目重复相同请求或套用衣服的 F50。
 6. r9 已写入主槽 ID、主槽计数（递增）和 Vehicle.PendingVehicleSkinID；原生 Skin / Real / Default 只读。保持修改范围，且未恢复的记录会阻止新试换。退出或换车导致归属改变时不能强写旧地址。
