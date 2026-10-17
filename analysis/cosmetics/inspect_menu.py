@@ -23,7 +23,20 @@ lines = []
 for window in windows:
     address = 0x100000000 + int(window['rva'], 16)
     lines.append(f"\n### {window['label']} {address:#x}")
-    lines.extend(disassemble(core, address, int(window['length'], 16)))
+    length = int(window['length'], 16)
+    if window.get('kind') == 'cstring':
+        section = core.cstrings
+        if length > 0x2000 or not (section['address'] <= address and
+                address + length <= section['address'] + section['length']):
+            raise ValueError('Core literal review outside bounded cstring range')
+        offset = core.offset(address)
+        cursor = 0
+        for value in data[offset:offset + length].split(b'\0'):
+            if value:
+                lines.append(f'{address + cursor:#x}: {value.decode("utf-8", errors="replace")!r}')
+            cursor += len(value) + 1
+    else:
+        lines.extend(disassemble(core, address, length))
 (output / 'native-menu.txt').write_text('\n'.join(lines) + '\n')
 symoff, count, stroff, strsize = core.symbols
 names = []
@@ -126,6 +139,12 @@ for segment in core.segments:
                 raise ValueError('Core literal pointer review exceeded bounded output')
 stub_targets = {0x100000000 + int(row['rva'], 16): row['symbol'] for row in records
                 if any(term in row['symbol'] for term in execution_terms)}
+stub_targets.update({0x100000000 + rva: label for rva, label in [
+    (0x38D80, 'Core.current_remote_context_candidate'),
+    (0x398C8, 'Core.remote_name_call_candidate'),
+    (0x39A80, 'Core.remote_function_call_candidate'),
+    (0x3D624, 'Core.remote_objc_call_candidate'),
+]})
 execution_references = []
 code = data[core.text['offset']:core.text['offset'] + (core.text['length'] & ~3)]
 for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
