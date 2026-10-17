@@ -610,6 +610,7 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', main_code)):
     if len(veneer_calls) == 48:
         break
 name_lookup_prefix = data[core.offset(0x100035F08):core.offset(0x100035F08) + 32].hex()
+remote_open_entry_prefix = data[core.offset(0x10003A7D4):core.offset(0x10003A7D4) + 32].hex()
 compare_stub = disassemble(core, 0x100726AC0, 0x10)
 thread_terms = ['GameThread', 'com.apple.main-thread', 'pthread_getname_np', 'ShadowTracker', 'thread_info']
 thread_hits = []
@@ -672,6 +673,7 @@ offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=o
     export_trie_meta=export_meta,
     core_offline=offline_report,
     process_name_lookup_prefix=name_lookup_prefix,
+    remote_open_entry_prefix=remote_open_entry_prefix,
     process_name_compare_stub=compare_stub,
     thread_name_literals=thread_hits,
     interpose_symbols=interpose_symbols,
