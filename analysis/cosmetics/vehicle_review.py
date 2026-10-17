@@ -90,9 +90,21 @@ def main():
             offset = image.offset(address + index * 16)
             name_address, function = image.qword(offset), image.qword(offset + 8)
             name = image.string(name_address)
+            name_encoding = 'utf-8-cstring'
+            if name is None:
+                # Native registration names may be wide literals outside the
+                # __cstring section, as the reviewed class names already are.
+                try:
+                    name_offset = image.offset(name_address)
+                    data = image.data[name_offset:name_offset + 256]
+                    end = next((i for i in range(0, len(data) - 1, 2) if data[i:i + 2] == b'\0\0'), None)
+                    name = data[:end].decode('utf-16-le') if end is not None else None
+                    name_encoding = 'utf-16-le-literal'
+                except (ValueError, UnicodeDecodeError):
+                    name = None
             confirmed = bool(name and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9:]*', name) and image.code_address(function))
             rows.append(dict(name=name, name_address=hex(name_address), code_address=hex(function),
-                             table_index=index, confirmed=confirmed))
+                             table_index=index, confirmed=confirmed, name_encoding=name_encoding))
             if confirmed:
                 windows.append((entry['label'] + ': ' + name, function, 0x300))
         registrations.append(dict(label=entry['label'], address=hex(address), rows=rows))
