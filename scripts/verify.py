@@ -161,6 +161,11 @@ def main(ipa, cosmetics_probe=False):
             assert info["CoreCosmeticsUILocation"] == "native-menu-below-position"
             assert b"CCPCosmeticsController\0" in patch_library
             assert b"_CoreCosmeticsRenderPage" in exported
+            for product_marker in (
+                "装目标车皮".encode(), "恢复原车".encode(), b"menu-explicit-only\0",
+                b"create-and-dispatch-returned\0", b"CAD-x8-tramp\0",
+            ):
+                assert product_marker in patch_library, f"Missing r33 product marker: {product_marker!r}"
         else:
             assert "CoreCosmeticsProbeVersion" not in info and b"CCPCosmeticsController\0" not in patch_library
         assert info["CoreFeatureProfile"] == PROFILE
