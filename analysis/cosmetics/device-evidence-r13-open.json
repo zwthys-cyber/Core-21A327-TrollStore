@@ -1,0 +1,20 @@
+{
+  "captured_at_unix": 1792212957.0428829,
+  "schema_version": 13,
+  "probe_revision": 13,
+  "mode": "game-process-open-attempt",
+  "status": "game-open-attempt-finished",
+  "open_result": "returned-zero",
+  "lookup_result": "located",
+  "process_name": "ShadowTrackerExtra",
+  "session_open_attempted": true,
+  "target_pid_published": true,
+  "remote_ready": true,
+  "fatal_before": 0,
+  "fatal_after": 0,
+  "quarantine_before": 0,
+  "quarantine_after": 0,
+  "quarantine_changed": false,
+  "vehicle_appearance_changes_implemented": false,
+  "interpretation": "The original open entry returned the success code for ShadowTrackerExtra, published a target, and set the remote-ready byte. Fatal and quarantine words stayed 0. No vehicle appearance call was made."
+}

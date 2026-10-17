@@ -670,7 +670,13 @@ r12 报告 `captured_at_unix=1792211047.858849` 仍然是 `lookup_result=located
 
 用户随后在进程真正重启后给出 `captured_at_unix=1792211416.507266`：`lookup_result=located`，隔离字前后都是 0，致命字节是 0，仍未调用打开。名称查找和隔离门闩同时满足。r13 因此增加“尝试打开游戏”，只在隔离字和致命字节都是 0、且名称查找为 located 时调用原入口 `0x3A7D4`。它不改车辆外观。打开失败仍可能把隔离字重新写成 1。
 
-约 22 分钟后的 `captured_at_unix=1792212727.0515571` 仍是 schema 12 的进程名探测，不是 schema 13 的打开尝试。`lookup_result=located`，但隔离字在探测前已经回到 1，探测没有改它。先前的 0 没有保持住。隔离字为 1 时不要调用打开。摘要在 `device-evidence-r12-process-blocked-again.json`。车辆换肤仍未完成。
+约 22 分钟后的 `captured_at_unix=1792212727.0515571` 仍是 schema 12 的进程名探测，不是 schema 13 的打开尝试。`lookup_result=located`，但隔离字在探测前已经回到 1，探测没有改它。先前的 0 没有保持住。隔离字为 1 时不要调用打开。摘要在 `device-evidence-r12-process-blocked-again.json`。
+
+### 11.24 游戏进程远程打开已返回成功码
+
+用户按 r13 点了“尝试打开游戏”。报告 `captured_at_unix=1792212957.0428829`，schema / probe 13，mode 为 `game-process-open-attempt`。`lookup_result=located`，`open_result=returned-zero`，`session_open_attempted=true`，`target_pid_published=true`，`remote_ready=true`。致命字节和隔离字前后都是 0。`vehicle_appearance_changes_implemented=false`。摘要在 `device-evidence-r13-open.json`。
+
+这只证明原入口 `0x3A7D4` 对 `ShadowTrackerExtra` 走完了成功返回，并发布了远程目标。没有调用车辆换肤，也还没有游戏线程调度。不能把这份报告说成车皮已经换上。车辆换肤仍未完成。
 
 ## 12. 下一位 AI 的建议接手顺序
 
