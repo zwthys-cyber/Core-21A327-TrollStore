@@ -150,6 +150,20 @@ def main():
     patched = item_name_maps[vehicle_key]['names']
     if len(baseline) != len(patched):
         raise ValueError('Vehicle Item name map length changed')
+    legacy_package = '9.23美化通用原版.zip'
+    legacy_baseline_key = (legacy_package, 'game_patch_1.38.12.15990.pak')
+    legacy_patch_key = (legacy_package, 'game_patch_1.38.12.16010.pak')
+    if legacy_baseline_key not in item_name_maps or legacy_patch_key not in item_name_maps:
+        raise ValueError('Pinned legacy package Item name maps are missing')
+    legacy_baseline = item_name_maps[legacy_baseline_key]['names']
+    legacy_patch = item_name_maps[legacy_patch_key]['names']
+    legacy_vehicle_rows = [(index, value) for index, value in enumerate(legacy_baseline)
+                           if value.isdecimal() and vehicle_min <= int(value) < vehicle_max]
+    legacy_vehicle_changes = [(index, value, legacy_patch[index])
+                              for index, value in legacy_vehicle_rows
+                              if index >= len(legacy_patch) or legacy_patch[index] != value]
+    if legacy_vehicle_changes:
+        raise ValueError('Uncataloged vehicle remap exists in the legacy package')
     remaps = {}
     for index, (before, after) in enumerate(zip(baseline, patched)):
         if before == after or not before.isdecimal() or not after.isdecimal():
@@ -229,7 +243,13 @@ def main():
             baseline_pak=baseline_key[1], vehicle_pak=vehicle_key[1],
             baseline_uasset_sha256=item_name_maps[baseline_key]['sha256'],
             vehicle_uasset_sha256=item_name_maps[vehicle_key]['sha256'],
-            vehicle_resource_contract_rows=len(reviewed_vehicle_rows)),
+            vehicle_resource_contract_rows=len(reviewed_vehicle_rows),
+            supplied_package_coverage=[
+                dict(archive=legacy_package, baseline_pak=legacy_baseline_key[1],
+                     patch_pak=legacy_patch_key[1],
+                     vehicle_rows_checked=len(legacy_vehicle_rows), vehicle_remaps=0),
+                dict(archive=package_name, baseline_pak=baseline_key[1],
+                     patch_pak=vehicle_key[1], vehicle_remaps=len(vehicle_presets))]),
         presets=vehicle_presets, unresolved=unresolved,
         resolved_pair_count=len(vehicle_presets), unresolved_recipe_count=len(unresolved))
     (args.output / 'selected-vehicle-catalog.json').write_text(

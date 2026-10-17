@@ -23,6 +23,9 @@ class VehicleCatalogTests(unittest.TestCase):
             self.catalog["package_mapping_evidence"]["vehicle_resource_contract_rows"],
             100,
         )
+        coverage = self.catalog["package_mapping_evidence"]["supplied_package_coverage"]
+        self.assertEqual([row["vehicle_remaps"] for row in coverage], [0, 35])
+        self.assertGreater(coverage[0]["vehicle_rows_checked"], 500)
         self.assertEqual(len({row["source_item_id"] for row in presets}), 35)
         self.assertTrue(all(row["source_item_id"] != row["target_item_id"] for row in presets))
 

@@ -8,7 +8,22 @@
     "vehicle_pak": "game_patch_1.38.12.16052.pak",
     "baseline_uasset_sha256": "9ec428fbfec35e64540f33be8f627df7f4d51ed61c400f3a69c8d8c252d998b8",
     "vehicle_uasset_sha256": "7ff5ed819b9d96d27dd0f36167dffa1cdbe65a1909ccb4afb73972e51fd0753d",
-    "vehicle_resource_contract_rows": 384
+    "vehicle_resource_contract_rows": 384,
+    "supplied_package_coverage": [
+      {
+        "archive": "9.23美化通用原版.zip",
+        "baseline_pak": "game_patch_1.38.12.15990.pak",
+        "patch_pak": "game_patch_1.38.12.16010.pak",
+        "vehicle_rows_checked": 620,
+        "vehicle_remaps": 0
+      },
+      {
+        "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "patch_pak": "game_patch_1.38.12.16052.pak",
+        "vehicle_remaps": 35
+      }
+    ]
   },
   "presets": [
     {
