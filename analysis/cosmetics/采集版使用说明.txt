@@ -1,59 +1,27 @@
-Core 远程进程号核对 r16
+Core 远程 GameThread 探测 r27
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
-r9 实机已确认：三字段写入成功，但 Pending 未被消费、游戏缓存计数没有推进，且你确认画面完全没变。
-r10 增加只读的车辆外观实体、已加载物品、模型路径记录和刷新标记采集，供下一步定位。
-本版是诊断包，车辆换肤尚未完成；菜单不再提供已经确认无效的 r9 宾利试换。
+r27 在 r26 成功 getpid 对齐之后，用 Core 0x39A80 按地址远程调用：
+- IsSafeForGameThread（看远程工作线程是不是游戏线程）
+- FTaskGraphInterface::Get（看 TaskGraph 单例是否在）
+并尝试解析当前车辆 Avatar。报告 schema / probe 为 27，增加 game_thread_probe。
 
-r11 在车辆适配页增加“探测游戏进程”。它只调用已有的内核进程名查找，名称固定为 ShadowTrackerExtra，不调用远程打开，不写车辆外观。
-查找结果写进同一份 Core-cosmetics-probe.json：schema_version / probe_revision 为 11，mode 为 process-name-visibility。
-lookup_result 为 located 表示这条查找看见了游戏进程；not-found 或 zero 表示没看见。报告不包含进程地址。
-这不是车辆换肤包。r10 的实体采集仍然保留。
+CreateAndDispatch（game+0x3765444，w2=#4）静态 ABI 已锁定，但 Core 按地址桥只填充远程 x0..x7，
+而该函数还需要 x8 指向 FGraphEventRef 输出。本版因此还不调用 CreateAndDispatch / PutOnEquipmentByResID。
+vehicle_appearance_changes_implemented 仍为 false；画面不变不表示失败以外的“已换肤”。
 
-r16 在报告里增加隔离原因字符串。隔离字已经是 1 时，打开和核对都不会调用，也不会把这个字改成 0。按钮仍是“尝试打开游戏”和“核对远程进程号”。核对只在已经打开成功的会话上调用 Core 自己的 getpid 包装，不调用车辆函数，不改外观。
-报告 schema_version / probe_revision 为 14，mode 为 remote-getpid-check。
-pid_matches_published=true 只表示远程进程号等于已发布目标，不是换肤成功。
-调度失败时 Core 自己可能把隔离字写成 3。入口或会话不满足时不会调用，菜单显示“远程会话未就绪”。
-
-使用方法：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r16.ipa。安装会重启 Core。
-2. 先让游戏留在前台。完全划掉 Core 后再打开它，立刻进入下一步。这一步不用上车。
-3. 原生菜单“位置”下面“美化”→“换分类”到“车辆适配”。
-4. 点一次“尝试打开游戏”。菜单显示“隔离状态挡住打开”就停，先导出报告，不要连点。
-5. 打开调用返回后点一次“核对远程进程号”。
-6. 立刻导出“文件 → 浏览 → 我的 iPhone → Core → Core-cosmetics-probe.json”。不要再点“探测游戏进程”，它会覆盖这份报告。
-
-这次车辆采集如果 Core 当前目标不是 1.38.12 的游戏映像，会在第二次同样失败后停止，不再空转到约 60 秒。
-latest_vehicle.status 会写成 image-pointer-unavailable、image-header-unreadable、image-header-not-macho、image-uuid-mismatch、image-uuid-unreadable 或 image-load-commands-unconfirmed。
-这表示游戏绑定还没对上，不表示没上车。请先重新初始化 Core 的游戏采集，再使用“探测游戏进程”。
-
-隔离字为 0 且进程名可见时，可点“尝试打开游戏”。它调用原入口 0x3A7D4，名称仍是 ShadowTrackerExtra，不修改车辆外观。
-打开失败可能再次把隔离字写成 1。报告 mode 为 game-process-open-attempt，schema / probe 为 13。
-open_result=returned-zero 且 target_pid_published=true 只表示远程打开返回了成功码并发布了目标，不是换肤成功。
-
-历史车辆采集步骤，不是 r14 这一步要做的：
-1. 安装包文件名以当次构建为准。
-2. 按原流程初始化 Core 和游戏采集，坐进上次原车 ID 为 3349001 的四座敞篷车驾驶位。
-3. 原生菜单“位置”下面“美化”→“换分类”到“车辆适配”→“采集车辆”。
-4. 通常取得 8 个车辆样本后自动保存；未就绪时最多约 60 秒，也可手动停止。
+使用方法（大厅即可，先对齐会话）：
+1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r27.ipa。安装会重启 Core。
+2. 先让游戏留在前台。完全划掉 Core 后再打开它。
+3. 点“内核利用”完成初始化；不要点“获取信息”。
+4. 切回游戏前台，再按提示让 Core 进后台以打开游戏会话（与 r26 相同）。
 5. 导出“文件 → 浏览 → 我的 iPhone → Core → Core-cosmetics-probe.json”。
-   报告 schema_version / probe_revision 为 10，mode 为 vehicle-entity-resource-diagnostics。
+6. 看 pid_matches_published、game_thread_probe.status、taskgraph_present、vehicle_resolve。
 
-报告新增 refresh_diagnostics：
-- 实体映射、占用位和原生哈希查找是否一致。
-- 实体类、Slot 0 和所属 Avatar 是否匹配。
-- 当前 LoadedHandle 是否存在、类型能否确认、当前已加载物品 ID。
-- 当前 MeshComponent、MeshAssetPath 和 LastUseMeshPath 是否有记录。
-- RenderDirty / DelayRenderDirty 标记，以及原生缓存计数。
-- 实体 vtable 和处理函数的相对位置。
+game_thread_probe.create_and_dispatch_blocked_by=x8-sret-trampoline 表示入队 ABI 已就绪，只差可执行跳板。
+不要把 is_safe_on_worker=false 当成故障：远程工作线程本来就不应是 GameThread。
 
-资源判断边界：
-这些信息只描述当前实体的加载记录，不扫描游戏磁盘资源，也不主动加载宾利。
-target_resource_availability=not-checked 是明确的未检查状态，不能解释为资源已下载或未下载。
-实体尚不存在或状态读取未确认时，报告会保留具体原因，不把它自动解释成“没有上车”。
-本次车辆采集没有写入、远程函数调用、虚表修改或 PAK 替换。
-
-原有 5 类服装的 143 个候选仍可单项试穿、约 15 秒恢复。
-报告会覆盖同名旧文件，请先保存需要的旧报告。
-报告不导出原始进程地址、PID、物品实例 ID、模型名称或磁盘路径。
-所有编译、自动化回归、二进制分析和签名验证均在 GitHub Actions 执行。
+历史说明摘要：
+r9 写入未驱动刷新；r10 实体只读；r16+ 隔离/打开/getpid；r26 前台打开游戏会话成功。
+车辆换肤仍未完成，直到 PutOn 在 GameThread 上跑通且画面变化。
+所有编译与二进制分析均在 GitHub Actions 执行。

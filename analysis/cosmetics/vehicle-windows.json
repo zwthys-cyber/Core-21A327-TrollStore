@@ -168,5 +168,7 @@
     ,{"label": "dispatch_async stub", "offset": "0xaf26f44", "length": "0x10"}
     ,{"label": "dispatch_sync stub", "offset": "0xaf27100", "length": "0x10"}
     ,{"label": "sample dispatch_async block caller", "offset": "0x357ee6c", "length": "0x200"}
+    ,{"label": "TFunction operator() invoke", "offset": "0x26df230", "length": "0x80"}
+    ,{"label": "TFunction copy into graph task", "offset": "0x2714300", "length": "0x100"}
   ]
 }

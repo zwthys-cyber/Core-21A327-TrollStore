@@ -83,6 +83,22 @@ static const uint8_t RemoteSymbolPrefix[32] = {
     0xfd,0x7b,0x04,0xa9,0xfd,0x03,0x01,0x91,0xf3,0x03,0x03,0xaa,0xf4,0x03,0x02,0xaa
 };
 typedef uint64_t (*CCPRemoteSymbolCall)(const char *, uint64_t, uint64_t, uint64_t *);
+// Core 0x39A80: remote call by address. Eight argument words become the remote
+// x0..x7; two trailing stack pointers receive the remote x0/x1 results.
+static const uint8_t RemoteCallByAddressPrefix[32] = {
+    0x7f,0x23,0x03,0xd5,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
+    0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
+};
+typedef uint64_t (*CCPRemoteCallByAddress)(uint64_t timeout, uint64_t function, const char *label,
+                                           uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
+                                           uint64_t a5, uint64_t a6, uint64_t a7,
+                                           uint64_t *out0, uint64_t *out1);
+enum {
+    CCPGameIsSafeRVA = 0x42c4c9c,
+    CCPGameTaskGraphGetRVA = 0x8af6894,
+    CCPGameCreateAndDispatchRVA = 0x3765444,
+    CCPGamePutOnByResRVA = 0x47f2824
+};
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
     return vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)length,
@@ -123,6 +139,97 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     uint8_t bytes[32];
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
+}
+// After getpid matches the published game session: call IsSafeForGameThread and
+// FTaskGraphInterface::Get by address. CreateAndDispatch needs an x8 sret
+// trampoline in executable game memory; that path is reported but not taken yet.
+static NSDictionary *RunGameThreadProbe(uintptr_t base) {
+    NSMutableDictionary *out = [@{
+        @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
+        @"game_identity": @"not-checked", @"is_safe_call": @"not-called",
+        @"is_safe_on_worker": @NO, @"taskgraph_get_call": @"not-called",
+        @"taskgraph_present": @NO, @"create_and_dispatch_ready": @NO,
+        @"create_and_dispatch_blocked_by": @"not-evaluated",
+        @"vehicle_resolve": @"not-attempted",
+        @"put_on_attempted": @NO, @"vehicle_appearance_changes_implemented": @NO,
+        @"status": @"not-started"
+    } mutableCopy];
+    if (!EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) ||
+        !EntryMatches(base + 0x64D04, ReadPrefix) ||
+        !EntryMatches(base + 0x64C7C, SnapshotPrefix)) {
+        out[@"status"] = @"remote-call-entry-mismatch";
+        return out;
+    }
+    out[@"remote_call_entry"] = @YES;
+    out[@"attempted"] = @YES;
+    CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
+    CCPSnapshot ready = {0};
+    if (!snapshot(&ready) || !ready.words[1]) {
+        out[@"status"] = @"core-session-not-ready";
+        return out;
+    }
+    uint32_t pid = CCPU32((const uint8_t *)&ready + 0x18);
+    uint64_t game = 0, pawn = 0, controller = 0;
+    CCPReader local = {LocalRead, NULL};
+    if (!CCPReadBytes(local, base + 0xC54270 + 0x18, &game, sizeof(game)) || !CCPPointer(game)) {
+        out[@"status"] = @"game-base-unavailable";
+        return out;
+    }
+    out[@"game_base_read"] = @YES;
+    CCPReadBytes(local, base + 0xC54270 + 0x3A0, &pawn, sizeof(pawn));
+    CCPReadBytes(local, base + 0xC54270 + 0x390, &controller, sizeof(controller));
+    CCPTarget target = {.pid = pid, .read = (CCPReadFunction)SignedEntry(base + 0x64D04), .write = NULL};
+    CCPReader remote = {TargetRead, &target};
+    if (!CCPIdentity(remote, game, CCPGameUUID)) {
+        out[@"game_identity"] = @"mismatch";
+        out[@"status"] = @"game-identity-mismatch";
+        return out;
+    }
+    out[@"game_identity"] = @"matched";
+    CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
+    uint64_t safe = 0, unused = 0;
+    uint64_t safeRet = remoteCall(10000, game + CCPGameIsSafeRVA, "IsSafeForGameThread",
+                                  0, 0, 0, 0, 0, 0, 0, 0, &safe, &unused);
+    if ((uint32_t)safeRet == 1) {
+        out[@"is_safe_call"] = @"returned-success";
+        out[@"is_safe_on_worker"] = @(safe != 0);
+    } else if ((uint32_t)safeRet == 0) out[@"is_safe_call"] = @"returned-zero";
+    else out[@"is_safe_call"] = @"returned-other";
+    uint64_t graph = 0;
+    uint64_t getRet = remoteCall(10000, game + CCPGameTaskGraphGetRVA, "FTaskGraphInterface::Get",
+                                 0, 0, 0, 0, 0, 0, 0, 0, &graph, &unused);
+    if ((uint32_t)getRet == 1) {
+        out[@"taskgraph_get_call"] = @"returned-success";
+        out[@"taskgraph_present"] = @(graph != 0);
+    } else if ((uint32_t)getRet == 0) out[@"taskgraph_get_call"] = @"returned-zero";
+    else out[@"taskgraph_get_call"] = @"returned-other";
+    // CreateAndDispatch (game+0x3765444) needs x8 = &FGraphEventRef. Core's
+    // by-address bridge only loads remote x0..x7, so a small executable
+    // trampoline (mov x8,x3; br CreateAndDispatch) is still required.
+    BOOL graphOK = (uint32_t)getRet == 1 && graph != 0;
+    out[@"create_and_dispatch_ready"] = @(graphOK);
+    out[@"create_and_dispatch_blocked_by"] = graphOK ? @"x8-sret-trampoline" : @"taskgraph-unavailable";
+    out[@"create_and_dispatch_rva"] = @"0x3765444";
+    out[@"put_on_rva"] = @"0x47f2824";
+    if (CCPPointer(pawn) && CCPPointer(controller)) {
+        CCPVehicleSample sample = {0};
+        uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0;
+        out[@"vehicle_resolve"] = @"attempted";
+        if (CCPVehicleSource(remote, game, pawn, controller, &actor, &user, &vehicle, &sample) &&
+            CCPVehicleOwner(remote, vehicle, &avatar)) {
+            out[@"vehicle_resolve"] = @"avatar-ready";
+            out[@"vehicle_skin_id"] = @(sample.skin);
+            out[@"source_skin_is_trial"] = @(sample.skin == 3349001);
+        } else if (sample.status == CCPVehicleUnavailable) {
+            out[@"vehicle_resolve"] = @"no-current-vehicle";
+        } else {
+            out[@"vehicle_resolve"] = @"unconfirmed";
+        }
+    } else {
+        out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
+    }
+    out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
+    return out;
 }
 static NSArray *ItemsJSON(const CCPItems *items) {
     NSMutableArray *result = [NSMutableArray arrayWithCapacity:items->count];
@@ -634,7 +741,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @26, @"probe_revision": @26,
+    self.trialReport = [@{@"schema_version": @27, @"probe_revision": @27,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
         @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
@@ -779,13 +886,20 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
-        self.trialReport = [@{@"schema_version": @26, @"probe_revision": @26,
+        NSDictionary *gameThread = pidMatches ? RunGameThreadProbe(base)
+            : @{@"attempted": @NO, @"status": @"skipped-pid-mismatch"};
+        if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
+            status = @"existing-game-session-thread-ready";
+        else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
+            status = @"existing-game-session-thread-partial";
+        self.trialReport = [@{@"schema_version": @27, @"probe_revision": @27,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
             @"wait_blocker": waitBlocker, @"app_state_at_open": openAppState,
             @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
             @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
+            @"game_thread_probe": gameThread,
             @"vehicle_appearance_changes_implemented": @NO,
             @"target_pid_published": @(pidRead && targetPid != 0),
             @"remote_port_present": @(portRead && remotePort != 0),

@@ -403,13 +403,65 @@ def main():
                             address=hex(pc - back * 4),
                             register=prior & 31,
                             value=hex((prior >> 5) & 0xFFFF)))
+                # Last write to x8 before the call (sret for CreateAndDispatch).
+                x8_setup = None
+                for back in range(1, 16):
+                    prior_offset = (index - back) * 4
+                    if prior_offset < 0:
+                        break
+                    prior = struct.unpack_from('<I', code, prior_offset)[0]
+                    # mov x8, xN  => ORR Xd=8, XZR, Xm=N
+                    if prior & 0xFFE0FFE0 == 0xAA0003E0 and (prior & 31) == 8:
+                        x8_setup = dict(address=hex(pc - back * 4), kind='mov-xn',
+                                        source_register=(prior >> 16) & 31)
+                        break
+                    # mov x8, sp / add x8, sp, #imm
+                    if prior == 0x910003E8:
+                        x8_setup = dict(address=hex(pc - back * 4), kind='mov-sp')
+                        break
+                    if prior & 0xFFC003FF == 0x910003E8:
+                        x8_setup = dict(address=hex(pc - back * 4), kind='add-sp',
+                                        imm=hex((prior >> 10) & 4095))
+                        break
                 global_references.append(dict(address=hex(pc), target=hex(target),
-                                              nearby_immediates=nearby))
+                                              nearby_immediates=nearby, x8_setup=x8_setup))
                 shown = call_target_window_counts.get(target, 0)
                 if shown < 24:
                     call_target_window_counts[target] = shown + 1
                     windows.append(('vehicle native update caller', pc - 0x100, 0x300))
+    # Hunt executable gadgets usable as Core 0x39A80 trampolines for CAD's x8 sret:
+    # mov x8, xN ; b/bl CreateAndDispatch  or  mov x8, xN ; br xM
+    cad = 0x100000000 + 0x3765444
+    trampoline_gadgets = []
+    for index in range(len(code) // 4 - 1):
+        word = struct.unpack_from('<I', code, index * 4)[0]
+        if word & 0xFFE0FFE0 != 0xAA0003E0 or (word & 31) != 8:
+            continue
+        source = (word >> 16) & 31
+        if source > 7:
+            continue
+        pc = image.text['address'] + index * 4
+        nxt = struct.unpack_from('<I', code, (index + 1) * 4)[0]
+        entry = dict(address=hex(pc), mov='mov x8, x%d' % source, next=hex(nxt))
+        if nxt & 0xFC000000 in (0x14000000, 0x94000000):
+            relative = nxt & 0x3FFFFFF
+            if relative & (1 << 25):
+                relative -= 1 << 26
+            target = pc + 4 + relative * 4
+            if target == cad:
+                entry.update(kind='mov-x8-branch-cad', branch='b' if nxt & 0xFC000000 == 0x14000000 else 'bl')
+                trampoline_gadgets.append(entry)
+                if len(trampoline_gadgets) <= 16:
+                    windows.append(('CAD x8 trampoline gadget', pc, 0x20))
+        elif nxt & 0xFFFFFC1F == 0xD61F0000:
+            entry.update(kind='mov-x8-br', branch_register=(nxt >> 5) & 31)
+            trampoline_gadgets.append(entry)
+            if len(trampoline_gadgets) <= 16:
+                windows.append(('mov-x8 br trampoline gadget', pc, 0x20))
+        if len(trampoline_gadgets) >= 64:
+            break
     report['global_references'] = global_references
+    report['cad_x8_trampoline_gadgets'] = trampoline_gadgets
     report['scheduler_reference_counts'] = dict(
         adrp_add=sum(1 for row in global_references if row.get('kind') == 'adrp-add'),
         adrp_ldr=sum(1 for row in global_references if row.get('kind') == 'adrp-ldr'),
@@ -423,6 +475,10 @@ def main():
         create_and_dispatch_callers=sum(1 for row in global_references if row.get('target') == '0x103765444'),
         scheduler_stub_callers=sum(1 for row in global_references
                                    if any(row.get('target') == stub['address'] for stub in scheduler_stubs)),
+        cad_x8_trampoline_gadgets=len(trampoline_gadgets),
+        cad_callers_with_x8_from_arg=sum(
+            1 for row in global_references
+            if row.get('target') == '0x103765444' and (row.get('x8_setup') or {}).get('kind') == 'mov-xn'),
     )
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))

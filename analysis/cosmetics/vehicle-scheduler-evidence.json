@@ -67,9 +67,15 @@
     "inputs": "x0 = VehicleAvatarComponent, x1 = resource id (converted to definition/handle inside)",
     "requirement": "Must run on GameThread; Core remote worker must enqueue, not call PutOn directly"
   },
-  "next_r27": [
-    "Disassemble CreateAndDispatch internals 0x103769108 and a GameThread invoker thunk to confirm one-word TFunction + w2=4",
-    "Wrap Core 0x39A80 remote-call-by-address for IsSafeForGameThread then CreateAndDispatch",
-    "Only after a successful GameThread enqueue diagnostic, call PutOnEquipmentByResID(3349002)"
-  ]
+  "r27_probe": {
+    "revision": 27,
+    "implemented": [
+      "Core 0x39A80 remote-call-by-address after getpid match",
+      "IsSafeForGameThread (game+0x42c4c9c) on the remote worker",
+      "FTaskGraphInterface::Get (game+0x8af6894)",
+      "Vehicle avatar resolve when pawn/controller are published"
+    ],
+    "blocked": "CreateAndDispatch needs x8=&FGraphEventRef; Core's by-address bridge only sets remote x0..x7.",
+    "next": "CI vehicle_review scans for mov x8,xN ; b/bl CreateAndDispatch (or br) gadgets. Preferred: mov x8,x3; b CAD so 0x39A80 can pass sret in a3. Then enqueue PutOnEquipmentByResID(3349002)."
+  }
 }
