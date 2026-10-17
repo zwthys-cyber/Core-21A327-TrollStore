@@ -666,7 +666,9 @@ r12 把这个总状态拆成指针不可用、映像头读不到、不是 Mach-O
 
 隔离字 1 由打开函数写入。`0x3B0CC` 使用 `bootstrap-first-exception-timeout`，`0x3B10C` 落入同一条 `mov w0, #1`，字符串是 `bootstrap-unexpected-first-exception`。单凭数值 1 不能区分这两条。打开入口对任何非 0 隔离字直接返回失败；官方 teardown 只在隔离字恰好为 2 时清零。不要从适配库把这个字改成 0。
 
-r12 报告 `captured_at_unix=1792211047.858849` 仍然是 `lookup_result=located`，隔离字前后仍是 1，致命字节仍是 0，`session_open_attempted=false`。换包后这个字还在，说明当前 Core 进程没有重启，或者启动时又走了一次首次异常失败。`launchd` 会话门的直接调用在 `0x5D18`，它先要求 `0x4E378` 非 0，不是无条件构造函数。游戏进程仍然可见，但隔离字回到 0 之前不能调用 `CoreRemoteOpen`。摘要在 `device-evidence-r12-process.json`。车辆换肤仍未完成。
+r12 报告 `captured_at_unix=1792211047.858849` 仍然是 `lookup_result=located`，隔离字前后仍是 1，致命字节仍是 0，`session_open_attempted=false`。换包后这个字还在，说明当时的 Core 进程没有退出，或者启动时又走了一次首次异常失败。`launchd` 会话门的直接调用在 `0x5D18`，它先要求 `0x4E378` 非 0，不是无条件构造函数。
+
+用户随后在进程真正重启后给出 `captured_at_unix=1792211416.507266`：`lookup_result=located`，隔离字前后都是 0，致命字节是 0，仍未调用打开。名称查找和隔离门闩同时满足。r13 因此增加“尝试打开游戏”，只在隔离字和致命字节都是 0、且名称查找为 located 时调用原入口 `0x3A7D4`。它不改车辆外观。打开失败仍可能把隔离字重新写成 1。车辆换肤仍未完成。
 
 ## 12. 下一位 AI 的建议接手顺序
 
