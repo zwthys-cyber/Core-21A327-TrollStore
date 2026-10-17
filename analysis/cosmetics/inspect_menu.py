@@ -160,6 +160,7 @@ stub_targets.update({0x100000000 + rva: label for rva, label in [
     (0x39F00, 'Core.remote_session_teardown'),
     (0x3B7F4, 'Core.remote_thread_state_writer'),
     (0x2E76C, 'Core.launchd_session_wrapper'),
+    (0x5625C, 'Core.springboard_session_attempt'),
 ]})
 execution_references = []
 process_reference_count = 0
@@ -227,15 +228,16 @@ veneer_segment = next((segment['name'] for segment in core.segments
     if segment['address'] <= veneer < segment['address'] + segment['virtual_size']), None)
 veneer_offset = next((segment['offset'] + (veneer - segment['address']) for segment in core.segments
     if segment['address'] <= veneer < segment['address'] + segment['length']), None)
-veneer_raw = data[veneer_offset:veneer_offset + 0x40] if veneer_offset is not None else b''
+veneer_raw = data[veneer_offset:veneer_offset + 0x100] if veneer_offset is not None else b''
 bootstrap_veneer = dict(address=hex(veneer), inside_text=core.code_address(veneer),
     segment=veneer_segment, section=veneer_section, raw_hex=veneer_raw.hex())
 if bootstrap_veneer['inside_text']:
     execution_lines += ['\n### Core remote bootstrap veneer 0x100003800'] + bounded_text(veneer, 0, 0x180)
 elif veneer_offset is not None:
-    execution_lines += ['\n### Core remote bootstrap veneer outside text 0x100003800'] + disassemble(core, veneer, 0x40)
+    execution_lines += ['\n### Core remote bootstrap veneer outside text 0x100003800'] + disassemble(core, veneer, 0x100)
 session_labels = {'Core.remote_bootstrap_veneer', 'Core.remote_bootstrap_entry', 'Core.remote_bootstrap_body',
-    'Core.remote_session_teardown', 'Core.remote_thread_state_writer', 'Core.launchd_session_wrapper'}
+    'Core.remote_session_teardown', 'Core.remote_thread_state_writer', 'Core.launchd_session_wrapper',
+    'Core.springboard_session_attempt'}
 session_rows = [row for row in execution_references if row['label'] in session_labels][:40]
 for row in session_rows:
     address = int(row['address'], 16)
