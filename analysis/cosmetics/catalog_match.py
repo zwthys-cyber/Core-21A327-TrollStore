@@ -160,6 +160,10 @@ def main():
     rows_by_id = defaultdict(list)
     for row in rows:
         rows_by_id[row['item_id']].append(row)
+    reviewed_vehicle_rows = [row for row in rows if vehicle_min <= row['item_id'] < vehicle_max]
+    if not reviewed_vehicle_rows or any(
+            row['resource_id'] != row['item_id'] * 100 for row in reviewed_vehicle_rows):
+        raise ValueError('Pinned catalog does not support the vehicle item/resource contract')
     vehicle_recipes = []
     for recipe in recipes:
         if recipe['archive'] != package_name:
@@ -224,7 +228,8 @@ def main():
         package_mapping_evidence=dict(
             baseline_pak=baseline_key[1], vehicle_pak=vehicle_key[1],
             baseline_uasset_sha256=item_name_maps[baseline_key]['sha256'],
-            vehicle_uasset_sha256=item_name_maps[vehicle_key]['sha256']),
+            vehicle_uasset_sha256=item_name_maps[vehicle_key]['sha256'],
+            vehicle_resource_contract_rows=len(reviewed_vehicle_rows)),
         presets=vehicle_presets, unresolved=unresolved,
         resolved_pair_count=len(vehicle_presets), unresolved_recipe_count=len(unresolved))
     (args.output / 'selected-vehicle-catalog.json').write_text(
