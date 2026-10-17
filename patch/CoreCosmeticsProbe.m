@@ -59,6 +59,11 @@ static const uint8_t ProcessLookupPrefix[32] = {
     0xfd,0x7b,0x03,0xa9,0xfd,0xc3,0x00,0x91,0xf3,0x03,0x00,0xaa,0x83,0xff,0xff,0x97
 };
 typedef uint64_t (*CCPProcessLookup)(const char *);
+static const uint8_t ProcessLookupByPidPrefix[32] = {
+    0x7f,0x23,0x03,0xd5,0xf6,0x57,0xbd,0xa9,0xf4,0x4f,0x01,0xa9,0xfd,0x7b,0x02,0xa9,
+    0xfd,0x83,0x00,0x91,0xf3,0x03,0x00,0xaa,0xae,0xff,0xff,0x97,0xf4,0x03,0x00,0xaa
+};
+typedef uint64_t (*CCPProcessLookupByPid)(uint32_t);
 static const uint8_t RemoteOpenPrefix[32] = {
     0x0b,0x24,0xff,0x17,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
     0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
@@ -624,7 +629,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @24, @"probe_revision": @24,
+    self.trialReport = [@{@"schema_version": @25, @"probe_revision": @25,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
         @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
@@ -651,6 +656,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
         BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
+            EntryMatches(base + 0x35E60, ProcessLookupByPidPrefix) &&
             EntryMatches(base + 0x64C7C, SnapshotPrefix) && EntryMatches(base + 0x3A7D4, RemoteOpenPrefix);
         uint8_t seenEntry[32] = {0};
         BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
@@ -682,11 +688,32 @@ static NSDictionary *VehicleTrialObservation(void) {
                 status = @"open-blocked-by-recorded-fault";
                 break;
             }
-            // A published port here belongs to Core's own SpringBoard session.
-            // Opening the game while it is held returns immediately, so wait for
-            // that session to release the port and then open before launchd does.
-            (void)pidRead; (void)readyRead; (void)pid; (void)ready;
+            // SpringBoard publishes a session first. The cosmetics binary
+            // retargets Core's later gated launchd open to the game and keeps
+            // that successful session alive. Compare the process object found
+            // by name with the object found from the published PID so the
+            // SpringBoard session can never be mistaken for the game again.
+            (void)readyRead; (void)ready;
             if (portRead && port != 0) {
+                uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+                uint64_t published = (pidRead && pid != 0)
+                    ? ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid) : 0;
+                if (named != 0 && named != ~(uint64_t)0 && named == published && entry) {
+                    lookup = @"located";
+                    execCalled = YES;
+                    uint64_t output = 0;
+                    uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))(
+                        "getpid", 0, 0, &output);
+                    uint32_t code = (uint32_t)returned;
+                    if (code == 1) {
+                        callResult = @"returned-success";
+                        pidMatches = output == (uint64_t)pid;
+                    } else if (code == 0) callResult = @"returned-zero";
+                    else callResult = @"returned-other";
+                    waitBlocker = @"game-session-published";
+                    status = pidMatches ? @"existing-game-session" : @"game-session-check-failed";
+                    break;
+                }
                 waitBlocker = @"remote-port-in-progress";
                 usleep(20000);
                 continue;
@@ -739,7 +766,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
         if (!called && [waitBlocker isEqualToString:@"snapshot-not-ready"]) status = @"kernel-snapshot-not-ready";
-        self.trialReport = [@{@"schema_version": @24, @"probe_revision": @24,
+        self.trialReport = [@{@"schema_version": @25, @"probe_revision": @25,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
