@@ -14,7 +14,7 @@
     {"label": "master vehicle getter return metadata", "start": "0x10fc54000", "end": "0x10fc55000"}
   ],
   "pointer_tables": [
-    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0x9c0", "0xa18", "0xa58", "0xc68", "0xd18"]},
+    {"label": "vehicle avatar vtable", "address": "0x10e6d6a38", "length": "0xd40", "disassemble_slots": ["0x4c0", "0x820", "0x968", "0x9c0", "0xa18", "0xa58", "0xac0", "0xc30", "0xc68", "0xd18"]},
     {"label": "master vehicle avatar entity vtable", "address": "0x10e67a9b8", "length": "0x700", "disassemble_slots": ["0x3a0", "0x3a8", "0x3c0", "0x478", "0x488", "0x498", "0x4e0"]},
     {"label": "device r8 vehicle vtable", "address": "0x10ebc1680", "length": "0x2000", "disassemble_slots": ["0x4c0", "0x8b8"]},
     {"label": "device r7 local character vtable", "address": "0x10e7b1108", "length": "0x1600", "disassemble_slots": ["0x8b8", "0x1528"]}
@@ -96,5 +96,6 @@
     ,{"label": "native method registration record iterator", "offset": "0x8cd5a0c", "length": "0x600"}
     ,{"label": "vehicle entity renderer and post-render", "offset": "0x480a42c", "length": "0xa00"}
     ,{"label": "vehicle avatar resource completion dispatcher", "offset": "0x47eb43c", "length": "0x1000"}
+    ,{"label": "vehicle skin trigger native implementation", "offset": "0x47f3104", "length": "0x500"}
   ]
 }
