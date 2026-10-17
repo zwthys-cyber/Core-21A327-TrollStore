@@ -271,8 +271,8 @@ static void AttemptPutOnEnqueue(NSMutableDictionary *out, uintptr_t base, uint64
     out[@"status"] = @"put-on-enqueued";
 }
 // After getpid matches the published game session: call IsSafeForGameThread and
-// FTaskGraphInterface::Get by address. When avatar is the trial Bentley, install
-// an RX CAD x8 trampoline via calloc/mprotect and enqueue PutOn 3349002.
+// FTaskGraphInterface::Get by address. When any current vehicle Avatar is ready
+// and skin is not already 3349002, install RX CAD trampoline and enqueue PutOn.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
@@ -292,15 +292,36 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     }
     out[@"remote_call_entry"] = @YES;
     out[@"attempted"] = @YES;
+    CCPReader local = {LocalRead, NULL};
+    // r26/r29 device path publishes pid/ready/port without filling snapshot words[1].
+    // Prefer the same published globals that already validated getpid.
+    uint32_t publishedPid = 0, remoteReady = 0;
+    uint64_t remotePort = 0;
+    BOOL pidOK = CCPReadBytes(local, base + 0xC53460, &publishedPid, sizeof(publishedPid)) && publishedPid != 0;
+    BOOL readyOK = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady)) && remoteReady != 0;
+    BOOL portOK = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort)) && remotePort != 0;
     CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
-    CCPSnapshot ready = {0};
-    if (!snapshot(&ready) || !ready.words[1]) {
+    CCPSnapshot snap = {0};
+    BOOL snapOK = snapshot(&snap) && snap.words[1] != 0;
+    uint32_t pid = 0;
+    if (snapOK) {
+        pid = CCPU32((const uint8_t *)&snap + 0x18);
+        out[@"session_source"] = @"snapshot";
+    }
+    if ((!snapOK || pid == 0) && pidOK && readyOK && portOK) {
+        pid = publishedPid;
+        out[@"session_source"] = snapOK ? @"published-pid-override" : @"published-globals";
+    }
+    if (pid == 0) {
         out[@"status"] = @"core-session-not-ready";
+        out[@"snapshot_ready"] = @(snapOK);
+        out[@"published_pid"] = @(pidOK);
+        out[@"published_ready"] = @(readyOK);
+        out[@"published_port"] = @(portOK);
         return out;
     }
-    uint32_t pid = CCPU32((const uint8_t *)&ready + 0x18);
+    out[@"session_pid"] = @(pid);
     uint64_t game = 0, pawn = 0, controller = 0;
-    CCPReader local = {LocalRead, NULL};
     if (!CCPReadBytes(local, base + 0xC54270 + 0x18, &game, sizeof(game)) || !CCPPointer(game)) {
         out[@"status"] = @"game-base-unavailable";
         return out;
@@ -1034,7 +1055,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @29, @"probe_revision": @29,
+        self.trialReport = [@{@"schema_version": @30, @"probe_revision": @30,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
