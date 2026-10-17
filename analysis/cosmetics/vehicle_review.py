@@ -103,22 +103,64 @@ def main():
                 raise ValueError('Scheduler string discovery exceeded its bound')
         cursor = end + 1
     scheduler_symbols = []
+    symbol_names = []
     if image.symbols:
         symoff, count, stroff, strsize = image.symbols
         for index in range(count):
             name_offset, kind, symbol_section, desc, value = struct.unpack_from(
                 '<IBBHQ', image.data, symoff + index * 16)
             if name_offset >= strsize:
+                symbol_names.append('')
                 continue
             end = image.data.find(b'\0', stroff + name_offset, stroff + strsize)
             name = image.data[stroff + name_offset:end]
-            if any(term.lower() in name.lower() for term in scheduler_terms):
-                scheduler_symbols.append(dict(name=name.decode('utf-8', errors='replace'),
-                                              kind=kind, section=symbol_section, value=hex(value)))
+            decoded = name.decode('utf-8', errors='replace')
+            symbol_names.append(decoded)
+            if any(term.lower() in decoded.lower() for term in scheduler_terms):
+                scheduler_symbols.append(dict(name=decoded, kind=kind, section=symbol_section,
+                                              value=hex(value)))
                 if len(scheduler_symbols) > 256:
                     raise ValueError('Scheduler symbol discovery exceeded its bound')
     report['scheduler_strings'] = scheduler_strings
     report['scheduler_symbols'] = scheduler_symbols
+    # Resolve imported scheduler stubs (__dispatch_async / __dispatch_main_q / ...)
+    # the same way Core menu inspection maps __stubs through the indirect symbol table.
+    scheduler_stubs = []
+    indirect = None
+    stub_sections = []
+    position = 32
+    command_end = 32 + image.u32(20)
+    for _ in range(image.u32(16)):
+        kind, size = struct.unpack_from('<II', image.data, position)
+        if kind == 0xB:
+            indirect = struct.unpack_from('<II', image.data, position + 56)
+        if kind == 0x19:
+            for index in range(image.u32(position + 64)):
+                start = position + 72 + index * 80
+                section_name = image.data[start:start + 16].split(b'\0')[0].decode()
+                section_address, section_length = struct.unpack_from('<QQ', image.data, start + 32)
+                reserved1, reserved2 = struct.unpack_from('<II', image.data, start + 68)
+                if section_name in ('__stubs', '__auth_stubs') and reserved2:
+                    stub_sections.append((section_name, section_address, section_length,
+                                         reserved1, reserved2))
+        position += size
+        if position > command_end:
+            break
+    if indirect and symbol_names:
+        for section_name, section_address, section_length, reserved1, reserved2 in stub_sections:
+            for index in range(section_length // reserved2):
+                symbol_index = image.u32(indirect[0] + (reserved1 + index) * 4)
+                if symbol_index >= len(symbol_names):
+                    continue
+                symbol = symbol_names[symbol_index]
+                if any(term.lower() in symbol.lower() for term in scheduler_terms):
+                    stub_address = section_address + index * reserved2
+                    scheduler_stubs.append(dict(
+                        symbol=symbol, address=hex(stub_address), section=section_name,
+                        stub_size=reserved2))
+                    if len(scheduler_stubs) > 64:
+                        raise ValueError('Scheduler stub discovery exceeded its bound')
+    report['scheduler_stubs'] = scheduler_stubs
     scheduler_addresses = {int(row['address'], 16) for row in scheduler_strings}
     scheduler_pointer_slots = []
     for literal in scheduler_addresses:
@@ -200,6 +242,9 @@ def main():
     wanted = {int(value, 16) for value in config.get('global_field_loads', [])}
     field_constants = {int(value, 16) for value in config.get('global_field_constants', [])}
     call_targets = {0x100000000 + int(value, 16) for value in config.get('call_targets', [])}
+    for stub in scheduler_stubs:
+        call_targets.add(int(stub['address'], 16))
+    call_target_window_counts = {}
     game_thread_pages = {}
     for entry in config.get('game_thread_globals', []):
         page = int(entry['page'], 16)
@@ -343,8 +388,26 @@ def main():
                 relative -= 1 << 26
             target = pc + relative * 4
             if target in call_targets:
-                global_references.append(dict(address=hex(pc), target=hex(target)))
-                windows.append(('vehicle native update caller', pc - 0x100, 0x300))
+                # Capture nearby immediates so GameThread (#4 / #0x104) vs AnyThread
+                # (#0xff / #0x6ff) CreateAndDispatch samples can be sorted without a
+                # second full-binary pass.
+                nearby = []
+                for back in range(1, 12):
+                    prior_offset = (index - back) * 4
+                    if prior_offset < 0:
+                        break
+                    prior = struct.unpack_from('<I', code, prior_offset)[0]
+                    if prior & 0x7F800000 == 0x52800000 and ((prior >> 21) & 3) == 0:
+                        nearby.append(dict(
+                            address=hex(pc - back * 4),
+                            register=prior & 31,
+                            value=hex((prior >> 5) & 0xFFFF)))
+                global_references.append(dict(address=hex(pc), target=hex(target),
+                                              nearby_immediates=nearby))
+                shown = call_target_window_counts.get(target, 0)
+                if shown < 24:
+                    call_target_window_counts[target] = shown + 1
+                    windows.append(('vehicle native update caller', pc - 0x100, 0x300))
     report['global_references'] = global_references
     report['scheduler_reference_counts'] = dict(
         adrp_add=sum(1 for row in global_references if row.get('kind') == 'adrp-add'),
@@ -356,7 +419,9 @@ def main():
         taskgraph_get_callers=sum(1 for row in global_references if row.get('target') == '0x108af6894'),
         create_task_callers=sum(1 for row in global_references if row.get('target') == '0x1035e3c10'),
         dispatch_when_ready_callers=sum(1 for row in global_references if row.get('target') == '0x1035e3d50'),
-        queue_task_callers=sum(1 for row in global_references if row.get('target') == '0x103568f88'),
+        create_and_dispatch_callers=sum(1 for row in global_references if row.get('target') == '0x103765444'),
+        scheduler_stub_callers=sum(1 for row in global_references
+                                   if any(row.get('target') == stub['address'] for stub in scheduler_stubs)),
     )
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))

@@ -1,0 +1,51 @@
+{
+  "status": "static-scheduler-partial",
+  "runtime_validated": false,
+  "game_thread": {
+    "id_global": "0x11114c5ec",
+    "initialized_global": "0x11114c600",
+    "named_thread_index": 4,
+    "is_safe_native": "0x1042c4c9c",
+    "is_safe_behavior": "If GIsGameThreadIdInitialized is unset returns 1; otherwise compares current thread id helpers 0x10af28744/0x10af2866c with GGameThreadId"
+  },
+  "completion_event_path": {
+    "create_task": "0x1035e3c10",
+    "construct": "0x1035e3d38",
+    "get": "0x108af6894",
+    "dispatch_when_ready": "0x1035e3d50",
+    "singleton_slot": "0x111faae30",
+    "task_vtable": "0x10e2dbc10",
+    "sample_sequence": "CreateTask(prereq=null, thread=4) -> Construct(priority/flags=2|3) -> Get() -> DispatchWhenReady(event, flags=0x104)",
+    "caveat": "Installs a completion/event task vtable. Observed callers synchronize existing work onto GameThread; they do not accept an arbitrary callable for PutOnEquipmentByResID."
+  },
+  "function_task_candidate": {
+    "create_and_dispatch": "0x103765444",
+    "observed_inputs": "x0 = pointer to callable/TFunction-like object, x1 = prerequisites (often null), w2 = desired thread/flags, x8 = FGraphEventRef out",
+    "sample_callers": [
+      {
+        "address": "0x1033cb8cc",
+        "callable": "stack word = code pointer 0x1033f3578",
+        "w2": "0x6ff",
+        "note": "Looks like AnyThread-with-flags rather than GameThread (#4)"
+      },
+      {
+        "address": "0x10a4ef578",
+        "callable": "built object at sp+0x10 via helper 0x10a4ef624",
+        "w2": "0xff",
+        "note": "Matches AnyThread (0xff); not GameThread"
+      }
+    ],
+    "next": "Enumerate all CreateAndDispatch callers and keep only those whose nearby immediates encode GameThread (#4 / #0x104) before implementing r27 remote enqueue"
+  },
+  "libdispatch": {
+    "imported_symbols": ["__dispatch_main_q", "_dispatch_async", "_dispatch_sync"],
+    "note": "Present as undefined imports; stub RVAs and caller counts are collected by the next vehicle_review pass. Useful only if GameThread is the process main queue on this build."
+  },
+  "put_on": {
+    "native": "0x1047f2824",
+    "vtable_slot": "0x968",
+    "wrapper": "0x10723c67c",
+    "inputs": "x0 = VehicleAvatarComponent, x1 = resource id (converted to definition/handle inside)",
+    "requirement": "Must run on GameThread; Core remote worker must enqueue, not call PutOn directly"
+  }
+}

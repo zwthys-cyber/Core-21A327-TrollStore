@@ -53,7 +53,7 @@
       }
     }
   ],
-  "call_targets": ["0x42c4c9c", "0x7522a68", "0x35e3c10", "0x35e3d38", "0x35e3d50", "0x35e3f2c", "0x3568f88", "0x3568fb4", "0x8af6894", "0x8af6900", "0x8af69f4", "0x8afeb0c", "0x47f2824"],
+  "call_targets": ["0x42c4c9c", "0x7522a68", "0x35e3c10", "0x35e3d38", "0x35e3d50", "0x35e3f2c", "0x8af6894", "0x8af6900", "0x8af69f4", "0x8afeb0c", "0x3765444", "0x47f2824"],
   "native_registration_tables": [
     {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
     {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
@@ -145,11 +145,16 @@
     ,{"label": "TaskGraph task setup/dispatch candidate", "offset": "0x8aff814", "length": "0x300"}
     ,{"label": "TaskGraph ConstructFromCreateTask", "offset": "0x35e3d38", "length": "0x200"}
     ,{"label": "TaskGraph DispatchWhenReady wrapper", "offset": "0x35e3d50", "length": "0x200"}
-    ,{"label": "TaskGraph QueueTask final", "offset": "0x3568f88", "length": "0x200"}
     ,{"label": "FTaskGraphInterface Get", "offset": "0x8af6894", "length": "0x80"}
     ,{"label": "CreateGraphEvent", "offset": "0x8af6900", "length": "0x80"}
     ,{"label": "TaskGraph named-thread wake", "offset": "0x8afeb0c", "length": "0x200"}
     ,{"label": "sample CreateTask caller engine init", "offset": "0x35dd6c0", "length": "0x100"}
     ,{"label": "sample CreateTask caller render flush", "offset": "0xa2cc860", "length": "0x100"}
+    ,{"label": "FFunctionGraphTask CreateAndDispatch candidate", "offset": "0x3765444", "length": "0x300"}
+    ,{"label": "sample function-task body from CreateAndDispatch", "offset": "0x33f3578", "length": "0x100"}
+    ,{"label": "sample CreateAndDispatch caller with code pointer", "offset": "0x33cb8a8", "length": "0x100"}
+    ,{"label": "sample CreateAndDispatch caller with built object", "offset": "0xa4ef550", "length": "0x100"}
+    ,{"label": "sample TFunction/delegate builder before CreateAndDispatch", "offset": "0xa4ef624", "length": "0x200"}
+    ,{"label": "TaskGraphInterface vtable Dispatch slot helper", "offset": "0x35e3f00", "length": "0x40"}
   ]
 }
