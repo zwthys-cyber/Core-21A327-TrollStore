@@ -1,27 +1,30 @@
-Core 远程 GameThread 探测 r27
+Core 远程 GameThread 入队试换 r28
 适用：iOS 17.0 / 21A327、巨魔、和平精英 1.38.12（15915）。
 
-r27 在 r26 成功 getpid 对齐之后，用 Core 0x39A80 按地址远程调用：
-- IsSafeForGameThread（看远程工作线程是不是游戏线程）
-- FTaskGraphInterface::Get（看 TaskGraph 单例是否在）
-并尝试解析当前车辆 Avatar。报告 schema / probe 为 27，增加 game_thread_probe。
+r28 在 r27 诊断之上：CI 确认游戏镜像内没有现成的 `mov x8,xN; b CreateAndDispatch` 跳板。
+因此在远程进程 calloc 一块缓冲，写入：
+- CAD 跳板：`mov x8,x3; br x4`（x3=事件输出，x4=CreateAndDispatch）
+- PutOn 调用体：从字面量池加载 Avatar / 3349002 / PutOn 地址后 br
+再 mprotect(RX)，经 Core 0x39A80 调用跳板，以 w2=#4 入队到 GameThread。
 
-CreateAndDispatch（game+0x3765444，w2=#4）静态 ABI 已锁定，但 Core 按地址桥只填充远程 x0..x7，
-而该函数还需要 x8 指向 FGraphEventRef 输出。本版因此还不调用 CreateAndDispatch / PutOnEquipmentByResID。
-vehicle_appearance_changes_implemented 仍为 false；画面不变不表示失败以外的“已换肤”。
+仅当当前车辆皮肤为试驾源 3349001 时才入队；目标 3349002。
+vehicle_appearance_changes_implemented 仍为 false，直到画面确认变化。
+报告 schema / probe 为 28；关注 game_thread_probe.enqueue_status、
+create_and_dispatch_status、skin_id_changed、vehicle_skin_id_after。
 
-使用方法（大厅即可，先对齐会话）：
-1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r27.ipa。安装会重启 Core。
+使用方法（大厅即可）：
+1. 巨魔覆盖安装 Core-17.0-21A327-cosmetics-vehicle-r28.ipa。安装会重启 Core。
 2. 先让游戏留在前台。完全划掉 Core 后再打开它。
 3. 点“内核利用”完成初始化；不要点“获取信息”。
 4. 切回游戏前台，再按提示让 Core 进后台以打开游戏会话（与 r26 相同）。
-5. 导出“文件 → 浏览 → 我的 iPhone → Core → Core-cosmetics-probe.json”。
-6. 看 pid_matches_published、game_thread_probe.status、taskgraph_present、vehicle_resolve。
+5. 坐上/选中试驾宾利（皮肤 3349001）。
+6. 导出“文件 → 浏览 → 我的 iPhone → Core → Core-cosmetics-probe.json”。
 
-game_thread_probe.create_and_dispatch_blocked_by=x8-sret-trampoline 表示入队 ABI 已就绪，只差可执行跳板。
-不要把 is_safe_on_worker=false 当成故障：远程工作线程本来就不应是 GameThread。
+enqueue_status 含义：
+- create-and-dispatch-returned：入队调用返回成功（不等于画面已换）
+- mprotect-failed：系统拒绝 RX（需换方案）
+- skipped-source-skin-not-trial / skipped-already-target-skin：未入队条件
+- skipped-avatar-not-ready：当前没有可解析车辆
 
-历史说明摘要：
-r9 写入未驱动刷新；r10 实体只读；r16+ 隔离/打开/getpid；r26 前台打开游戏会话成功。
-车辆换肤仍未完成，直到 PutOn 在 GameThread 上跑通且画面变化。
+历史：r26 会话成功；r27 诊断 TaskGraph；r28 安装跳板并尝试 PutOn。
 所有编译与二进制分析均在 GitHub Actions 执行。

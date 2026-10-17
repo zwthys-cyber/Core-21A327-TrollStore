@@ -76,6 +76,21 @@
       "Vehicle avatar resolve when pawn/controller are published"
     ],
     "blocked": "CreateAndDispatch needs x8=&FGraphEventRef; Core's by-address bridge only sets remote x0..x7.",
-    "next": "CI vehicle_review scans for mov x8,xN ; b/bl CreateAndDispatch (or br) gadgets. Preferred: mov x8,x3; b CAD so 0x39A80 can pass sret in a3. Then enqueue PutOnEquipmentByResID(3349002)."
+    "ci_gadget_scan_a9b98ff": {
+      "cad_x8_trampoline_gadgets": 0,
+      "cad_callers_with_x8_from_arg": 2,
+      "note": "No consecutive mov x8,xN; b/bl CAD or br gadget in game __text"
+    }
+  },
+  "r28_probe": {
+    "revision": 28,
+    "implemented": [
+      "Remote calloc(0x80) via Core 0x3A3E8",
+      "Write CAD trampoline mov x8,x3; br x4 and PutOn literal-pool invoker",
+      "mprotect(RX) via shared-cache address from local dlsym through 0x39A80",
+      "CreateAndDispatch(w2=#4) through trampoline when skin==3349001",
+      "Readback vehicle+0x20AC skin after enqueue"
+    ],
+    "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation"
   }
 }

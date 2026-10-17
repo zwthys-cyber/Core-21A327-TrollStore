@@ -7,6 +7,9 @@
 #import <math.h>
 #import <stdio.h>
 #import <unistd.h>
+#import <dlfcn.h>
+#import <sys/mman.h>
+#import <string.h>
 #import "CoreCosmeticsRead.h"
 #import "CoreCosmeticsVehicleRead.h"
 #import "CoreCosmeticsWriteCheck.h"
@@ -97,7 +100,19 @@ enum {
     CCPGameIsSafeRVA = 0x42c4c9c,
     CCPGameTaskGraphGetRVA = 0x8af6894,
     CCPGameCreateAndDispatchRVA = 0x3765444,
-    CCPGamePutOnByResRVA = 0x47f2824
+    CCPGamePutOnByResRVA = 0x47f2824,
+    CCPGameTFunctionDestroyRVA = 0x2704da4,
+    CCPGameGraphEventReleaseRVA = 0x35691fc,
+    CCPTargetSkinResID = 3349002,
+    CCPSourceTrialSkinID = 3349001,
+    CCPRemoteTrampSize = 0x80,
+    CCPRemoteCadOff = 0x00,
+    CCPRemotePutOnOff = 0x10,
+    CCPRemoteAvatarOff = 0x20,
+    CCPRemoteResOff = 0x28,
+    CCPRemotePutOnFnOff = 0x30,
+    CCPRemoteTFunctionOff = 0x40,
+    CCPRemoteEventOff = 0x48
 };
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
@@ -140,9 +155,126 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
 }
+// Compare-write remote bytes using the live expected contents (calloc is zero).
+static bool RemoteWriteBytes(CCPTarget *target, uint64_t address, const void *data, size_t length) {
+    if (!target || !target->write || !data || length == 0) return false;
+    const uint8_t *bytes = data;
+    for (size_t offset = 0; offset < length; ) {
+        size_t chunk = length - offset;
+        if (chunk > 8) chunk = 8;
+        uint8_t expected[8] = {0}, replacement[8] = {0};
+        if (!target->read(target->pid, address + offset, chunk, expected)) return false;
+        memcpy(replacement, bytes + offset, chunk);
+        if (!memcmp(expected, replacement, chunk)) {
+            offset += chunk;
+            continue;
+        }
+        CCPNativeWriteResult native = target->write(target->pid, address + offset, expected, replacement, chunk);
+        if ((uint32_t)native.state != 1) return false;
+        uint8_t readback[8] = {0};
+        if (!target->read(target->pid, address + offset, chunk, readback) ||
+            memcmp(readback, replacement, chunk)) return false;
+        offset += chunk;
+    }
+    return true;
+}
+// Install heap RX trampolines (CI found no in-image mov x8,xN; b CAD gadget),
+// enqueue PutOnEquipmentByResID(3349002) via CreateAndDispatch(w2=#4).
+static void AttemptPutOnEnqueue(NSMutableDictionary *out, uintptr_t base, uint64_t game,
+                                CCPTarget *target, CCPRemoteCallByAddress remoteCall,
+                                uint64_t avatar, uint64_t vehicle, uint32_t skinBefore) {
+    out[@"put_on_attempted"] = @NO;
+    out[@"enqueue_status"] = @"not-started";
+    if (skinBefore == CCPTargetSkinResID) {
+        out[@"enqueue_status"] = @"skipped-already-target-skin";
+        return;
+    }
+    if (skinBefore != CCPSourceTrialSkinID) {
+        out[@"enqueue_status"] = @"skipped-source-skin-not-trial";
+        return;
+    }
+    if (!EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) ||
+        !EntryMatches(base + 0x620B8, WritePrefix)) {
+        out[@"enqueue_status"] = @"write-or-symbol-entry-mismatch";
+        return;
+    }
+    void *mprotectSym = dlsym(RTLD_DEFAULT, "mprotect");
+    if (!mprotectSym) {
+        out[@"enqueue_status"] = @"mprotect-symbol-missing";
+        return;
+    }
+#if __has_feature(ptrauth_calls)
+    uint64_t mprotectAddr = (uint64_t)ptrauth_strip(mprotectSym, ptrauth_key_function_pointer);
+#else
+    uint64_t mprotectAddr = (uint64_t)mprotectSym;
+#endif
+    target->write = (CCPWriteFunction)SignedEntry(base + 0x620B8);
+    CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
+    uint64_t buf = 0, unused = 0;
+    uint64_t allocRet = symbolCall("calloc", 1, CCPRemoteTrampSize, &buf);
+    if ((uint32_t)allocRet != 1 || !CCPPointer(buf)) {
+        out[@"enqueue_status"] = @"calloc-failed";
+        out[@"calloc_status"] = @((uint32_t)allocRet);
+        return;
+    }
+    out[@"trampoline_buf"] = [NSString stringWithFormat:@"0x%llx", (unsigned long long)buf];
+    // cad: mov x8,x3; br x4
+    const uint32_t cadCode[2] = {0xAA0303E8u, 0xD61F0080u};
+    // puton: ldr x0,#16; ldr x1,#20; ldr x16,#24; br x16  (pools at +0x20/+0x28/+0x30)
+    const uint32_t putOnCode[4] = {0x58000080u, 0x580000A1u, 0x580000D0u, 0xD61F0200u};
+    uint64_t avatarWord = avatar;
+    uint64_t resWord = CCPTargetSkinResID;
+    uint64_t putOnFn = game + CCPGamePutOnByResRVA;
+    uint64_t invoker = buf + CCPRemotePutOnOff;
+    if (!RemoteWriteBytes(target, buf + CCPRemoteCadOff, cadCode, sizeof(cadCode)) ||
+        !RemoteWriteBytes(target, buf + CCPRemotePutOnOff, putOnCode, sizeof(putOnCode)) ||
+        !RemoteWriteBytes(target, buf + CCPRemoteAvatarOff, &avatarWord, sizeof(avatarWord)) ||
+        !RemoteWriteBytes(target, buf + CCPRemoteResOff, &resWord, sizeof(resWord)) ||
+        !RemoteWriteBytes(target, buf + CCPRemotePutOnFnOff, &putOnFn, sizeof(putOnFn)) ||
+        !RemoteWriteBytes(target, buf + CCPRemoteTFunctionOff, &invoker, sizeof(invoker))) {
+        out[@"enqueue_status"] = @"trampoline-write-failed";
+        return;
+    }
+    uint64_t mpRet = 0;
+    uint64_t mpStatus = remoteCall(10000, mprotectAddr, "mprotect",
+                                   buf, CCPRemoteTrampSize, (uint64_t)(PROT_READ | PROT_EXEC),
+                                   0, 0, 0, 0, 0, &mpRet, &unused);
+    out[@"mprotect_status"] = @((uint32_t)mpStatus);
+    out[@"mprotect_errno"] = @(mpRet);
+    if ((uint32_t)mpStatus != 1 || mpRet != 0) {
+        out[@"enqueue_status"] = @"mprotect-failed";
+        return;
+    }
+    out[@"create_and_dispatch_blocked_by"] = @"none-installed-trampoline";
+    uint64_t cadOut0 = 0, cadOut1 = 0;
+    out[@"put_on_attempted"] = @YES;
+    uint64_t cadStatus = remoteCall(15000, buf + CCPRemoteCadOff, "CAD-x8-tramp",
+                                    buf + CCPRemoteTFunctionOff, 0, 4,
+                                    buf + CCPRemoteEventOff, game + CCPGameCreateAndDispatchRVA,
+                                    0, 0, 0, &cadOut0, &cadOut1);
+    out[@"create_and_dispatch_status"] = @((uint32_t)cadStatus);
+    if ((uint32_t)cadStatus != 1) {
+        out[@"enqueue_status"] = @"create-and-dispatch-call-failed";
+        return;
+    }
+    uint64_t rel0 = 0;
+    remoteCall(10000, game + CCPGameGraphEventReleaseRVA, "FGraphEventRef::Release",
+               buf + CCPRemoteEventOff, 0, 0, 0, 0, 0, 0, 0, &rel0, &unused);
+    remoteCall(10000, game + CCPGameTFunctionDestroyRVA, "TFunction::Destroy",
+               buf + CCPRemoteTFunctionOff, 0, 0, 0, 0, 0, 0, 0, &rel0, &unused);
+    usleep(200000);
+    CCPReader remote = {TargetRead, target};
+    uint32_t skinAfter[4] = {0};
+    if (CCPReadBytes(remote, vehicle + 0x20AC, skinAfter, sizeof(skinAfter))) {
+        out[@"vehicle_skin_id_after"] = @(skinAfter[1]);
+        out[@"skin_id_changed"] = @(skinAfter[1] != skinBefore);
+    }
+    out[@"enqueue_status"] = @"create-and-dispatch-returned";
+    out[@"status"] = @"put-on-enqueued";
+}
 // After getpid matches the published game session: call IsSafeForGameThread and
-// FTaskGraphInterface::Get by address. CreateAndDispatch needs an x8 sret
-// trampoline in executable game memory; that path is reported but not taken yet.
+// FTaskGraphInterface::Get by address. When avatar is the trial Bentley, install
+// an RX CAD x8 trampoline via calloc/mprotect and enqueue PutOn 3349002.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
@@ -150,7 +282,7 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
         @"is_safe_on_worker": @NO, @"taskgraph_get_call": @"not-called",
         @"taskgraph_present": @NO, @"create_and_dispatch_ready": @NO,
         @"create_and_dispatch_blocked_by": @"not-evaluated",
-        @"vehicle_resolve": @"not-attempted",
+        @"vehicle_resolve": @"not-attempted", @"enqueue_status": @"not-attempted",
         @"put_on_attempted": @NO, @"vehicle_appearance_changes_implemented": @NO,
         @"status": @"not-started"
     } mutableCopy];
@@ -203,23 +335,25 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
         out[@"taskgraph_present"] = @(graph != 0);
     } else if ((uint32_t)getRet == 0) out[@"taskgraph_get_call"] = @"returned-zero";
     else out[@"taskgraph_get_call"] = @"returned-other";
-    // CreateAndDispatch (game+0x3765444) needs x8 = &FGraphEventRef. Core's
-    // by-address bridge only loads remote x0..x7, so a small executable
-    // trampoline (mov x8,x3; br CreateAndDispatch) is still required.
     BOOL graphOK = (uint32_t)getRet == 1 && graph != 0;
     out[@"create_and_dispatch_ready"] = @(graphOK);
     out[@"create_and_dispatch_blocked_by"] = graphOK ? @"x8-sret-trampoline" : @"taskgraph-unavailable";
     out[@"create_and_dispatch_rva"] = @"0x3765444";
     out[@"put_on_rva"] = @"0x47f2824";
+    uint64_t avatar = 0, vehicle = 0;
+    uint32_t skinBefore = 0;
+    BOOL avatarReady = NO;
     if (CCPPointer(pawn) && CCPPointer(controller)) {
         CCPVehicleSample sample = {0};
-        uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0;
+        uint64_t actor = 0, user = 0;
         out[@"vehicle_resolve"] = @"attempted";
         if (CCPVehicleSource(remote, game, pawn, controller, &actor, &user, &vehicle, &sample) &&
             CCPVehicleOwner(remote, vehicle, &avatar)) {
             out[@"vehicle_resolve"] = @"avatar-ready";
             out[@"vehicle_skin_id"] = @(sample.skin);
-            out[@"source_skin_is_trial"] = @(sample.skin == 3349001);
+            out[@"source_skin_is_trial"] = @(sample.skin == CCPSourceTrialSkinID);
+            skinBefore = sample.skin;
+            avatarReady = YES;
         } else if (sample.status == CCPVehicleUnavailable) {
             out[@"vehicle_resolve"] = @"no-current-vehicle";
         } else {
@@ -228,7 +362,15 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     } else {
         out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
     }
-    out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
+    if (graphOK && avatarReady) {
+        AttemptPutOnEnqueue(out, base, game, &target, remoteCall, avatar, vehicle, skinBefore);
+    } else if (!graphOK) {
+        out[@"enqueue_status"] = @"skipped-taskgraph-unavailable";
+    } else {
+        out[@"enqueue_status"] = @"skipped-avatar-not-ready";
+    }
+    if (![out[@"status"] isEqualToString:@"put-on-enqueued"])
+        out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
     return out;
 }
 static NSArray *ItemsJSON(const CCPItems *items) {
@@ -888,11 +1030,13 @@ static NSDictionary *VehicleTrialObservation(void) {
         if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
         NSDictionary *gameThread = pidMatches ? RunGameThreadProbe(base)
             : @{@"attempted": @NO, @"status": @"skipped-pid-mismatch"};
-        if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
+        if (pidMatches && [gameThread[@"status"] isEqualToString:@"put-on-enqueued"])
+            status = @"existing-game-session-put-on-enqueued";
+        else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @27, @"probe_revision": @27,
+        self.trialReport = [@{@"schema_version": @28, @"probe_revision": @28,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
