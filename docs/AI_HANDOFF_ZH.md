@@ -652,7 +652,13 @@ r10 控制器拒绝新的车辆试换请求，菜单移除“宾利试换15秒�
 
 代码 `b3e728f` 起，车辆适配页增加“探测游戏进程”。它在 Core 身份和原快照入口匹配后，调用 `0x35F08`，名称固定为 `ShadowTrackerExtra`。这个函数按内核进程表做最多 32 字节的名称比较；返回 `-1` 或 `0` 都算没看见，其他返回值只记为 `located`，不导出地址。
 
-它不调用 `0x3A7D4` / `CoreRemoteOpen`，因此不会走会写入隔离字的失败路径。报告 schema / probe 为 11，mode 为 `process-name-visibility`。构建产物名为 `Core-17.0-21A327-cosmetics-vehicle-r11.ipa`。Core 字符串表里没有 `GameThread`、`com.apple.main-thread` 或 `pthread_getname_np`。车辆换肤仍未完成。
+它不调用 `0x3A7D4` / `CoreRemoteOpen`，因此不会走会写入隔离字的失败路径。报告 schema / probe 为 12，mode 为 `process-name-visibility`。Core 字符串表里没有 `GameThread`、`com.apple.main-thread` 或 `pthread_getname_np`。车辆换肤仍未完成。
+
+### 11.22 用户这次采集没有进入车辆，游戏映像身份未确认
+
+用户报告 `captured_at_unix=1792210479.7338228`，schema / probe 仍是 10，mode 为 `vehicle-entity-resource-diagnostics`。39 次尝试、手动停止，样本为空，最近 12 次都是 `game-identity-unconfirmed`。这是车辆采集，不是 r11 的进程名探测。失败发生在读取车辆之前：Core 缓存的游戏基址没有被确认为固定的 1.38.12 映像。不能解释成没上车。
+
+r12 把这个总状态拆成指针不可用、映像头读不到、不是 Mach-O、UUID 不匹配、UUID 读不到、加载命令未确认。连续第二次仍是这类失败就停止，finish_reason 为 `game-image-unconfirmed`。摘要在 `device-evidence-r12-identity.json`。最新安装包以 r12 构建为准。
 
 ## 12. 下一位 AI 的建议接手顺序
 

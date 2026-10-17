@@ -1,0 +1,13 @@
+{
+  "captured_at_unix": 1792210479.7338228,
+  "reported_schema_version": 10,
+  "reported_probe_revision": 10,
+  "mode": "vehicle-entity-resource-diagnostics",
+  "status": "vehicle-not-sampled",
+  "finish_reason": "manual-stop",
+  "capture_attempts": 39,
+  "sample_count": 0,
+  "latest_vehicle_status": "game-identity-unconfirmed",
+  "interpretation": "Vehicle sampling never started. Every retained attempt failed while confirming the Mach-O image at Core's cached game base against the pinned 1.38.12 UUID. This is not an r11 process-name-visibility report and does not describe the current vehicle.",
+  "vehicle_appearance_verified": false
+}
