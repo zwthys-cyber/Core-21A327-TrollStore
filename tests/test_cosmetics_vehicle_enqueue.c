@@ -19,6 +19,19 @@ int main(void) {
     CCPVehicleEnqueueResult missingResource = CCPEnqueuePutOnByResID(
         0, 0, 0, 0, 3312001u, 412009u, 0, NULL, NULL, NULL, NULL);
     assert(!strcmp(missingResource.status, "bad-arguments"));
+    CCPVehicleEnqueueResult result = {.status = "target-not-observed", .putOnAttempted = true,
+        .targetItem = 3349002u, .skinAfter = 3349001u};
+    assert(CCPVehiclePutOnDispatched(&result));
+    assert(!CCPVehicleTargetObserved(&result));
+    assert(!CCPVehicleRestoreObserved(&result));
+    result.status = "target-observed";
+    result.skinAfter = result.targetItem;
+    assert(CCPVehicleTargetObserved(&result));
+    assert(CCPVehicleRestoreObserved(&result));
+    result.status = "skipped-already-target";
+    result.putOnAttempted = false;
+    assert(!CCPVehiclePutOnDispatched(&result));
+    assert(CCPVehicleRestoreObserved(&result));
     puts("PASS: vehicle PutOn preserves explicit catalog resource IDs");
     return 0;
 }

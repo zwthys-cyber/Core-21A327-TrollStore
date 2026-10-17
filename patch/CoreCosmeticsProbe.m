@@ -1298,7 +1298,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
         CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
-        self.trialReport = [@{@"schema_version": @35, @"probe_revision": @35,
+        self.trialReport = [@{@"schema_version": @36, @"probe_revision": @36,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"preset": [NSString stringWithUTF8String:preset.targetLabel],
             @"source_item_id": @(preset.sourceItem),
@@ -1368,12 +1368,16 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         @"code_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.codePage],
         @"data_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.dataPage]
     };
-    BOOL ok = enqueued.putOnAttempted && strcmp(enqueued.status, "create-and-dispatch-returned") == 0;
-    self.trialReport[@"status"] = ok ? @"puton-enqueued-awaiting-visual-confirmation" : @"puton-enqueue-failed";
-    atomic_store(&MenuOwned, ok);
-    atomic_store(&MenuStatus, ok ? CCPMenuVehicleTrialApplied : CCPMenuFailed);
+    BOOL confirmed = CCPVehicleTargetObserved(&enqueued);
+    BOOL dispatched = CCPVehiclePutOnDispatched(&enqueued);
+    self.trialReport[@"state_change_confirmed"] = @(confirmed);
+    self.trialReport[@"status"] = confirmed ? @"target-item-observed" :
+        (dispatched ? @"puton-dispatched-target-not-observed" : @"puton-enqueue-failed");
+    atomic_store(&MenuOwned, dispatched);
+    atomic_store(&MenuStatus, confirmed ? CCPMenuVehicleTrialApplied :
+        (dispatched ? CCPMenuRestorePending : CCPMenuFailed));
     [self writeTrialReport];
-    if (!ok) VehicleState.active = NO;
+    if (!dispatched) VehicleState.active = NO;
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
 - (void)finishVehicleTrialOnQueue:(uint32_t)generation reason:(NSString *)reason {
@@ -1401,9 +1405,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle,
             skinNow, original, preset.sourceResource, VehicleContext.target.read, VehicleContext.target.write,
             symbolCall, remoteCall);
-        restored = (enqueued.putOnAttempted &&
-                    strcmp(enqueued.status, "create-and-dispatch-returned") == 0) ||
-                   strcmp(enqueued.status, "skipped-already-target") == 0;
+        restored = CCPVehicleRestoreObserved(&enqueued);
         self.trialReport[@"restore"] = @{
             @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
             @"original_skin_id": @(original),
@@ -1413,14 +1415,16 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
             @"skin_after": @(enqueued.skinAfter)
         };
     }
-    VehicleState.active = NO;
-    atomic_store(&MenuOwned, false);
-    if ([reason isEqualToString:@"readiness-timeout"])
+    if (restored) VehicleState.active = NO;
+    atomic_store(&MenuOwned, VehicleState.active);
+    if ([reason isEqualToString:@"readiness-timeout"] && !VehicleState.active)
         atomic_store(&MenuStatus, CCPMenuFailed);
     else if (restored) atomic_store(&MenuStatus, CCPMenuVehicleDataRestored);
+    else if (VehicleState.active) atomic_store(&MenuStatus, CCPMenuRestorePending);
     else if (self.trialReport[@"enqueue"]) atomic_store(&MenuStatus, CCPMenuIdle);
-    self.trialReport[@"status"] = restored ? @"original-puton-enqueued" :
-        (self.trialReport[@"status"] ?: @"trial-finished");
+    self.trialReport[@"status"] = restored ? @"original-item-observed" :
+        (VehicleState.active ? @"restore-not-confirmed-change-still-owned" :
+        (self.trialReport[@"status"] ?: @"trial-finished"));
     [self writeTrialReport];
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }

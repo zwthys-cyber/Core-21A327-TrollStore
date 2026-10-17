@@ -32,6 +32,24 @@ typedef struct {
     bool skinChanged, putOnAttempted;
 } CCPVehicleEnqueueResult;
 
+static inline bool CCPVehicleTargetObserved(const CCPVehicleEnqueueResult *result) {
+    return result && result->putOnAttempted && result->status &&
+        strcmp(result->status, "target-observed") == 0 &&
+        result->skinAfter == result->targetItem;
+}
+
+static inline bool CCPVehiclePutOnDispatched(const CCPVehicleEnqueueResult *result) {
+    return CCPVehicleTargetObserved(result) ||
+        (result && result->putOnAttempted && result->status &&
+         strcmp(result->status, "target-not-observed") == 0);
+}
+
+static inline bool CCPVehicleRestoreObserved(const CCPVehicleEnqueueResult *result) {
+    return result && result->status &&
+        (CCPVehicleTargetObserved(result) ||
+         strcmp(result->status, "skipped-already-target") == 0);
+}
+
 static inline bool CCPEnqueueResourceIDForItem(uint32_t itemID, uint32_t *resourceID) {
     if (!resourceID || itemID == 0 || itemID > UINT32_MAX / 100u) return false;
     *resourceID = itemID * 100u;
@@ -135,17 +153,18 @@ static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
                event, 0, 0, 0, 0, 0, 0, 0, &rel, &unused);
     remoteCall(10000, game + CCP_ENQUEUE_TF_DESTROY_RVA, "TFunction::Destroy",
                tfunction, 0, 0, 0, 0, 0, 0, 0, &rel, &unused);
-    // GameThread PutOn is async; poll skin id briefly before reporting.
+    // GameThread PutOn is async. A successful CAD return proves only that the
+    // task was submitted; product success requires observing the exact target.
     out.skinAfter = skinBefore;
-    for (int settle = 0; settle < 20; settle++) {
+    for (int settle = 0; settle < 100; settle++) {
         usleep(50000);
         uint32_t skinAfter[4] = {0};
         if (!read(pid, vehicle + 0x20AC, sizeof(skinAfter), skinAfter)) continue;
         out.skinAfter = skinAfter[1];
-        if (skinAfter[1] == targetItem || skinAfter[1] != skinBefore) break;
+        if (skinAfter[1] == targetItem) break;
     }
     out.skinChanged = out.skinAfter != skinBefore;
-    out.status = "create-and-dispatch-returned";
+    out.status = out.skinAfter == targetItem ? "target-observed" : "target-not-observed";
     return out;
 }
 #endif
