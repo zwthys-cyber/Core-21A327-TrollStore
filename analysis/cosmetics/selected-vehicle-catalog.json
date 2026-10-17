@@ -1,0 +1,772 @@
+{
+  "schema_version": 2,
+  "status": "package-verified-vehicle-menu",
+  "item_id_contract": "Vehicle state uses item_id; PutOnEquipmentByResID uses resource_id.",
+  "source_compatibility": "Exact source item ID required before enqueue.",
+  "package_mapping_evidence": {
+    "baseline_pak": "game_patch_1.38.12.16050.pak",
+    "vehicle_pak": "game_patch_1.38.12.16052.pak",
+    "baseline_uasset_sha256": "9ec428fbfec35e64540f33be8f627df7f4d51ed61c400f3a69c8d8c252d998b8",
+    "vehicle_uasset_sha256": "7ff5ed819b9d96d27dd0f36167dffa1cdbe65a1909ccb4afb73972e51fd0753d"
+  },
+  "presets": [
+    {
+      "source_item_id": 3301001,
+      "source_resource_id": 330100100,
+      "source_label": "buggy沙滩车(黑)",
+      "target_item_id": 3301040,
+      "target_resource_id": 330104000,
+      "target_label": "合金龙骨红",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24285
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 496
+        }
+      ]
+    },
+    {
+      "source_item_id": 3301002,
+      "source_resource_id": 330100200,
+      "source_label": "buggy沙滩车(黄)",
+      "target_item_id": 3301009,
+      "target_resource_id": 330100900,
+      "target_label": "合金龙骨蓝",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24286
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 497
+        }
+      ]
+    },
+    {
+      "source_item_id": 3301003,
+      "source_resource_id": 330100300,
+      "source_label": "buggy沙滩车(棕迷彩)",
+      "target_item_id": 3301010,
+      "target_resource_id": 330101000,
+      "target_label": "合金龙骨绿",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24287
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 498
+        }
+      ]
+    },
+    {
+      "source_item_id": 3302001,
+      "source_resource_id": 330200100,
+      "source_label": "布篷UAZ越野车",
+      "target_item_id": 3304066,
+      "target_resource_id": 330406600,
+      "target_label": "法拉利Purosangue(幻流光",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24335
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 517
+        }
+      ]
+    },
+    {
+      "source_item_id": 3303001,
+      "source_resource_id": 330300100,
+      "source_label": "敞篷UAZ越野车",
+      "target_item_id": 3304014,
+      "target_resource_id": 330401400,
+      "target_label": "兰博基尼URUS(尊享铂)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24337
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 518
+        }
+      ]
+    },
+    {
+      "source_item_id": 3304001,
+      "source_resource_id": 330400100,
+      "source_label": "UAZ越野车",
+      "target_item_id": 3304062,
+      "target_resource_id": 330406200,
+      "target_label": "保时捷Cayenne(星光璃)",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24338
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 519
+        }
+      ]
+    },
+    {
+      "source_item_id": 3304032,
+      "source_resource_id": 330403200,
+      "source_label": "乔治·巴顿战车(乳石白)",
+      "target_item_id": 3307001,
+      "target_resource_id": 330700100,
+      "target_label": "迷你巴士(蓝)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24365
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 520
+        }
+      ]
+    },
+    {
+      "source_item_id": 3304044,
+      "source_resource_id": 330404400,
+      "source_label": "仰望U8(雷霆紫)",
+      "target_item_id": 3322001,
+      "target_resource_id": 332200100,
+      "target_label": "LadaNiva越野车(黄)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24376
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 521
+        }
+      ]
+    },
+    {
+      "source_item_id": 3306001,
+      "source_resource_id": 330600100,
+      "source_label": "Dacia轿车(蓝)",
+      "target_item_id": 3306067,
+      "target_resource_id": 330606700,
+      "target_label": "法拉利Roma(假日梦)",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24410
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 522
+        }
+      ]
+    },
+    {
+      "source_item_id": 3306002,
+      "source_resource_id": 330600200,
+      "source_label": "Dacia轿车(红)",
+      "target_item_id": 3306046,
+      "target_resource_id": 330604600,
+      "target_label": "宝马M4(灿阳金)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24411
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 523
+        }
+      ]
+    },
+    {
+      "source_item_id": 3306003,
+      "source_resource_id": 330600300,
+      "source_label": "Dacia轿车(白)",
+      "target_item_id": 3306004,
+      "target_resource_id": 330600400,
+      "target_label": "玛莎拉蒂Ghibli(蓝)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24412
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 524
+        }
+      ]
+    },
+    {
+      "source_item_id": 3308001,
+      "source_resource_id": 330800100,
+      "source_label": "双人摩托(黑)",
+      "target_item_id": 3308018,
+      "target_resource_id": 330801800,
+      "target_label": "幽焰风驰摩托车",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24497
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 525
+        }
+      ]
+    },
+    {
+      "source_item_id": 3308002,
+      "source_resource_id": 330800200,
+      "source_label": "双人摩托(棕)",
+      "target_item_id": 3308015,
+      "target_resource_id": 330801500,
+      "target_label": "杜卡迪 Panigale V4(霓",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24498
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 526
+        }
+      ]
+    },
+    {
+      "source_item_id": 3308016,
+      "source_resource_id": 330801600,
+      "source_label": "毒液透光",
+      "target_item_id": 3315001,
+      "target_resource_id": 331500100,
+      "target_label": "小型摩托车(蓝)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24511
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 527
+        }
+      ]
+    },
+    {
+      "source_item_id": 3309001,
+      "source_resource_id": 330900100,
+      "source_label": "三人摩托(黑)",
+      "target_item_id": 3309003,
+      "target_resource_id": 330900300,
+      "target_label": "鬼马风驰",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24547
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 528
+        }
+      ]
+    },
+    {
+      "source_item_id": 3309002,
+      "source_resource_id": 330900200,
+      "source_label": "三人摩托(棕)",
+      "target_item_id": 3309004,
+      "target_resource_id": 330900400,
+      "target_label": "拉轰鸭鸭车",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24548
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 529
+        }
+      ]
+    },
+    {
+      "source_item_id": 3310001,
+      "source_resource_id": 331000100,
+      "source_label": "带篷皮卡(黑)",
+      "target_item_id": 3336072,
+      "target_resource_id": 333607200,
+      "target_label": "法拉利LaFerrari(曜夜辉)",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24551
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 530
+        }
+      ]
+    },
+    {
+      "source_item_id": 3311001,
+      "source_resource_id": 331100100,
+      "source_label": "无篷皮卡(黑)",
+      "target_item_id": 3336087,
+      "target_resource_id": 333608700,
+      "target_label": "法拉利Enzo 臻藏款(赛车红)",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24556
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 531
+        }
+      ]
+    },
+    {
+      "source_item_id": 3312001,
+      "source_resource_id": 331200100,
+      "source_label": "Mirado跑车(黄)",
+      "target_item_id": 412009,
+      "target_resource_id": 412009,
+      "target_label": "霜龙神御(云雾蓝)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24562
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 532
+        }
+      ]
+    },
+    {
+      "source_item_id": 3313001,
+      "source_resource_id": 331300100,
+      "source_label": "Mirado敞篷跑车(黄)",
+      "target_item_id": 3336039,
+      "target_resource_id": 333603900,
+      "target_label": "帕加尼imola(星空蓝)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24566
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 533
+        }
+      ]
+    },
+    {
+      "source_item_id": 3313005,
+      "source_resource_id": 331300500,
+      "source_label": "Mirado敞篷跑车(金)",
+      "target_item_id": 3349021,
+      "target_resource_id": 334902100,
+      "target_label": "乘!",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24570
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 534
+        }
+      ]
+    },
+    {
+      "source_item_id": 3314001,
+      "source_resource_id": 331400100,
+      "source_label": "罗尼皮卡(白)",
+      "target_item_id": 3314004,
+      "target_resource_id": 331400400,
+      "target_label": "特斯拉Cybertruck(极昼黑",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24571
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 535
+        }
+      ]
+    },
+    {
+      "source_item_id": 3314002,
+      "source_resource_id": 331400200,
+      "source_label": "罗尼皮卡(蓝)",
+      "target_item_id": 3314005,
+      "target_resource_id": 331400500,
+      "target_label": "特斯拉Cybertruck(荒芜蓝",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24572
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 536
+        }
+      ]
+    },
+    {
+      "source_item_id": 3314003,
+      "source_resource_id": 331400300,
+      "source_label": "罗尼皮卡(绿)",
+      "target_item_id": 3314006,
+      "target_resource_id": 331400600,
+      "target_label": "特斯拉Cybertruck(镭光铂",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24573
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 537
+        }
+      ]
+    },
+    {
+      "source_item_id": 3325001,
+      "source_resource_id": 332500100,
+      "source_label": "PG-117快艇",
+      "target_item_id": 3325011,
+      "target_resource_id": 332501100,
+      "target_label": "快艇-萌酷奶龙",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24604
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 538
+        }
+      ]
+    },
+    {
+      "source_item_id": 3336001,
+      "source_resource_id": 333600100,
+      "source_label": "2座跑车CoupeRB",
+      "target_item_id": 3349015,
+      "target_resource_id": 334901500,
+      "target_label": "保时捷911 敞篷版(小暴龙)",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24649
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 539
+        }
+      ]
+    },
+    {
+      "source_item_id": 3347001,
+      "source_resource_id": 334700100,
+      "source_label": "山地自行车",
+      "target_item_id": 3347002,
+      "target_resource_id": 334700200,
+      "target_label": "辉羽雀灵自行车",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24793
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 540
+        }
+      ]
+    },
+    {
+      "source_item_id": 3348001,
+      "source_resource_id": 334800100,
+      "source_label": "旅行车",
+      "target_item_id": 3348011,
+      "target_resource_id": 334801100,
+      "target_label": "保时捷Taycan 旅行版(琉光青",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24795
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 541
+        }
+      ]
+    },
+    {
+      "source_item_id": 3349001,
+      "source_resource_id": 334900100,
+      "source_label": "4座敞篷跑车",
+      "target_item_id": 3349002,
+      "target_resource_id": 334900200,
+      "target_label": "宾利欧陆GT敞篷(火焰橘)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24810
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 542
+        }
+      ]
+    },
+    {
+      "source_item_id": 3350001,
+      "source_resource_id": 335000100,
+      "source_label": "马",
+      "target_item_id": 3350017,
+      "target_resource_id": 335001700,
+      "target_label": "霜月冰狼 / 马",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24836
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 544
+        },
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "source_item_id": 3350002,
+      "source_resource_id": 335000200,
+      "source_label": "马",
+      "target_item_id": 3350013,
+      "target_resource_id": 335001300,
+      "target_label": "霜月冰狼 / 马",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24837
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 544
+        },
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "source_item_id": 3350003,
+      "source_resource_id": 335000300,
+      "source_label": "马",
+      "target_item_id": 3350014,
+      "target_resource_id": 335001400,
+      "target_label": "霜月冰狼 / 马",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24838
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 544
+        },
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "source_item_id": 3350004,
+      "source_resource_id": 335000400,
+      "source_label": "马",
+      "target_item_id": 3350015,
+      "target_resource_id": 335001500,
+      "target_label": "霜月冰狼 / 马",
+      "resource_method": "vehicle-item-resource-contract",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24839
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 544
+        },
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "source_item_id": 3351001,
+      "source_resource_id": 335100100,
+      "source_label": "拉力赛车(黑)",
+      "target_item_id": 3351010,
+      "target_resource_id": 335101000,
+      "target_label": "冰辰御座(钻石蓝)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24857
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 546
+        }
+      ]
+    },
+    {
+      "source_item_id": 3351003,
+      "source_resource_id": 335100300,
+      "source_label": "拉力赛车(黑)",
+      "target_item_id": 3351006,
+      "target_resource_id": 335100600,
+      "target_label": "糖心拉力赛车(炫动紫)",
+      "resource_method": "pinned-catalog",
+      "package_mapping": {
+        "baseline_pak": "game_patch_1.38.12.16050.pak",
+        "vehicle_pak": "game_patch_1.38.12.16052.pak",
+        "name_map_index": 24858
+      },
+      "source_recipes": [
+        {
+          "archive": "10月11日小白至尊版最新美化修复和谐.zip",
+          "text": "衣服枪械配料表.txt",
+          "line": 547
+        }
+      ]
+    }
+  ],
+  "unresolved": [],
+  "resolved_pair_count": 35,
+  "unresolved_recipe_count": 0
+}

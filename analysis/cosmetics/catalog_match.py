@@ -38,6 +38,7 @@ def main():
         raise ValueError('Unexpected external catalog row count')
     manifest = json.loads((directory / 'inputs.json').read_text())
     item_names = set()
+    item_name_maps = {}
     recipes = []
     for record in manifest['files']:
         if not record['name'].endswith('.zip'):
@@ -48,8 +49,11 @@ def main():
                     data = archive.read(info)
                     for entry in entries(data)['entries']:
                         if entry['path'].endswith('/CSV/Item.uasset'):
-                            _, name_map = names(extract(data, entry))
+                            payload = extract(data, entry)
+                            _, name_map = names(payload)
                             item_names.update(name_map)
+                            item_name_maps[(record['name'], Path(info.filename).name)] = dict(
+                                names=name_map, sha256=hashlib.sha256(payload).hexdigest())
                 elif info.filename.endswith('.txt') and info.file_size < 1024 * 1024:
                     raw_text = archive.read(info)
                     try:
@@ -132,47 +136,107 @@ def main():
             json.dumps(preset['category'], ensure_ascii=False), json.dumps(preset['label'], ensure_ascii=False)))
     header += ['};', '#define CCP_PRESET_COUNT (sizeof(CCPAppearancePresets) / sizeof(CCPAppearancePresets[0]))', '#endif', '']
     (args.output / 'CoreCosmeticsCatalog.h').write_text('\n'.join(header))
-    # Vehicle recipes are kept source-specific: applying a target to an
-    # incompatible vehicle family is unsafe. Item IDs are the state/catalog
-    # identity; PutOnEquipmentByResID receives the separately recorded ResID.
+    # The vehicle PAK is itself the authoritative mapping. Its Item name map
+    # swaps each source row name with its target row name. Comparing it with
+    # the adjacent unmodified table resolves truncated/new labels and duplicate
+    # catalog names without guessing which ID the recipe intended.
     vehicle_min, vehicle_max = 3300000, 3400000
-    vehicle_presets, unresolved = {}, []
-    for recipe in recipes:
-        source_rows = recipe['source_candidates']['candidates']
-        target_rows = recipe['target_candidates']['candidates']
-        source_rows = [r for r in source_rows if vehicle_min <= r['item_id'] < vehicle_max]
-        target_rows = [r for r in target_rows if vehicle_min <= r['item_id'] < vehicle_max]
-        if not source_rows:
+    package_name = '10月11日小白至尊版最新美化修复和谐.zip'
+    baseline_key = (package_name, 'game_patch_1.38.12.16050.pak')
+    vehicle_key = (package_name, 'game_patch_1.38.12.16052.pak')
+    if baseline_key not in item_name_maps or vehicle_key not in item_name_maps:
+        raise ValueError('Pinned vehicle Item name maps are missing')
+    baseline = item_name_maps[baseline_key]['names']
+    patched = item_name_maps[vehicle_key]['names']
+    if len(baseline) != len(patched):
+        raise ValueError('Vehicle Item name map length changed')
+    remaps = {}
+    for index, (before, after) in enumerate(zip(baseline, patched)):
+        if before == after or not before.isdecimal() or not after.isdecimal():
             continue
-        if len(target_rows) != 1:
+        source_id, target_id = int(before), int(after)
+        if vehicle_min <= source_id < vehicle_max:
+            remaps[source_id] = dict(target_id=target_id, name_map_index=index)
+    rows_by_id = defaultdict(list)
+    for row in rows:
+        rows_by_id[row['item_id']].append(row)
+    vehicle_recipes = []
+    for recipe in recipes:
+        if recipe['archive'] != package_name:
+            continue
+        source_rows = [r for r in recipe['source_candidates']['candidates']
+                       if vehicle_min <= r['item_id'] < vehicle_max]
+        if source_rows:
+            vehicle_recipes.append((recipe, source_rows))
+    source_ids = {row['item_id'] for _, source_rows in vehicle_recipes for row in source_rows}
+    vehicle_presets = []
+    covered_recipes = set()
+    for source_id in sorted(source_ids & remaps.keys()):
+        target_id = remaps[source_id]['target_id']
+        matches = [(recipe, source_rows) for recipe, source_rows in vehicle_recipes
+                   if any(row['item_id'] == source_id for row in source_rows)]
+        target_matches = [(recipe, source_rows) for recipe, source_rows in matches
+                          if any(row['item_id'] == target_id
+                                 for row in recipe['target_candidates']['candidates'])]
+        selected = target_matches or matches
+        if not selected:
+            continue
+        for recipe, _ in selected:
+            covered_recipes.add((recipe['archive'], recipe['text'], recipe['line']))
+        source_rows = rows_by_id[source_id]
+        source_resources = {row['resource_id'] for row in source_rows}
+        if len(source_resources) != 1:
+            raise ValueError(f'Ambiguous source resource ID for {source_id}')
+        target_rows = rows_by_id[target_id]
+        target_resources = {row['resource_id'] for row in target_rows}
+        if len(target_resources) == 1:
+            target_resource = next(iter(target_resources))
+            resource_method = 'pinned-catalog'
+        elif vehicle_min <= target_id < vehicle_max:
+            target_resource = target_id * 100
+            resource_method = 'vehicle-item-resource-contract'
+        else:
+            raise ValueError(f'No reviewed resource ID for non-vehicle target {target_id}')
+        source_labels = sorted({row['label'] for row in source_rows})
+        target_labels = sorted({recipe['target'].strip() for recipe, _ in selected})
+        recipe_evidence = [dict(archive=recipe['archive'], text=recipe['text'], line=recipe['line'])
+                           for recipe, _ in selected]
+        vehicle_presets.append(dict(
+            source_item_id=source_id, source_resource_id=next(iter(source_resources)),
+            source_label=' / '.join(source_labels), target_item_id=target_id,
+            target_resource_id=target_resource, target_label=' / '.join(target_labels),
+            resource_method=resource_method,
+            package_mapping=dict(baseline_pak=baseline_key[1], vehicle_pak=vehicle_key[1],
+                                 name_map_index=remaps[source_id]['name_map_index']),
+            source_recipes=recipe_evidence))
+    unresolved = []
+    for recipe, source_rows in vehicle_recipes:
+        key = (recipe['archive'], recipe['text'], recipe['line'])
+        if key not in covered_recipes:
             unresolved.append(dict(source=recipe['source'], target=recipe['target'],
                 archive=recipe['archive'], text=recipe['text'], line=recipe['line'],
-                source_candidates=source_rows, target_candidates=target_rows))
-            continue
-        target = target_rows[0]
-        for source_row in source_rows:
-            key = (source_row['item_id'], target['item_id'])
-            vehicle_presets.setdefault(key, dict(source_item_id=source_row['item_id'],
-                source_resource_id=source_row['resource_id'], source_label=source_row['label'],
-                target_item_id=target['item_id'], target_resource_id=target['resource_id'],
-                target_label=target['label'], source_recipe=dict(archive=recipe['archive'],
-                text=recipe['text'], line=recipe['line'])))
-    vehicle_presets = sorted(vehicle_presets.values(),
-        key=lambda p: (p['source_item_id'], p['target_item_id']))
-    vehicle_catalog = dict(schema_version=1, status='vehicle-menu-candidates',
+                source_candidates=source_rows,
+                target_candidates=recipe['target_candidates']['candidates']))
+    vehicle_presets.sort(key=lambda p: (p['source_item_id'], p['target_item_id']))
+    vehicle_catalog = dict(schema_version=2, status='package-verified-vehicle-menu',
         item_id_contract='Vehicle state uses item_id; PutOnEquipmentByResID uses resource_id.',
         source_compatibility='Exact source item ID required before enqueue.',
+        package_mapping_evidence=dict(
+            baseline_pak=baseline_key[1], vehicle_pak=vehicle_key[1],
+            baseline_uasset_sha256=item_name_maps[baseline_key]['sha256'],
+            vehicle_uasset_sha256=item_name_maps[vehicle_key]['sha256']),
         presets=vehicle_presets, unresolved=unresolved,
         resolved_pair_count=len(vehicle_presets), unresolved_recipe_count=len(unresolved))
     (args.output / 'selected-vehicle-catalog.json').write_text(
         json.dumps(vehicle_catalog, ensure_ascii=False, indent=2) + '\n')
     vehicle_header = ['#ifndef CORE_COSMETICS_VEHICLE_CATALOG_H',
         '#define CORE_COSMETICS_VEHICLE_CATALOG_H', '#include <stdint.h>',
-        'typedef struct { uint32_t sourceItem, targetItem, targetResource; const char *sourceLabel, *targetLabel; } CCPVehiclePreset;',
+        'typedef struct { uint32_t sourceItem, sourceResource, targetItem, targetResource; const char *sourceLabel, *targetLabel; } CCPVehiclePreset;',
         'static const CCPVehiclePreset CCPVehiclePresets[] = {']
     for preset in vehicle_presets:
-        vehicle_header.append('    {%du, %du, %du, %s, %s},' % (
-            preset['source_item_id'], preset['target_item_id'], preset['target_resource_id'],
+        vehicle_header.append('    {%du, %du, %du, %du, %s, %s},' % (
+            preset['source_item_id'], preset['source_resource_id'],
+            preset['target_item_id'], preset['target_resource_id'],
             json.dumps(preset['source_label'], ensure_ascii=False),
             json.dumps(preset['target_label'], ensure_ascii=False)))
     vehicle_header += ['};',

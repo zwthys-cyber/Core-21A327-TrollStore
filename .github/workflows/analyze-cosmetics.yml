@@ -64,6 +64,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 analysis/cosmetics/catalog_match.py --inputs analysis-input --output analysis-output
+      - name: Verify committed vehicle catalog is reproducible
+        run: |
+          diff -u patch/CoreCosmeticsVehicleCatalog.h analysis-output/CoreCosmeticsVehicleCatalog.h
+          diff -u analysis/cosmetics/selected-vehicle-catalog.json analysis-output/selected-vehicle-catalog.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
