@@ -5,8 +5,8 @@
   "game_thread_dispatch_verified": false,
   "new_runtime_code": false,
   "latest_installable_revision": 10,
-  "cloud_runs": [38997584258, 38997728564, 38997837603, 38998163729, 38998232648],
-  "latest_analysis_commit": "d9196dbb3871ace05d7ad169f239a906a8bc84e6",
+  "cloud_runs": [38997584258, 38997728564, 38997837603, 38998163729, 38998232648, 38998851479, 38999428964, 38999489946],
+  "latest_analysis_commit": "b25d70d",
   "cloud_artifact": "Core-native-menu-review",
   "local_text_report_directory": "/root/和平精英/Core美化映射分析/Core远程会话归属与初始化",
   "function_boundary_caveat": "The pinned image has no decoded LC_FUNCTION_STARTS entries; disassembly windows and raw data pointer candidates are not recovered complete functions or decoded dispatch tables",
@@ -28,10 +28,37 @@
     "fatal_state_byte_rva": "0xc1d2e8",
     "quarantine_state_word_rva": "0xc1d2f8",
     "bootstrap_candidate_entry_rva": "0x3a7d4",
-    "bootstrap_entry_caveat": "Entry branches to 0x3800 before the body at 0x3a7d8; entry veneer and target-name argument need further review before any binding",
-    "bootstrap_evidence": "Refuses existing remote ports/mode flags and fatal/quarantine states; creates a suspended pthread and exception-port state; checks remote getpid result before publishing target PID at 0x3aeb8",
+    "bootstrap_body_rva": "0x3a7d8",
+    "bootstrap_veneer_rva": "0x3800",
+    "text_start_va": "0x100004000",
+    "bootstrap_entry_caveat": "0x3A7D4 is only a branch to 0x3800. That address is in the __TEXT segment but outside __text and outside every section. The veneer calls dlsym(RTLD_DEFAULT, CoreRemoteOpen) through stub 0x725A10 and branches to the resolved symbol; if lookup fails it returns 0 and does not execute the local body at 0x3A7D8. No direct branch to 0x3A7D8 exists. A zero return therefore does not prove the local body ran.",
+    "bootstrap_symbol": "CoreRemoteOpen",
+    "bootstrap_symbol_in_pinned_image": false,
+    "bootstrap_evidence": "The local body at 0x3A7D8 still contains the previously reviewed session, pthread and getpid checks, but it is not on the direct caller path. Callers pass a process-name string and a zero second argument.",
     "ownership": "Uses global session state separate from the cosmetics memory backend binding at 0xc288b0; no PID argument is present in the reviewed low-level function call",
-    "device_scope": "Historical successful remote open was SpringBoard; launchd had a timeout/quarantine. This does not establish a game session."
+    "device_scope": "The only direct callers pass the exact strings launchd and SpringBoard. The pinned image has no ShadowTrackerExtra, backboardd or com.tencent.tmgp.pubgmhd literal. This does not establish a game session.",
+    "callers": [
+      {
+        "site_rva": "0x2e7d4",
+        "function_rva": "0x2e76c",
+        "target_literal": "launchd",
+        "literal_va": "0x10073cc28",
+        "second_argument": 0,
+        "gate": "Returns 1 without opening when Core+0xC1C258 or +0xC1C259 is already set. Otherwise requires 0x2DCC0 to return nonzero, clears those bytes and +0xC1C25A, then calls the entry.",
+        "cleanup": "Both the nonzero and zero return paths call teardown 0x39F00 before the wrapper returns.",
+        "only_direct_caller_rva": "0x4e420",
+        "caller_gate": "0x4E3F8 tails into the wrapper only when 0x4E378 returns nonzero. 0x4E378 returns 0 unless the byte at Core+0xC27B2C is 1 and the word at +0xC27B28 is 2; on that match it tails to 0x2DCC0."
+      },
+      {
+        "site_rva": "0x563a0",
+        "function_rva": "0x5625c",
+        "target_literal": "SpringBoard",
+        "literal_va": "0x1007401bf",
+        "second_argument": 0,
+        "gate": "Calls only after three object fields are pairwise different and the third is nonzero. No direct branch to 0x5625C was found in __text.",
+        "cleanup": "The zero-return continuation calls teardown 0x39F00 at 0x56648. The nonzero path calls status helper 0x38DF0, which returns 1 when fatal byte 0xC1D2E8 or quarantine word 0xC1D2F8 is set."
+      }
+    ]
   },
   "call_candidates": [
     {
@@ -63,8 +90,14 @@
     "data_reference_rva": "0xbaa7b8",
     "caveat": "Nearby string lengths and authenticated metadata words are not proof of a callable function table; chained fixups/type metadata were not decoded"
   },
+  "thread_state_writer": {
+    "rva": "0x3b7f4",
+    "direct_callers": ["0x38ccc", "0x390cc", "0x390f0"],
+    "scope": "Sets ARM thread state with flavor 6 and count 0x44 inside the existing remote-call implementation. This is Core's remote thread register write, not an identified Unreal game-thread scheduler."
+  },
   "next_unresolved_work": [
-    "Review the remote bootstrap entry veneer and real callers, preserving ownership and cleanup of existing hosted sessions",
+    "Find which loaded image, if any, defines CoreRemoteOpen; do not call the local body at 0x3A7D8 by skipping the veneer",
+    "Do not treat a zero return from 0x3A7D4 as proof that the local initializer succeeded",
     "Establish a dedicated game target session without altering global capability or quarantine flags",
     "Identify a verified game-thread scheduler and the lifetime of its component/handle inputs before using the native vehicle loader",
     "Do not equate NSInvocation main-thread support, kernel memory readiness or symbol presence with working vehicle refresh"
