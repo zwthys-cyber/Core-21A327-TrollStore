@@ -84,5 +84,7 @@ jobs:
           path: |
             analysis-output/CoreCosmeticsCatalog.h
             analysis-output/selected-avatar-catalog.json
+            analysis-output/CoreCosmeticsVehicleCatalog.h
+            analysis-output/selected-vehicle-catalog.json
           if-no-files-found: error
           retention-days: 14

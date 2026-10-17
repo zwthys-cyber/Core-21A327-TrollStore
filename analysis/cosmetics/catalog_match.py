@@ -71,8 +71,10 @@ def main():
         hits = exact.get(key, [])
         method = 'normalized-exact'
         if not hits:
-            hits = [r for name, values in exact.items() if len(name) >= 6 and key.startswith(name) for r in values]
-            method = 'truncated-catalog-prefix'
+            hits = [r for name, values in exact.items()
+                    if min(len(name), len(key)) >= 6 and (key.startswith(name) or name.startswith(key))
+                    for r in values]
+            method = 'bidirectional-catalog-prefix'
         return dict(method=method, candidates=list({r['item_id']: r for r in hits}.values()))
 
     for recipe in recipes:
@@ -130,8 +132,56 @@ def main():
             json.dumps(preset['category'], ensure_ascii=False), json.dumps(preset['label'], ensure_ascii=False)))
     header += ['};', '#define CCP_PRESET_COUNT (sizeof(CCPAppearancePresets) / sizeof(CCPAppearancePresets[0]))', '#endif', '']
     (args.output / 'CoreCosmeticsCatalog.h').write_text('\n'.join(header))
+    # Vehicle recipes are kept source-specific: applying a target to an
+    # incompatible vehicle family is unsafe. Item IDs are the state/catalog
+    # identity; PutOnEquipmentByResID receives the separately recorded ResID.
+    vehicle_min, vehicle_max = 3300000, 3400000
+    vehicle_presets, unresolved = {}, []
+    for recipe in recipes:
+        source_rows = recipe['source_candidates']['candidates']
+        target_rows = recipe['target_candidates']['candidates']
+        source_rows = [r for r in source_rows if vehicle_min <= r['item_id'] < vehicle_max]
+        target_rows = [r for r in target_rows if vehicle_min <= r['item_id'] < vehicle_max]
+        if not source_rows:
+            continue
+        if len(target_rows) != 1:
+            unresolved.append(dict(source=recipe['source'], target=recipe['target'],
+                archive=recipe['archive'], text=recipe['text'], line=recipe['line'],
+                source_candidates=source_rows, target_candidates=target_rows))
+            continue
+        target = target_rows[0]
+        for source_row in source_rows:
+            key = (source_row['item_id'], target['item_id'])
+            vehicle_presets.setdefault(key, dict(source_item_id=source_row['item_id'],
+                source_resource_id=source_row['resource_id'], source_label=source_row['label'],
+                target_item_id=target['item_id'], target_resource_id=target['resource_id'],
+                target_label=target['label'], source_recipe=dict(archive=recipe['archive'],
+                text=recipe['text'], line=recipe['line'])))
+    vehicle_presets = sorted(vehicle_presets.values(),
+        key=lambda p: (p['source_item_id'], p['target_item_id']))
+    vehicle_catalog = dict(schema_version=1, status='vehicle-menu-candidates',
+        item_id_contract='Vehicle state uses item_id; PutOnEquipmentByResID uses resource_id.',
+        source_compatibility='Exact source item ID required before enqueue.',
+        presets=vehicle_presets, unresolved=unresolved,
+        resolved_pair_count=len(vehicle_presets), unresolved_recipe_count=len(unresolved))
+    (args.output / 'selected-vehicle-catalog.json').write_text(
+        json.dumps(vehicle_catalog, ensure_ascii=False, indent=2) + '\n')
+    vehicle_header = ['#ifndef CORE_COSMETICS_VEHICLE_CATALOG_H',
+        '#define CORE_COSMETICS_VEHICLE_CATALOG_H', '#include <stdint.h>',
+        'typedef struct { uint32_t sourceItem, targetItem, targetResource; const char *sourceLabel, *targetLabel; } CCPVehiclePreset;',
+        'static const CCPVehiclePreset CCPVehiclePresets[] = {']
+    for preset in vehicle_presets:
+        vehicle_header.append('    {%du, %du, %du, %s, %s},' % (
+            preset['source_item_id'], preset['target_item_id'], preset['target_resource_id'],
+            json.dumps(preset['source_label'], ensure_ascii=False),
+            json.dumps(preset['target_label'], ensure_ascii=False)))
+    vehicle_header += ['};',
+        '#define CCP_VEHICLE_PRESET_COUNT (sizeof(CCPVehiclePresets) / sizeof(CCPVehiclePresets[0]))',
+        '#endif', '']
+    (args.output / 'CoreCosmeticsVehicleCatalog.h').write_text('\n'.join(vehicle_header))
     print(json.dumps(catalog['category_counts'], ensure_ascii=False))
-    print(json.dumps(summary))
+    print(json.dumps(dict(**summary, vehicle_pairs=len(vehicle_presets),
+                          unresolved_vehicle_recipes=len(unresolved))))
 
 
 if __name__ == '__main__':
