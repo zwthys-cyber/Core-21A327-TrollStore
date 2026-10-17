@@ -12,8 +12,13 @@
 #import "CoreCosmeticsWriteCheck.h"
 #import "CoreCosmeticsTrial.h"
 #import "CoreCosmeticsVehicleTrial.h"
+#import "CoreCosmeticsVehicleEnqueue.h"
 #import "CoreCosmeticsPage.h"
 #import "CoreCosmeticsUIProfile.h"
+// Keep CCPEnqueuePutOnByResID linked for the product path; early-session never calls it.
+__attribute__((unused)) static void CCPRetainEnqueueSymbol(void) {
+    (void)&CCPEnqueuePutOnByResID;
+}
 
 // r1/r2 established the character read path and checked native writes on device.
 // r3 changes one coat and uses the game's own deferred refresh, then restores it.
