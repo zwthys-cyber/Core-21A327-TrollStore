@@ -166,6 +166,7 @@
     ,{"label": "sample GT CreateAndDispatch caller simple capture", "offset": "0x232ab7c", "length": "0x120"}
     ,{"label": "sample GT CreateAndDispatch near helper", "offset": "0x3764fe8", "length": "0x100"}
     ,{"label": "resource id decode used by PutOnEquipmentByResID", "offset": "0x383be84", "length": "0x180"}
+    ,{"label": "resource id decode implementation", "offset": "0x7403b1c", "length": "0x100"}
     ,{"label": "resource definition lookup used by PutOnEquipmentByResID", "offset": "0x383be88", "length": "0x180"}
     ,{"label": "dispatch_async stub", "offset": "0xaf26f44", "length": "0x10"}
     ,{"label": "dispatch_sync stub", "offset": "0xaf27100", "length": "0x10"}
