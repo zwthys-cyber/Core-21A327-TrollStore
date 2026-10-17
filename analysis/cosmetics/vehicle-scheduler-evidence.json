@@ -97,5 +97,14 @@
     "revision": 29,
     "change": "Drop 3349001-only gate. Lobby need not own Bentley; any current vehicle Avatar enqueues PutOn 3349002. Use training ground if lobby has no current vehicle.",
     "appearance_claim": "vehicle_appearance_changes_implemented stays false until visual confirmation"
+  },
+  "r30_probe": {
+    "revision": 30,
+    "device_r29": {
+      "pid_matches_published": true,
+      "game_thread_probe_status": "core-session-not-ready",
+      "cause": "RunGameThreadProbe required snapshot.words[1]; r26 open publishes C53460/BD4C5C/C534B0 instead"
+    },
+    "fix": "Accept published pid/ready/port when snapshot words[1] is unset after getpid match"
   }
 }
