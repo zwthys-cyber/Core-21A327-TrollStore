@@ -353,8 +353,10 @@ def main():
         game_thread_global=sum(1 for row in global_references if row.get('kind') == 'game-thread-global'),
         is_safe_native_callers=sum(1 for row in global_references if row.get('target') == '0x1042c4c9c'),
         put_on_native_callers=sum(1 for row in global_references if row.get('target') == '0x1047f2824'),
-        taskgraph_helper_callers=sum(1 for row in global_references if row.get('target') == '0x108b0097c'),
-        pixui_add_async_callers=sum(1 for row in global_references if row.get('target') == '0x1026dc768'),
+        taskgraph_get_callers=sum(1 for row in global_references if row.get('target') == '0x108af6894'),
+        create_task_callers=sum(1 for row in global_references if row.get('target') == '0x1035e3c10'),
+        dispatch_when_ready_callers=sum(1 for row in global_references if row.get('target') == '0x1035e3d50'),
+        queue_task_callers=sum(1 for row in global_references if row.get('target') == '0x103568f88'),
     )
     for record in functions:
         windows.append((record['name'], int(record['code_address'], 16), 0x200))
