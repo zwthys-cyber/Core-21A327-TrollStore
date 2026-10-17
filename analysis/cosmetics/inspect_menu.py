@@ -475,14 +475,17 @@ def chained_slot(blob, image, target):
                         else:
                             record['target'] = hex(low & (0xFFFFFFFF if auth else (1 << 43) - 1))
                         return record
-                    if nxt_from(address) == 0:
-                        break
-                    address += nxt_from(address) * stride
                     if not any(item['address'] <= address < item['address'] + item['length'] for item in image.segments):
                         break
+                    step = nxt_from(address)
+                    if step == 0:
+                        break
+                    address += step * stride
     return dict(status='not-in-chain', imports_format=imports_format, imports_count=imports_count, symbols_format=symbols_format)
 
 def nxt_from(address):
+    if not any(item['address'] <= address < item['address'] + item['length'] for item in offline.segments):
+        return 0
     raw = struct.unpack_from('<Q', offline_data, offline.offset(address))[0]
     return raw >> 51 & 0x7FF
 
