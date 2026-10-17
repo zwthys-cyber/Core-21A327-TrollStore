@@ -116,7 +116,7 @@ def main():
             name = image.data[stroff + name_offset:end]
             decoded = name.decode('utf-8', errors='replace')
             symbol_names.append(decoded)
-            if any(term.lower() in decoded.lower() for term in scheduler_terms):
+            if any(term.lower() in name.lower() for term in scheduler_terms):
                 scheduler_symbols.append(dict(name=decoded, kind=kind, section=symbol_section,
                                               value=hex(value)))
                 if len(scheduler_symbols) > 256:
