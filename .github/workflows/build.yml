@@ -62,12 +62,12 @@ jobs:
       - name: Validate output
         run: |
           if [ '${{ inputs.cosmetics_probe }}' = 'true' ]; then
-            python3 scripts/verify.py dist/Core-17.0-21A327-cosmetics-vehicle-r20.ipa --cosmetics-probe
+            python3 scripts/verify.py dist/Core-17.0-21A327-cosmetics-vehicle-r21.ipa --cosmetics-probe
           else
             python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-v19-600m.ipa
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.cosmetics_probe && 'Core-cosmetics-vehicle-r20' || 'Core-17.0-21A327-TrollStore-v19-600m' }}
+          name: ${{ inputs.cosmetics_probe && 'Core-cosmetics-vehicle-r21' || 'Core-17.0-21A327-TrollStore-v19-600m' }}
           path: dist/*
           retention-days: 14

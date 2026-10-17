@@ -624,7 +624,7 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.capturing = YES;
     atomic_store(&MenuBusy, true);
     atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @20, @"probe_revision": @20,
+    self.trialReport = [@{@"schema_version": @21, @"probe_revision": @21,
         @"mode": @"early-game-session", @"status": @"early-session-started",
         @"game_version": @"1.38.12", @"game_build": @"15915",
         @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
@@ -659,11 +659,15 @@ static NSDictionary *VehicleTrialObservation(void) {
         else if (!prefixes) status = @"core-entry-mismatch";
         self.trialReport[@"status"] = status;
         [self writeTrialReport];
-        if (identity && prefixes) for (waits = 0; waits < 600 && !called; waits++) {
-            self.trialReport[@"wait_ticks"] = @(waits);
-            self.trialReport[@"wait_blocker"] = waitBlocker;
-            self.trialReport[@"status"] = status;
-            [self writeTrialReport];
+        CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 180;
+        if (identity && prefixes) while (!called && CFAbsoluteTimeGetCurrent() < deadline) {
+            if ((waits % 25) == 0) {
+                self.trialReport[@"wait_ticks"] = @(waits);
+                self.trialReport[@"wait_blocker"] = waitBlocker;
+                self.trialReport[@"status"] = status;
+                [self writeTrialReport];
+            }
+            waits++;
             uint32_t quarantine = 0, pid = 0, port = 0;
             uint8_t fatal = 0, ready = 0;
             BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
@@ -732,7 +736,8 @@ static NSDictionary *VehicleTrialObservation(void) {
         }
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        self.trialReport = [@{@"schema_version": @20, @"probe_revision": @20,
+        if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
+        self.trialReport = [@{@"schema_version": @21, @"probe_revision": @21,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
