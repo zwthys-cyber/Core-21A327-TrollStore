@@ -658,7 +658,13 @@ r10 控制器拒绝新的车辆试换请求，菜单移除“宾利试换15秒�
 
 用户报告 `captured_at_unix=1792210479.7338228`，schema / probe 仍是 10，mode 为 `vehicle-entity-resource-diagnostics`。39 次尝试、手动停止，样本为空，最近 12 次都是 `game-identity-unconfirmed`。这是车辆采集，不是 r11 的进程名探测。失败发生在读取车辆之前：Core 缓存的游戏基址没有被确认为固定的 1.38.12 映像。不能解释成没上车。
 
-r12 把这个总状态拆成指针不可用、映像头读不到、不是 Mach-O、UUID 不匹配、UUID 读不到、加载命令未确认。连续第二次仍是这类失败就停止，finish_reason 为 `game-image-unconfirmed`。摘要在 `device-evidence-r12-identity.json`。最新安装包以 r12 构建为准。
+r12 把这个总状态拆成指针不可用、映像头读不到、不是 Mach-O、UUID 不匹配、UUID 读不到、加载命令未确认。连续第二次仍是这类失败就停止，finish_reason 为 `game-image-unconfirmed`。摘要在 `device-evidence-r12-identity.json`。
+
+### 11.23 进程名可见，隔离字 1 仍挡住打开
+
+用户随后给出 schema / probe 11 的进程名报告，`captured_at_unix=1792210726.760818`。`lookup_result=located`，`status=game-process-visible`，名称是 `ShadowTrackerExtra`。`session_open_attempted=false`。致命字节前后都是 0。隔离字前后都是 1，查找没有改它。摘要在 `device-evidence-r11-process.json`。
+
+隔离字 1 只有一个写入点：打开流程在 `0x3B0D0` 以代码 1 调用故障记录，对应字符串 `bootstrap-first-exception-timeout`（`0x73D573`）。打开入口对任何非 0 隔离字直接返回失败；官方 teardown 只在隔离字恰好为 2 时清零。不要从适配库把这个字改成 0。游戏进程已经能被名称查找看见，但在隔离字回到 0 之前不能调用 `CoreRemoteOpen`。车辆换肤仍未完成。
 
 ## 12. 下一位 AI 的建议接手顺序
 
