@@ -686,20 +686,28 @@ r12 报告 `captured_at_unix=1792211047.858849` 仍然是 `lookup_result=located
 
 r14 在车辆适配页增加“核对远程进程号”。它不调用进程名查找，不调用 `0x3A7D4`，也不调用 teardown。只有 Core 身份匹配、`0x3A3E8` 入口 32 字节匹配、隔离字和致命字节都是 0、ready 字节非 0、已发布 PID 非 0、并且 `0xC534B0` 的端口字非 0 时才调用。调用参数与打开函数相同：符号 `getpid`，两个参数字 0。报告 schema / probe 为 14，mode 为 `remote-getpid-check`。`pid_matches_published=true` 只表示远程返回的进程号等于已发布目标，不表示车辆外观已改变。
 
+### 11.26 r14 没有调用：入口字节写错，隔离字已经是 1
+
+用户安装 r14 后先点了“尝试打开游戏”。报告 `captured_at_unix=1792213857.096318`，schema 13，`open_result=not-called`，`status=open-blocked-by-recorded-fault`。隔离字在点击前已经是 1，致命字节是 0，打开没有发出去。摘要在 `device-evidence-r14-open-blocked.json`。
+
+随后的核对报告 `captured_at_unix=1792213944.452323`，schema 14，`status=remote-symbol-entry-mismatch`，`call_result=not-called`。Core 身份通过，但 `0x3A3E8` 的 32 字节不匹配，所以核对也没有发出去。隔离字前后仍是 1，ready 为 0，已发布 PID 为 0，端口字却非 0。摘要在 `device-evidence-r14-exec-mismatch.json`。
+
+固定 Core 文件里这段入口是 `7f2303d5ff4301d1f65702a9f44f03a9fd7b04a9fd030191f30303aaf40302aa`。r14 把其中的 `fd7b04a9` 写成了 `fd7f04a9`。r15 改为文件原字节。这次失败没有改隔离字，也没有调用 getpid。车辆换肤仍未完成。
+
 `0x39C74` 在端口等待失败时直接返回 0，不写隔离字。后续调度失败会以代码 3 调用故障入口 `0x39844`，隔离字可能因此变成 3。入口前缀不匹配或会话门闩不满足时，r14 不会发起调用。不要把这份尚未实机返回的包说成远程执行已经证实，更不要说车皮已经换上。
 
 ## 12. 下一位 AI 的建议接手顺序
 
 1. 先读 `AGENTS.md`、本文，查看分支与工作区状态。不要重跑本机编译或分析。
 2. 先读 `device-evidence-r8.json` 和 `device-evidence-r9.json`：取车已成功；r9 写入成功，但 Pending 未消费、缓存计数一直 1，用户确认画面没变。不要再重复 r6～r9 的同一失败流程。
-3. 最新代码包为 r14。先读 `device-evidence-r13-open.json`：游戏进程远程打开已经返回成功码。r14 只核对这条会话上的远程 getpid，见 11.25。不要重复 r6～r9 的写入，也不要在 getpid 对上之前调用 PutOnEquipmentByResID。
+3. 最新代码包为 r15。r14 的 getpid 核对没有调用：入口 32 字节写错，而且当时隔离字已经是 1。先读 `device-evidence-r14-exec-mismatch.json` 和 11.26。不要重复 r6～r9 的写入，也不要在 getpid 对上之前调用 PutOnEquipmentByResID。
 4. 在云端分析中以实机 Vehicle vtable `0x10EBC1680` 为依据，不能直接套用角色 F50、调用未经确认的函数或修改能力标志。
 5. 若 r9 主槽 / Pending 写成 3349002、原生 Skin / Real 却一直为 3349001，不能宣称生效；下一步核对真实消费者。静态主程序未证明 Pending 字段单独可驱动完整刷新，不能盲目重复相同请求或套用衣服的 F50。
 6. r9 已写入主槽 ID、主槽计数（递增）和 Vehicle.PendingVehicleSkinID；原生 Skin / Real / Default 只读。保持修改范围，且未恢复的记录会阻止新试换。退出或换车导致归属改变时不能强写旧地址。
 7. 既有回归覆盖 r8 来源与位图、r9 部分失败恢复及模拟消费者、r10 映射 / 原生哈希 / 类型归属 / 句柄 / 模型字段和变化。测试不能证明目标资源存在或原生刷新已执行；新增修改仅在 Actions 验证。
 8. r9 曾仅开放 4 座敞篷 3349001→宾利 3349002；r10 暂不开放新的车辆写入。未验证这组之前不要开放所有配料目标；跨车型 PAK 替换不证明原生 ID 兼容。
 9. 用户已确认目标宾利预览正常；r10 自动检测字段仍为 not-checked。沿类与归属正确的实体分析，不要盲写 RenderDirty、改共享句柄物品 ID，或要求下载所有资源后才继续调查。
-10. 读 11.24 和 11.25。r13 已经对 ShadowTrackerExtra 打开成功，会话留在原处。r14 调用 `0x3A3E8` 做远程 getpid 核对。不要跳过入口桥、强清隔离，或把这次进程号一致说成车辆换肤。Unreal 游戏线程调度仍未建立。
+10. 读 11.24 到 11.26。r13 打开成功过一次。r14 的核对因入口字节错误没有调用，当时隔离字已是 1。r15 只修正这 32 字节。不要跳过入口桥、强清隔离，或把进程号一致说成车辆换肤。Unreal 游戏线程调度仍未建立。
 
 不要再让用户重复用 r6、r7 采集相同失败状态。用户已经提供了足够说明“坐驾驶位仍失败”的证据；新请求反馈应建立在具体修正和可安装的新包上。
 

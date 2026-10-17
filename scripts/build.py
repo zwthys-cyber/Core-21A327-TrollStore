@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-vehicle-r14.ipa"
-COSMETICS_BUNDLE_BUILD = "20.14"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-vehicle-r15.ipa"
+COSMETICS_BUNDLE_BUILD = "20.15"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -253,7 +253,7 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="14",
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="15",
                     CoreCosmeticsMode="remote-getpid-check", CoreCosmeticsUILocation="native-menu-below-position")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)

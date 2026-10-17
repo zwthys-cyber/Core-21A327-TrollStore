@@ -66,9 +66,10 @@ typedef uint64_t (*CCPRemoteOpen)(const char *, uint64_t);
 // 0x3A3E8 is the wrapper the open body calls at 0x3AE80 with "getpid".
 // It resolves the symbol locally, strips the pointer, and calls 0x39C74.
 // Success is the low 32 bits equal to 1; the output word is the remote return.
+// File bytes at RVA 0x3A3E8 in the pinned Core image.
 static const uint8_t RemoteSymbolPrefix[32] = {
     0x7f,0x23,0x03,0xd5,0xff,0x43,0x01,0xd1,0xf6,0x57,0x02,0xa9,0xf4,0x4f,0x03,0xa9,
-    0xfd,0x7f,0x04,0xa9,0xfd,0x03,0x01,0x91,0xf3,0x03,0x03,0xaa,0xf4,0x03,0x02,0xaa
+    0xfd,0x7b,0x04,0xa9,0xfd,0x03,0x01,0x91,0xf3,0x03,0x03,0xaa,0xf4,0x03,0x02,0xaa
 };
 typedef uint64_t (*CCPRemoteSymbolCall)(const char *, uint64_t, uint64_t, uint64_t *);
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
@@ -695,8 +696,13 @@ static NSDictionary *VehicleTrialObservation(void) {
         NSString *status = @"core-identity-mismatch";
         BOOL called = NO, pidMatches = NO;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
-        BOOL entry = EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix);
+        uint8_t seenEntry[32] = {0};
+        BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
+        BOOL entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
+        NSMutableString *seenHex = [NSMutableString stringWithCapacity:64];
+        if (entryRead) for (unsigned i = 0; i < sizeof(seenEntry); i++) [seenHex appendFormat:@"%02x", seenEntry[i]];
         if (!identity) status = @"core-identity-mismatch";
+        else if (!entryRead) status = @"remote-symbol-entry-unreadable";
         else if (!entry) status = @"remote-symbol-entry-mismatch";
         else if (!quarantineRead || quarantineBefore != 0 || !fatalRead || fatalBefore != 0 ||
                  !readyRead || remoteReady == 0 || !pidRead || targetPid == 0 || !portRead || remotePort == 0) {
@@ -717,9 +723,10 @@ static NSDictionary *VehicleTrialObservation(void) {
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
         uint8_t remoteReadyAfter = 0;
         BOOL readyAfterRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReadyAfter, sizeof(remoteReadyAfter));
-        self.trialReport = [@{@"schema_version": @14, @"probe_revision": @14,
+        self.trialReport = [@{@"schema_version": @15, @"probe_revision": @15,
             @"mode": @"remote-getpid-check", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"symbol": @"getpid", @"call_result": callResult, @"status": status,
+            @"entry_matches": @(entry), @"entry_prefix": seenHex,
             @"session_open_attempted": @NO, @"exec_call_attempted": @(called),
             @"vehicle_appearance_changes_implemented": @NO,
             @"target_pid_published": @(pidRead && targetPid != 0),
