@@ -7,9 +7,9 @@ static bool visible, nextEnabled, requested;
 static int clickedPreset = -1;
 static char clickedButton;
 static uint32_t requestedPreset, shown[4];
-static CCPUIVec origin, dimensions;
+static CCPUIVec origin, dimensions, currentCursor, buttonPositions[256];
 static char title[256];
-static void Cursor(const CCPUIVec *p) { if (!cursors++) origin = *p; }
+static void Cursor(const CCPUIVec *p) { currentCursor = *p; if (!cursors++) origin = *p; }
 static bool Begin(const char *text, const CCPUIVec *size, int childFlags, int windowFlags) {
     assert(childFlags == 0 && windowFlags == 0x10 && !strstr(text, "###"));
     begins++; dimensions = *size; snprintf(title, sizeof(title), "%s", text); return visible;
@@ -25,13 +25,14 @@ static bool Checkbox(const char *text, bool *enabled, float width) {
     return false;
 }
 static bool Button(const char *icon, const char *label, bool selected) {
-    assert((!selected || icon[0] == 'v' || icon[0] == 't' || icon[0] == 'g' || icon[0] == 'o' || icon[0] == 'k') && ((icon[0] == 'p' && !strcmp(label, "上一页")) ||
+    assert((!selected || icon[0] == 'v' || icon[0] == 't' || icon[0] == 'r' || icon[0] == 'g' || icon[0] == 'o' || icon[0] == 'k') && ((icon[0] == 'p' && !strcmp(label, "上一页")) ||
         (icon[0] == 'n' && !strcmp(label, "下一页")) || (icon[0] == 'c' && !strcmp(label, "换分类")) ||
-        (icon[0] == 'v' && !strcmp(label, "采集车辆")) || (icon[0] == 's' && !strcmp(label, "停止采集")) ||
+        (icon[0] == 'v' && !strcmp(label, "采集车辆")) ||
         (icon[0] == 'g' && !strcmp(label, "探测游戏进程")) ||
         (icon[0] == 'o' && !strcmp(label, "尝试打开游戏")) ||
         (icon[0] == 'k' && !strcmp(label, "核对远程进程号")) ||
-        (icon[0] == 't' && !strcmp(label, "宾利试换15秒")) || (icon[0] == 'r' && !strcmp(label, "恢复原车"))));
+        (icon[0] == 't' && !strcmp(label, "装目标车皮")) || (icon[0] == 'r' && !strcmp(label, "恢复原车"))));
+    buttonPositions[(unsigned char)icon[0]] = currentCursor;
     buttons++; return icon[0] == clickedButton;
 }
 static void Action(uint32_t preset, bool enabled) { actions++; requestedPreset = preset; requested = enabled; }
@@ -76,13 +77,14 @@ int main(void) {
     Draw(1, CCPMenuVehicleWaiting, false, 0, &category, &page);
     assert(controls == 0 && buttons == 6 && actions == previousActions + 1);
     assert(requested && requestedPreset == CCP_VEHICLE_CAPTURE_INDEX && strstr(title, "车辆适配"));
-    clickedButton = 's';
-    Draw(1, CCPMenuVehicleWaiting, true, CCP_VEHICLE_CAPTURE_INDEX, &category, &page);
-    assert(!requested && requestedPreset == CCP_VEHICLE_CAPTURE_INDEX);
     clickedButton = 't';
     previousActions = actions;
-    Draw(1, CCPMenuVehicleTrialApplied, true, CCP_VEHICLE_TRIAL_INDEX, &category, &page);
-    assert(actions == previousActions && buttons == 7); // Removed ineffective r9 apply action.
+    Draw(1, CCPMenuIdle, false, 0, &category, &page);
+    assert(actions == previousActions + 1 && requested && requestedPreset == CCP_VEHICLE_TRIAL_INDEX);
+    assert(buttons == 6);
+    assert(buttonPositions['t'].y == buttonPositions['r'].y);
+    assert(buttonPositions['r'].x != buttonPositions['t'].x);
+    assert(buttonPositions['g'].y != buttonPositions['r'].y);
     clickedButton = 'r';
     Draw(1, CCPMenuVehicleRestoring, true, CCP_VEHICLE_TRIAL_INDEX, &category, &page);
     assert(!requested && requestedPreset == CCP_VEHICLE_TRIAL_INDEX && strstr(title, "正在恢复原车"));
