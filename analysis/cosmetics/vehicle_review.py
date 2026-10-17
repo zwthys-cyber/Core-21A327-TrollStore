@@ -66,6 +66,32 @@ def main():
     report = dict(status='static-vehicle-candidates-only', runtime_validated=False,
                   properties=properties, functions=functions, clusters=clusters, pointer_tables=tables,
                   discovered_names=discovered, scheduler_names=scheduler_names)
+    abi_decoder = analyze.Cs(analyze.CS_ARCH_ARM64, analyze.CS_MODE_ARM)
+    def instructions(address, count):
+        offset = image.offset(address)
+        return [f'{row.mnemonic} {row.op_str}'.strip()
+                for row in abi_decoder.disasm(image.data[offset:offset + count * 4], address)]
+    puton_abi = {
+        'entry': instructions(0x1047F2834, 4),
+        'decoder': instructions(0x107403B28, 10),
+        'registry_lookup': instructions(0x1074007D0, 4),
+        'completion_gadget': instructions(0x100334AD4, 2),
+    }
+    if puton_abi['entry'] != [
+            'mov x19, x0', 'add x8, sp, #0x18', 'mov x0, x1', 'bl #0x10383be84']:
+        raise ValueError('PutOnEquipmentByResID entry ABI changed')
+    if puton_abi['decoder'][:6] != [
+            'mov x20, x0', 'mov x19, x8', 'bl #0x1074006e8', 'cbz x0, #0x107403b58',
+            'bl #0x1074006e8', 'mov x1, x20']:
+        raise ValueError('PutOn resource decoder ABI changed')
+    if puton_abi['registry_lookup'] != [
+            'mov x20, x1', 'mov x19, x0', 'str w1, [sp, #0xc]', 'add x0, x0, #0xd0']:
+        raise ValueError('PutOn resource registry key ABI changed')
+    if puton_abi['completion_gadget'] != ['str w1, [x0]', 'ret']:
+        raise ValueError('PutOn completion gadget changed')
+    report['puton_resource_abi'] = dict(
+        **puton_abi, receiver_register='x0', resource_id_register='x1',
+        registry_key_width_bits=32, output_register='x8')
     report['reviewed_strings'] = []
     for entry in config.get('strings', []):
         offset = image.offset(int(entry['address'], 16))

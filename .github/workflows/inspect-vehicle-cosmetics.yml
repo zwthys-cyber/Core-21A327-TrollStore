@@ -2,7 +2,9 @@ name: Inspect vehicle cosmetics
 on:
   workflow_dispatch:
   push:
-    branches: [feat/kernel-cosmetics]
+    branches:
+      - feat/kernel-cosmetics
+      - 'cursor/**'
     paths:
       - 'analysis/cosmetics/vehicle_review.py'
       - 'analysis/cosmetics/vehicle-windows.json'

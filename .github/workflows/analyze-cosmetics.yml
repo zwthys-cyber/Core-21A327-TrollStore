@@ -1,8 +1,19 @@
 name: Analyze Core cosmetics inputs
 on:
   workflow_dispatch:
-  push:
+  pull_request:
     branches: [feat/kernel-cosmetics]
+    paths:
+      - 'analysis/cosmetics/**'
+      - '!analysis/cosmetics/vehicle_review.py'
+      - '!analysis/cosmetics/vehicle-windows.json'
+      - '!analysis/cosmetics/inspect_menu.py'
+      - '!analysis/cosmetics/menu-windows.json'
+      - '.github/workflows/analyze-cosmetics.yml'
+  push:
+    branches:
+      - feat/kernel-cosmetics
+      - 'cursor/**'
     paths:
       - 'analysis/cosmetics/**'
       - '!analysis/cosmetics/vehicle_review.py'
@@ -53,6 +64,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 analysis/cosmetics/catalog_match.py --inputs analysis-input --output analysis-output
+      - name: Verify committed vehicle catalog is reproducible
+        run: |
+          diff -u patch/CoreCosmeticsVehicleCatalog.h analysis-output/CoreCosmeticsVehicleCatalog.h
+          diff -u analysis/cosmetics/selected-vehicle-catalog.json analysis-output/selected-vehicle-catalog.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -73,5 +88,7 @@ jobs:
           path: |
             analysis-output/CoreCosmeticsCatalog.h
             analysis-output/selected-avatar-catalog.json
+            analysis-output/CoreCosmeticsVehicleCatalog.h
+            analysis-output/selected-vehicle-catalog.json
           if-no-files-found: error
           retention-days: 14

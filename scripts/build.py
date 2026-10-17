@@ -20,8 +20,8 @@ DYLIB_VERSION = 0x10000
 PATCH_VERSION = 19
 BUNDLE_BUILD = "20"
 ARTIFACT_NAME = "Core-17.0-21A327-TrollStore-v19-600m.ipa"
-COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-vehicle-r33.ipa"
-COSMETICS_BUNDLE_BUILD = "20.33"
+COSMETICS_ARTIFACT_NAME = "Core-17.0-21A327-cosmetics-vehicle-r43.ipa"
+COSMETICS_BUNDLE_BUILD = "20.43"
 LICENSE_SHA256 = "765793d5c5202ce8e31dd97d1270fcb69b6244c4347ef9460d594fbcad40a529"
 LICENSE_UUID = bytes.fromhex("4fd6c6bcafb83fb09594261e2f842bd4")
 LICENSE_STARTUP_ENTRIES = {
@@ -253,7 +253,7 @@ def main():
                 CoreFeatureProfile=PROFILE,
                 CoreLocalLicenseGate="disabled-startup", CoreRemoteTraceVersion="1")
     if args.cosmetics_probe:
-        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="32",
+        info.update(CFBundleVersion=COSMETICS_BUNDLE_BUILD, CoreCosmeticsProbeVersion="43",
                     CoreCosmeticsMode="early-game-session", CoreCosmeticsUILocation="native-menu-below-position")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
@@ -301,12 +301,15 @@ def main():
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False,
                   cosmetics_probe=args.cosmetics_probe, cosmetics_writes_implemented=args.cosmetics_probe,
-                  cosmetics_trial_preset="five-category-catalog-with-vehicle-capture" if args.cosmetics_probe else None,
+                  cosmetics_trial_preset="five-character-categories-plus-35-package-vehicle-mappings" if args.cosmetics_probe else None,
                   cosmetics_vehicle_writes_implemented=args.cosmetics_probe,
-                  cosmetics_vehicle_trial_available=False,
+                  cosmetics_vehicle_trial_available=args.cosmetics_probe,
+                  cosmetics_vehicle_catalog_pairs=35 if args.cosmetics_probe else 0,
+                  cosmetics_vehicle_source_gate="exact-item-id" if args.cosmetics_probe else None,
+                  cosmetics_vehicle_success_gate="target-item-master-sync-loaded-handle-mesh-clean" if args.cosmetics_probe else None,
                   cosmetics_vehicle_capture_read_only=True,
                   cosmetics_vehicle_entity_diagnostics=args.cosmetics_probe,
-                  cosmetics_target_vehicle_resource_availability="not-checked",
+                  cosmetics_target_vehicle_resource_availability="package-catalog-verified" if args.cosmetics_probe else None,
                   cosmetics_visual_effect_verified=False,
                   cosmetics_device_verified_targets=[403188] if args.cosmetics_probe else [],
                   cosmetics_visual_verified_revision=3 if args.cosmetics_probe else None,

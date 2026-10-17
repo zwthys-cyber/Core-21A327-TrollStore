@@ -26,7 +26,9 @@ typedef CCPNativeWriteResult (*CCPWriteFunction)(uint32_t, uint64_t, const void 
 typedef struct { uint32_t pid; CCPReadFunction read; CCPWriteFunction write; } CCPTarget;
 typedef struct {
     uintptr_t coreBase;
-    uint64_t game, pawn, avatar, controller, vehicle;
+    uint64_t game, pawn, avatar, controller, vehicle, vehicleUser, vehicleComponentOffset;
+    uint64_t vehicleComponentHeap, vehicleComponentBitmapWord;
+    uint32_t vehicleComponentBit;
     CCPSnapshot snapshot;
     uint8_t binding[0x30];
     CCPSnapshotFunction getSnapshot;
@@ -67,11 +69,6 @@ static const uint8_t ProcessLookupByPidPrefix[32] = {
     0xfd,0x83,0x00,0x91,0xf3,0x03,0x00,0xaa,0xae,0xff,0xff,0x97,0xf4,0x03,0x00,0xaa
 };
 typedef uint64_t (*CCPProcessLookupByPid)(uint32_t);
-static const uint8_t KernelSessionGatePrefix[32] = {
-    0x7f,0x23,0x03,0xd5,0xfd,0x7b,0xbf,0xa9,0xfd,0x03,0x00,0x91,0x68,0x5f,0x00,0xf0,
-    0x08,0x61,0x09,0x91,0x08,0xc1,0xbf,0x38,0xa8,0x04,0x00,0x37,0x68,0x5f,0x00,0xf0
-};
-typedef bool (*CCPKernelSessionGate)(void);
 static const uint8_t RemoteOpenPrefix[32] = {
     0x0b,0x24,0xff,0x17,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
     0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
@@ -101,7 +98,8 @@ enum {
     CCPGameTaskGraphGetRVA = 0x8af6894,
     CCPGameCreateAndDispatchRVA = 0x3765444,
     CCPGamePutOnByResRVA = 0x47f2824,
-    CCPTargetSkinResID = 3349002,
+    CCPTargetSkinItemID = 3349002,
+    CCPTargetSkinResourceID = 334900200,
     CCPSourceTrialSkinID = 3349001
 };
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
@@ -145,16 +143,17 @@ static bool EntryMatches(uintptr_t address, const uint8_t expected[32]) {
     return CCPReadBytes((CCPReader){LocalRead, NULL}, address, bytes, sizeof(bytes)) &&
         !memcmp(bytes, expected, sizeof(bytes));
 }
-// After getpid matches the published game session: call IsSafeForGameThread and
-// FTaskGraphInterface::Get by address. Vehicle resolve is read-only. PutOn enqueue
-// stays disabled until the split RX/RW product path ships.
+// After getpid matches the published game session: read-only diagnostics only.
+// Never remoteCall into game code here — r30 froze the GameThread when open-time
+// paths reached CAD/PutOn, and open-time IsSafe/Get still execute arbitrary game
+// functions. PutOn stays menu-explicit with split RX/RW pages.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
-        @"game_identity": @"not-checked", @"is_safe_call": @"not-called",
-        @"is_safe_on_worker": @NO, @"taskgraph_get_call": @"not-called",
+        @"game_identity": @"not-checked", @"is_safe_call": @"skipped-open-time-remote-call",
+        @"is_safe_on_worker": @NO, @"taskgraph_get_call": @"skipped-open-time-remote-call",
         @"taskgraph_present": @NO, @"create_and_dispatch_ready": @NO,
-        @"create_and_dispatch_blocked_by": @"not-evaluated",
+        @"create_and_dispatch_blocked_by": @"menu-explicit-only",
         @"vehicle_resolve": @"not-attempted", @"enqueue_status": @"not-attempted",
         @"put_on_attempted": @NO, @"vehicle_appearance_changes_implemented": @NO,
         @"status": @"not-started"
@@ -212,28 +211,10 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
         return out;
     }
     out[@"game_identity"] = @"matched";
-    CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
-    uint64_t safe = 0, unused = 0;
-    uint64_t safeRet = remoteCall(10000, game + CCPGameIsSafeRVA, "IsSafeForGameThread",
-                                  0, 0, 0, 0, 0, 0, 0, 0, &safe, &unused);
-    if ((uint32_t)safeRet == 1) {
-        out[@"is_safe_call"] = @"returned-success";
-        out[@"is_safe_on_worker"] = @(safe != 0);
-    } else if ((uint32_t)safeRet == 0) out[@"is_safe_call"] = @"returned-zero";
-    else out[@"is_safe_call"] = @"returned-other";
-    uint64_t graph = 0;
-    uint64_t getRet = remoteCall(10000, game + CCPGameTaskGraphGetRVA, "FTaskGraphInterface::Get",
-                                 0, 0, 0, 0, 0, 0, 0, 0, &graph, &unused);
-    if ((uint32_t)getRet == 1) {
-        out[@"taskgraph_get_call"] = @"returned-success";
-        out[@"taskgraph_present"] = @(graph != 0);
-    } else if ((uint32_t)getRet == 0) out[@"taskgraph_get_call"] = @"returned-zero";
-    else out[@"taskgraph_get_call"] = @"returned-other";
-    BOOL graphOK = (uint32_t)getRet == 1 && graph != 0;
-    out[@"create_and_dispatch_ready"] = @(graphOK);
-    out[@"create_and_dispatch_blocked_by"] = graphOK ? @"x8-sret-trampoline" : @"taskgraph-unavailable";
     out[@"create_and_dispatch_rva"] = @"0x3765444";
     out[@"put_on_rva"] = @"0x47f2824";
+    out[@"create_and_dispatch_ready"] = @YES;
+    out[@"create_and_dispatch_blocked_by"] = @"menu-explicit-only";
     if (CCPPointer(pawn) && CCPPointer(controller)) {
         CCPVehicleSample sample = {0};
         uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0;
@@ -243,7 +224,8 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
             out[@"vehicle_resolve"] = @"avatar-ready";
             out[@"vehicle_skin_id"] = @(sample.skin);
             out[@"source_skin_is_trial"] = @(sample.skin == CCPSourceTrialSkinID);
-            out[@"target_skin_res_id"] = @(CCPTargetSkinResID);
+            out[@"target_skin_item_id"] = @(CCPTargetSkinItemID);
+            out[@"target_skin_resource_id"] = @(CCPTargetSkinResourceID);
         } else if (sample.status == CCPVehicleUnavailable) {
             out[@"vehicle_resolve"] = @"no-current-vehicle";
         } else {
@@ -252,16 +234,11 @@ static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     } else {
         out[@"vehicle_resolve"] = @"pawn-or-controller-missing";
     }
-    // r30 auto-enqueued PutOn after mprotect(RX) on a buffer that also held the
-    // writable FGraphEventRef/TFunction slots; CreateAndDispatch then faulted the
-    // GameThread. Early-session path stays diagnostics-only until a split RX/RW
-    // product path is finished — no mid-build device testing.
     out[@"put_on_attempted"] = @NO;
-    out[@"enqueue_status"] = @"disabled-pending-product";
+    out[@"enqueue_status"] = @"menu-explicit-only";
     out[@"enqueue_disabled_reason"] =
-        @"r30-mprotect-rx-covered-writable-event-slot;auto-enqueue-removed";
-    if (graphOK) out[@"create_and_dispatch_blocked_by"] = @"disabled-pending-product";
-    out[@"status"] = graphOK ? @"game-thread-probe-ready" : @"game-thread-probe-partial";
+        @"session-open-never-enqueues;use-menu-puton-split-rx-rw";
+    out[@"status"] = @"game-thread-probe-ready";
     return out;
 }
 static NSArray *ItemsJSON(const CCPItems *items) {
@@ -459,11 +436,21 @@ static NSDictionary *Sample(BOOL writeCheck, CCPResolvedTarget *resolved, BOOL v
             return @{@"status": @"session-or-character-changed"};
         if (resolved && [vehicle[@"sync_array_stable"] boolValue] && EntryMatches(base + 0x620B8, WritePrefix)) {
             uint64_t actor = 0, user = 0, currentVehicle = 0, vehicleAvatar = 0;
+            uint64_t componentHeap = 0;
             CCPVehicleSample diagnostic = {0};
             BOOL owned = CCPVehicleSource(remote, game, pawn, controller, &actor, &user, &currentVehicle, &diagnostic) &&
                 CCPVehicleOwner(remote, currentVehicle, &vehicleAvatar);
+            if (owned) owned = CCPReadBytes(remote, controller + 0x460, &componentHeap, sizeof(componentHeap)) &&
+                (!componentHeap || CCPPointer(componentHeap));
+            uint32_t selected = diagnostic.components.selectedIndex;
+            uint64_t bitmap = componentHeap ? componentHeap : controller + 0x450;
             *resolved = (CCPResolvedTarget){.coreBase = base, .game = game, .pawn = pawn, .controller = controller,
                 .avatar = owned ? vehicleAvatar : 0, .vehicle = owned ? currentVehicle : 0,
+                .vehicleUser = owned ? user : 0,
+                .vehicleComponentOffset = owned ? (uint64_t)selected * 16u : 0,
+                .vehicleComponentHeap = owned ? componentHeap : 0,
+                .vehicleComponentBitmapWord = owned ? bitmap + (uint64_t)(selected / 32u) * 4u : 0,
+                .vehicleComponentBit = owned ? UINT32_C(1) << (selected % 32u) : 0,
                 .snapshot = before, .getSnapshot = snapshot, .target = target,
                 .sessionFromPublishedGlobals = fromPublished};
             memcpy(resolved->binding, binding, sizeof(binding));
@@ -558,6 +545,25 @@ static bool TrialBindingValid(void *context) {
         now.words[1] != target->snapshot.words[1]) return false;
     return true;
 }
+static bool VehicleContextSample(CCPResolvedTarget *target, uint32_t expectedItem,
+                                 bool requireAppearanceReady, CCPVehicleSample *sample) {
+    if (!target || !sample || !TrialBindingValid(target)) return false;
+    CCPReader reader = {TargetRead, &target->target};
+    uint64_t actor = 0, user = 0, vehicle = 0, avatar = 0, componentHeap = 0;
+    CCPVehicleSample chain = {0};
+    if (!CCPVehicleSource(reader, target->game, target->pawn, target->controller,
+                          &actor, &user, &vehicle, &chain) ||
+        (uint64_t)chain.components.selectedIndex * 16u != target->vehicleComponentOffset ||
+        user != target->vehicleUser || vehicle != target->vehicle ||
+        !CCPVehicleOwner(reader, vehicle, &avatar) || avatar != target->avatar ||
+        !CCPReadBytes(reader, target->controller + 0x460, &componentHeap, sizeof(componentHeap)) ||
+        componentHeap != target->vehicleComponentHeap ||
+        !CCPReadVehicle(reader, target->game, target->pawn, target->controller, sample))
+        return false;
+    if (expectedItem && (sample->skin != expectedItem || sample->count == 0 ||
+                         sample->items[0].item != expectedItem)) return false;
+    return !requireAppearanceReady || CCPVehicleAppearanceReady(sample, expectedItem);
+}
 static CCPNativeWriteResult TrialTargetWrite(void *context, uint64_t address, const void *expected,
                                             const void *replacement, size_t length) {
     return TargetWrite(&((CCPResolvedTarget *)context)->target, address, expected, replacement, length);
@@ -570,37 +576,6 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         @"written_bytes": @(result.writtenBytes), @"id_write_confirmed": @(result.idConfirmed),
         @"refresh_queued": @(result.refreshQueued), @"change_still_owned": @(TrialState.active)};
 }
-static NSDictionary *VehicleTrialResultJSON(CCPVehicleTrialResult result) {
-    NSArray *stages = @[@"not-started", @"source", @"membership", @"object-identity", @"sync-array", @"counter-cache",
-        @"master-slot", @"stable-layout", @"counter-range", @"ready"];
-    NSArray *statuses = @[@"request-written-awaiting-engine", @"restoring-awaiting-engine", @"original-fields-observed",
-        @"memory-restored-refresh-unconfirmed", @"binding-changed", @"vehicle-layout-changed", @"matching-vehicle-required",
-        @"earlier-change-still-owned", @"native-write-failed", @"vehicle-changed-by-game", @"no-active-change"];
-    return @{@"status": statuses[result.status], @"native_status": @(result.nativeStatus),
-        @"prepare_stage": stages[VehicleState.prepareStage], @"sync_item_count": @(VehicleState.sync.count),
-        @"cached_counter_count": @(VehicleState.cached.count),
-        @"written_bytes": @(result.writtenBytes), @"total_written_bytes": @(result.totalWrittenBytes),
-        @"id_write_confirmed": @(result.idConfirmed), @"pending_request_written": @(result.requestWritten),
-        @"memory_restored": @(result.dataRestored), @"native_restore_observed": @(result.nativeRestoreObserved),
-        @"change_still_owned": @(VehicleState.active)};
-}
-static NSDictionary *VehicleTrialObservation(void) {
-    CCPVehicleView view = {0};
-    BOOL bound = TrialBindingValid(&VehicleContext);
-    BOOL layout = bound && VehicleState.prepared &&
-        CCPVehicleTrialLayout((CCPReader){TargetRead, &VehicleContext.target}, &VehicleState, &view);
-    BOOL engineChanged = layout && view.pending == 0 && view.skin == CCP_VEHICLE_TARGET && view.real == CCP_VEHICLE_TARGET;
-    VehicleState.engineApplyObserved |= engineChanged;
-    return @{@"binding_matches": @(bound), @"layout_matches": @(layout),
-        @"master_item_id": @(view.master), @"native_update_counter": @(view.counter),
-        @"cached_update_counter": @(view.cachedCounter), @"pending_skin_id": @(view.pending),
-        @"cached_update_counter_read": @(layout && view.cachedCounterRead),
-        @"vehicle_skin_id": @(view.skin), @"previous_skin_id": @(view.previous),
-        @"real_skin_id": @(view.real), @"default_skin_id": @(view.defaultSkin),
-        @"pending_request_consumed": @(layout && VehicleState.requestSent && view.pending == 0),
-        @"native_skin_matches_target": @(engineChanged)};
-}
-
 @interface CCPCosmeticsController : NSObject
 @property(nonatomic, strong) dispatch_queue_t captureQueue;
 @property(nonatomic, strong) NSMutableArray *samples;
@@ -614,10 +589,14 @@ static NSDictionary *VehicleTrialObservation(void) {
 @property(nonatomic) uint32_t generation;
 @property(nonatomic) NSUInteger presetIndex;
 @property(nonatomic) NSUInteger trialPresetIndex;
+@property(nonatomic) NSUInteger vehiclePresetIndex;
 @property(nonatomic) NSUInteger pendingPresetIndex;
 @property(nonatomic) BOOL vehicleCapturing;
 @property(nonatomic) BOOL vehicleTrialMode;
+@property(nonatomic) BOOL earlyAttachStarted;
+@property(nonatomic) BOOL earlyAttachFinished;
 - (void)startEarlySession;
+- (void)pollEarlyAttachAttempt:(unsigned)attempt;
 - (void)startTrial;
 - (void)prepareTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)restoreTrial;
@@ -627,10 +606,9 @@ static NSDictionary *VehicleTrialObservation(void) {
 - (void)startVehicleCapture;
 - (void)captureVehicleOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)finishVehicleCaptureOnQueue:(uint32_t)generation reason:(NSString *)reason;
-- (void)startVehicleTrial;
+- (void)startVehicleTrial:(NSUInteger)presetIndex;
 - (void)prepareVehicleTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)finishVehicleTrialOnQueue:(uint32_t)generation reason:(NSString *)reason;
-- (void)observeVehicleRestoreOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 @end
 
 @implementation CCPCosmeticsController
@@ -660,26 +638,44 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core cosmetics trial"
         expirationHandler:^{
             if (self.generation != generation || !self.capturing) return;
-            dispatch_async(self.captureQueue, ^{ [self finishTrialOnQueue:generation reason:@"background-expiration"]; });
+            dispatch_async(self.captureQueue, ^{
+                if (self.trialGeneration != generation || self.trialFinishing) return;
+                // Never auto-restore appearance. An owned change stays until the user cancels.
+                if (TrialState.active) {
+                    dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+                    return;
+                }
+                self.trialReport[@"finish_reason"] = @"background-expiration";
+                self.trialReport[@"status"] = @"background-expiration-before-apply";
+                atomic_store(&MenuStatus, CCPMenuFailed);
+                [self writeTrialReport];
+                dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+            });
         }];
     dispatch_async(self.captureQueue, ^{
         self.trialGeneration = generation;
         self.trialFinishing = NO;
-        if (TrialState.active || VehicleState.active) {
+        if ((TrialState.active || VehicleState.active) && atomic_load(&MenuOwned)) {
             atomic_store(&MenuStatus, CCPMenuRestorePending);
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
             return; // Preserve the journal of an earlier change until restored.
         }
+        // Stale active bits without ownership must not trap the menu on 等待恢复.
+        if (!atomic_load(&MenuOwned)) {
+            TrialState.active = NO;
+            VehicleState.active = NO;
+        }
         self.trialPresetIndex = presetIndex;
         CCPAppearancePreset preset = CCPAppearancePresets[presetIndex];
-        self.trialReport = [@{@"schema_version": @5, @"trial_revision": @5, @"mode": @"single-slot-appearance-trial",
+        self.trialReport = [@{@"schema_version": @6, @"trial_revision": @6, @"mode": @"explicit-menu-appearance-apply",
             @"game_version": @"1.38.12", @"game_build": @"15915",
             @"game_uuid": @"34B785B2-0DAB-3992-985D-359E6BF45585",
             @"kernel_writes_implemented": @YES, @"appearance_changes_implemented": @YES,
             @"preset_visual_effect_previously_verified": @(preset.slot == 5 && preset.target == CCP_TRIAL_COAT),
             @"current_trial_visual_confirmed": @NO, @"ui_location": @"native-menu-below-position",
             @"preset": [NSString stringWithUTF8String:preset.label], @"category": [NSString stringWithUTF8String:preset.category],
-            @"slot_index": @(preset.slot), @"target_id": @(preset.target), @"automatic_restore_seconds": @15} mutableCopy];
+            @"slot_index": @(preset.slot), @"target_id": @(preset.target),
+            @"automatic_restore_seconds": @0, @"restore_mode": @"manual-cancel-only"} mutableCopy];
         [self prepareTrialOnQueue:generation attempt:0];
     });
 }
@@ -711,32 +707,15 @@ static NSDictionary *VehicleTrialObservation(void) {
             atomic_store(&MenuOwned, TrialState.active);
             atomic_store(&MenuStatus, applied.idConfirmed ? CCPMenuApplied :
                 (applied.status == CCPTrialWrongOutfit ? CCPMenuWrongOutfit : CCPMenuFailed));
-            self.trialReport[@"status"] = applied.idConfirmed ? @"id-applied-awaiting-visual-confirmation" : @"apply-not-confirmed";
+            self.trialReport[@"status"] = applied.idConfirmed ? @"appearance-applied-awaiting-manual-restore" : @"apply-not-confirmed";
             [self writeTrialReport];
             if (!applied.idConfirmed) {
                 [self finishTrialOnQueue:generation reason:@"apply-failed"];
                 return;
             }
-            self.samples = [NSMutableArray array];
-            self.trialTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.captureQueue);
-            dispatch_source_set_timer(self.trialTimer, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
-                                      3 * NSEC_PER_SEC, NSEC_PER_SEC / 4);
-            dispatch_source_set_event_handler(self.trialTimer, ^{
-                @autoreleasepool {
-                    if (self.trialGeneration != generation || self.trialFinishing) return;
-                    uint32_t current = 0; uint8_t pending = 0;
-                    BOOL bound = TrialBindingValid(&TrialContext);
-                    BOOL sameLayout = bound && CCPTrialLayout(reader, &TrialState, &current);
-                    BOOL flagRead = sameLayout && CCPReadBytes(reader, TrialState.avatar + CCP_REFRESH_PENDING, &pending, 1);
-                    [self.samples addObject:@{@"binding_matches": @(bound), @"layout_matches": @(sameLayout),
-                        @"current_item_id": @(current), @"refresh_flag_read": @(flagRead), @"refresh_pending": @(pending)}];
-                    self.trialReport[@"observations"] = self.samples.copy;
-                    [self writeTrialReport];
-                    if (!bound || !sameLayout || self.samples.count >= 5)
-                        [self finishTrialOnQueue:generation reason:bound && sameLayout ? @"automatic-restore" : @"context-changed"];
-                }
-            });
-            dispatch_resume(self.trialTimer);
+            // Keep the owned appearance until the user cancels the menu option.
+            // Do not auto-restore after a timed trial window.
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
         });
 }
 - (void)restoreTrial {
@@ -746,7 +725,9 @@ static NSDictionary *VehicleTrialObservation(void) {
         dispatch_async(self.captureQueue, ^{ [self finishVehicleCaptureOnQueue:generation reason:@"manual-stop"]; });
         return;
     }
-    if (self.vehicleTrialMode || (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == CCP_VEHICLE_TRIAL_INDEX)) {
+    uint32_t selected = atomic_load(&MenuPresetIndex);
+    if (self.vehicleTrialMode || (atomic_load(&MenuOwned) &&
+        selected >= CCP_VEHICLE_PRESET_BASE && selected < CCP_VEHICLE_CAPTURE_INDEX)) {
         dispatch_async(self.captureQueue, ^{
             if (VehicleState.active && !self.capturing) self.trialFinishing = NO;
             [self finishVehicleTrialOnQueue:generation reason:@"manual-restore"];
@@ -809,190 +790,132 @@ static NSDictionary *VehicleTrialObservation(void) {
     });
 }
 - (void)startEarlySession {
-    if (self.capturing || atomic_load(&MenuOwned)) return;
-    self.capturing = YES;
-    atomic_store(&MenuBusy, true);
-    atomic_store(&MenuStatus, CCPMenuGameOpening);
-    self.trialReport = [@{@"schema_version": @27, @"probe_revision": @27,
-        @"mode": @"early-game-session", @"status": @"early-session-started",
-        @"game_version": @"1.38.12", @"game_build": @"15915",
-        @"process_name": @"ShadowTrackerExtra", @"open_result": @"not-called",
-        @"call_result": @"not-called", @"session_open_attempted": @NO,
-        @"vehicle_appearance_changes_implemented": @NO,
-        @"ui_location": @"native-menu-below-position"} mutableCopy];
-    [self writeTrialReport];
-    uint32_t generation = ++self.generation;
+    // Silent attach-only: never claim "正在打开游戏", never MenuBusy, never block the
+    // cosmetics serial queue with a long usleep loop. User-initiated menu "打开游戏"
+    // is the only path that may show CCPMenuGameOpening.
+    if (self.earlyAttachStarted) return;
+    self.earlyAttachStarted = YES;
+    self.earlyAttachFinished = NO;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
-    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core foreground-game session"
-        expirationHandler:^{}];
+    [self pollEarlyAttachAttempt:0];
+}
+- (void)pollEarlyAttachAttempt:(unsigned)attempt {
+    if (self.earlyAttachFinished) return;
     dispatch_async(self.captureQueue, ^{
-        if (self.generation != generation) return;
+        if (self.earlyAttachFinished) return;
+        // Yield while a menu operation owns the controller/report.
+        if (self.capturing || atomic_load(&MenuOwned)) {
+            if (attempt < 3000)
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), self.captureQueue,
+                    ^{ [self pollEarlyAttachAttempt:attempt + 1]; });
+            else self.earlyAttachFinished = YES;
+            return;
+        }
         CCPReader local = {LocalRead, NULL};
         uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
-        uint32_t quarantineStart = 0, quarantineBefore = 0, quarantineAfter = 0, targetPid = 0, remotePort = 0;
-        uint8_t fatalStart = 0, fatalBefore = 0, fatalAfter = 0, remoteReady = 0;
-        BOOL startRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineStart, sizeof(quarantineStart));
-        CCPReadBytes(local, base + 0xC1D2E8, &fatalStart, sizeof(fatalStart));
-        NSString *lookup = @"unavailable";
-        NSString *openResult = @"not-called";
-        NSString *callResult = @"not-called";
-        NSString *status = @"early-window-missed";
-        NSString *waitBlocker = @"not-started";
-        NSString *openAppState = @"not-called";
-        BOOL called = NO, execCalled = NO, pidMatches = NO, entry = NO;
-        unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
         BOOL prefixes = identity && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
             EntryMatches(base + 0x35E60, ProcessLookupByPidPrefix) &&
-            EntryMatches(base + 0x2DCC0, KernelSessionGatePrefix) &&
-            EntryMatches(base + 0x64C7C, SnapshotPrefix) && EntryMatches(base + 0x3A7D4, RemoteOpenPrefix);
+            EntryMatches(base + 0x64C7C, SnapshotPrefix);
         uint8_t seenEntry[32] = {0};
-        BOOL entryRead = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry));
-        entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
+        BOOL entry = CCPReadBytes(local, base + 0x3A3E8, seenEntry, sizeof(seenEntry)) &&
+            !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
+        NSString *status = @"early-window-missed";
+        NSString *waitBlocker = @"not-started";
+        NSString *lookup = @"unavailable";
+        BOOL pidMatches = NO;
+        uint32_t quarantine = 0, pid = 0, port = 0, targetPid = 0, remotePort = 0;
+        uint8_t fatal = 0, remoteReady = 0;
+        BOOL startRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatal, sizeof(fatal));
         if (!identity) status = @"core-identity-mismatch";
         else if (!prefixes) status = @"core-entry-mismatch";
-        self.trialReport[@"status"] = status;
-        [self writeTrialReport];
-        CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 600;
-        if (identity && prefixes) while (!called && CFAbsoluteTimeGetCurrent() < deadline) {
-            if ((waits % 25) == 0) {
-                self.trialReport[@"wait_ticks"] = @(waits);
-                self.trialReport[@"wait_blocker"] = waitBlocker;
-                self.trialReport[@"status"] = status;
+        else if (!startRead || quarantine != 0 || fatal != 0) {
+            waitBlocker = @"recorded-fault";
+            status = @"open-blocked-by-recorded-fault";
+        } else {
+            BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &pid, sizeof(pid));
+            BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &port, sizeof(port));
+            if (!portRead || port == 0 || !pidRead || pid == 0) {
+                waitBlocker = @"waiting-for-published-game-session";
+                status = @"switch-to-game";
+            } else {
+                uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+                uint64_t published = ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid);
+                if (named == 0) lookup = @"zero";
+                else if (named == ~(uint64_t)0) lookup = @"not-found";
+                else lookup = @"located";
+                if (named == 0 || named == ~(uint64_t)0 || published == 0 ||
+                    published == ~(uint64_t)0 || named != published || !entry) {
+                    waitBlocker = @"remote-port-in-progress";
+                    status = @"springboard-port-held";
+                } else {
+                    pidMatches = YES;
+                    waitBlocker = @"game-session-published";
+                    status = @"existing-game-session";
+                }
+            }
+        }
+        BOOL retry = !pidMatches &&
+            ([status isEqualToString:@"switch-to-game"] ||
+             [status isEqualToString:@"springboard-port-held"]) &&
+            attempt < 3000;
+        if (retry) {
+            if ((attempt % 25) == 0 &&
+                (!self.trialReport || [self.trialReport[@"mode"] isEqualToString:@"early-game-session"])) {
+                self.trialReport = [@{@"schema_version": @43, @"probe_revision": @43,
+                    @"mode": @"early-game-session", @"status": status,
+                    @"wait_blocker": waitBlocker, @"wait_ticks": @(attempt),
+                    @"open_result": @"attach-only-never-remote-open",
+                    @"call_result": @"skipped-open-time-remote-call",
+                    @"session_open_attempted": @NO, @"menu_status_policy": @"silent-attach-keep-idle",
+                    @"game_version": @"1.38.12", @"game_build": @"15915",
+                    @"process_name": @"ShadowTrackerExtra",
+                    @"vehicle_appearance_changes_implemented": @NO,
+                    @"ui_location": @"native-menu-below-position"} mutableCopy];
                 [self writeTrialReport];
             }
-            waits++;
-            uint32_t quarantine = 0, pid = 0, port = 0;
-            uint8_t fatal = 0, ready = 0;
-            BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
-            BOOL fatalRead = CCPReadBytes(local, base + 0xC1D2E8, &fatal, sizeof(fatal));
-            BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &pid, sizeof(pid));
-            BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &ready, sizeof(ready));
-            BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &port, sizeof(port));
-            quarantineBefore = quarantine;
-            fatalBefore = fatal;
-            if (!quarantineRead || quarantine != 0 || !fatalRead || fatal != 0) {
-                waitBlocker = @"recorded-fault";
-                status = @"open-blocked-by-recorded-fault";
-                break;
-            }
-            // SpringBoard publishes a session first. The cosmetics binary
-            // retargets Core's later gated launchd open to the game and keeps
-            // that successful session alive. Compare the process object found
-            // by name with the object found from the published PID so the
-            // SpringBoard session can never be mistaken for the game again.
-            (void)readyRead; (void)ready;
-            if (portRead && port != 0) {
-                uint64_t named = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
-                uint64_t published = (pidRead && pid != 0)
-                    ? ((CCPProcessLookupByPid)SignedEntry(base + 0x35E60))(pid) : 0;
-                if (named != 0 && named != ~(uint64_t)0 && named == published && entry) {
-                    lookup = @"located";
-                    execCalled = YES;
-                    uint64_t output = 0;
-                    uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))(
-                        "getpid", 0, 0, &output);
-                    uint32_t code = (uint32_t)returned;
-                    if (code == 1) {
-                        callResult = @"returned-success";
-                        pidMatches = output == (uint64_t)pid;
-                    } else if (code == 0) callResult = @"returned-zero";
-                    else callResult = @"returned-other";
-                    waitBlocker = @"game-session-published";
-                    status = pidMatches ? @"existing-game-session" : @"game-session-check-failed";
-                    break;
-                }
-                waitBlocker = @"remote-port-in-progress";
-                usleep(20000);
-                continue;
-            }
-            if (!((CCPKernelSessionGate)SignedEntry(base + 0x2DCC0))()) {
-                waitBlocker = @"waiting-for-kernel-gate";
-                status = @"waiting-for-kernel";
-                usleep(200000);
-                continue;
-            }
-            uint64_t found = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
-            if (found == 0) lookup = @"zero";
-            else if (found == ~(uint64_t)0) lookup = @"not-found";
-            else lookup = @"located";
-            if (![lookup isEqualToString:@"located"]) {
-                waitBlocker = @"game-process-not-visible";
-                usleep(200000);
-                continue;
-            }
-            if (UIApplication.sharedApplication.applicationState != UIApplicationStateBackground) {
-                waitBlocker = @"waiting-for-game-foreground";
-                status = @"switch-to-game";
-                usleep(200000);
-                continue;
-            }
-            openAppState = @"background";
-            called = YES;
-            uint64_t returned = ((CCPRemoteOpen)SignedEntry(base + 0x3A7D4))("ShadowTrackerExtra", 0);
-            uint32_t code = (uint32_t)returned;
-            if (code == 0) openResult = @"returned-zero";
-            else if (code == 0xFFFFFFFFu) openResult = @"returned-failure";
-            else openResult = @"returned-other";
-            status = @"game-open-attempt-finished";
+            int64_t delay = [status isEqualToString:@"springboard-port-held"]
+                ? 20 * NSEC_PER_MSEC : 200 * NSEC_PER_MSEC;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay), self.captureQueue,
+                ^{ [self pollEarlyAttachAttempt:attempt + 1]; });
+            return;
         }
-        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
-        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
-        BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
-        BOOL portRead = CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
-        if (called && [openResult isEqualToString:@"returned-zero"]) {
-            if (quarantineAfter == 0 && fatalAfter == 0 && pidRead && targetPid != 0 &&
-                readyRead && remoteReady != 0 && portRead && remotePort != 0 && entry) {
-                execCalled = YES;
-                uint64_t output = 0;
-                uint64_t returned = ((CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8))("getpid", 0, 0, &output);
-                uint32_t code = (uint32_t)returned;
-                if (code == 1) {
-                    callResult = @"returned-success";
-                    pidMatches = output == (uint64_t)targetPid;
-                } else if (code == 0) callResult = @"returned-zero";
-                else callResult = @"returned-other";
-            }
-        }
-        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
-        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        if (!called && [waitBlocker isEqualToString:@"remote-port-in-progress"]) status = @"springboard-port-held";
+        self.earlyAttachFinished = YES;
+        CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
+        CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
+        CCPReadBytes(local, base + 0xC534B0, &remotePort, sizeof(remotePort));
         NSDictionary *gameThread = pidMatches ? RunGameThreadProbe(base)
             : @{@"attempted": @NO, @"status": @"skipped-pid-mismatch"};
-        if (pidMatches && [gameThread[@"status"] isEqualToString:@"put-on-enqueued"])
-            status = @"existing-game-session-put-on-enqueued";
-        else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
+        if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-ready"])
             status = @"existing-game-session-thread-ready";
         else if (pidMatches && [gameThread[@"status"] isEqualToString:@"game-thread-probe-partial"])
             status = @"existing-game-session-thread-partial";
-        self.trialReport = [@{@"schema_version": @32, @"probe_revision": @32,
-            @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
-            @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
-            @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
-            @"wait_blocker": waitBlocker, @"app_state_at_open": openAppState,
-            @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
-            @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
-            @"game_thread_probe": gameThread,
-            @"vehicle_appearance_changes_implemented": @NO,
-            @"target_pid_published": @(pidRead && targetPid != 0),
-            @"remote_port_present": @(portRead && remotePort != 0),
-            @"remote_ready": @(readyRead && remoteReady != 0),
-            @"quarantine_at_start": @(quarantineStart), @"quarantine_start_read": @(startRead),
-            @"fatal_at_start": @(fatalStart),
-            @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
-            @"quarantine_reason": QuarantineReason(base),
-            @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
-            @"quarantine_changed": @(startRead && quarantineStart != quarantineAfter),
-            @"ui_location": @"native-menu-below-position"} mutableCopy];
-        [self writeTrialReport];
-        CCPMenuStatus shown = CCPMenuFailed;
-        if (pidMatches) shown = CCPMenuExecMatched;
-        else if (execCalled && [callResult isEqualToString:@"returned-success"]) shown = CCPMenuExecMismatch;
-        else if ([status isEqualToString:@"open-blocked-by-recorded-fault"]) shown = CCPMenuGameOpenBlocked;
-        else if (called || execCalled) shown = CCPMenuGameOpenReturned;
-        atomic_store(&MenuStatus, shown);
-        dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+        if (!self.capturing && !atomic_load(&MenuOwned) &&
+            (!self.trialReport || [self.trialReport[@"mode"] isEqualToString:@"early-game-session"])) {
+            self.trialReport = [@{@"schema_version": @42, @"probe_revision": @42,
+                @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
+                @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup,
+                @"open_result": @"attach-only-never-remote-open",
+                @"status": status, @"session_open_attempted": @NO, @"wait_ticks": @(attempt),
+                @"wait_blocker": waitBlocker,
+                @"app_state_at_open": UIApplication.sharedApplication.applicationState == UIApplicationStateBackground
+                    ? @"background" : @"active",
+                @"symbol": @"getpid", @"call_result": @"skipped-open-time-remote-call",
+                @"exec_call_attempted": @NO, @"entry_matches": @(entry),
+                @"pid_matches_published": @(pidMatches), @"game_thread_probe": gameThread,
+                @"menu_status_policy": @"silent-attach-keep-idle",
+                @"vehicle_appearance_changes_implemented": @NO,
+                @"target_pid_published": @(targetPid != 0),
+                @"remote_port_present": @(remotePort != 0), @"remote_ready": @(remoteReady != 0),
+                @"quarantine_at_start": @(quarantine), @"quarantine_start_read": @(startRead),
+                @"fatal_at_start": @(fatal), @"quarantine_reason": QuarantineReason(base),
+                @"ui_location": @"native-menu-below-position"} mutableCopy];
+            [self writeTrialReport];
+        }
+        // Silent attach must not change the cosmetics menu title. Leaving Idle
+        // keeps "选择外观" so clothes/vehicle rows stay obviously selectable.
+        (void)pidMatches;
     });
 }
 - (void)startGameOpen {
@@ -1145,6 +1068,27 @@ static NSDictionary *VehicleTrialObservation(void) {
     });
 }
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index >= CCP_VEHICLE_PRESET_BASE && index < CCP_VEHICLE_CAPTURE_INDEX) {
+        if (!enabled) {
+            if (index != atomic_load(&MenuPresetIndex)) return;
+            self.pendingPresetIndex = NSNotFound;
+            [self restoreTrial];
+        } else if (atomic_load(&MenuOwned) || VehicleState.active || TrialState.active) {
+            // Switch target only after an owned change is restored.
+            self.pendingPresetIndex = index;
+            [self restoreTrial];
+        } else if (self.capturing) {
+            // In-flight wait/probe: retarget without cancel-restore thrash.
+            // A second click used to call restoreTrial and abort the apply.
+            self.vehiclePresetIndex = index - CCP_VEHICLE_PRESET_BASE;
+            atomic_store(&MenuPresetIndex, index);
+        } else {
+            self.vehiclePresetIndex = index - CCP_VEHICLE_PRESET_BASE;
+            self.pendingPresetIndex = NSNotFound;
+            [self startVehicleTrial:self.vehiclePresetIndex];
+        }
+        return;
+    }
     if (index == CCP_REMOTE_EXEC_INDEX) {
         if (enabled) [self startRemoteExecCheck];
         return;
@@ -1162,22 +1106,20 @@ static NSDictionary *VehicleTrialObservation(void) {
         else if (self.vehicleCapturing) { self.pendingPresetIndex = NSNotFound; [self restoreTrial]; }
         return;
     }
-    if (index == CCP_VEHICLE_TRIAL_INDEX) {
-        if (enabled) [self startVehicleTrial];
-        else if (self.vehicleTrialMode || (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == index)) {
-            self.pendingPresetIndex = NSNotFound;
-            [self restoreTrial];
-        }
-        return;
-    }
     if (index >= CCP_PRESET_COUNT) return;
     if (!enabled) {
         if (index != self.presetIndex) return;
         self.pendingPresetIndex = NSNotFound;
         [self restoreTrial];
-    } else if (self.capturing || atomic_load(&MenuOwned)) {
+    } else if (atomic_load(&MenuOwned) || TrialState.active || VehicleState.active) {
         self.pendingPresetIndex = index;
         [self restoreTrial];
+    } else if (self.capturing) {
+        // Waiting for character/apply: keep the in-flight generation, only retarget.
+        self.presetIndex = index;
+        self.trialPresetIndex = index;
+        atomic_store(&MenuPresetIndex, index);
+        atomic_store(&MenuStatus, CCPMenuWaiting);
     } else {
         self.presetIndex = index;
         self.pendingPresetIndex = NSNotFound;
@@ -1210,10 +1152,16 @@ static NSDictionary *VehicleTrialObservation(void) {
         [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];
         self.backgroundTask = UIBackgroundTaskInvalid;
     }
-    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex < CCP_PRESET_COUNT) {
-        self.presetIndex = self.pendingPresetIndex;
+    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex != NSNotFound) {
+        NSUInteger pending = self.pendingPresetIndex;
         self.pendingPresetIndex = NSNotFound;
-        [self startTrial];
+        if (pending >= CCP_VEHICLE_PRESET_BASE && pending < CCP_VEHICLE_CAPTURE_INDEX) {
+            self.vehiclePresetIndex = pending - CCP_VEHICLE_PRESET_BASE;
+            [self startVehicleTrial:self.vehiclePresetIndex];
+        } else if (pending < CCP_PRESET_COUNT) {
+            self.presetIndex = pending;
+            [self startTrial];
+        }
     }
 }
 - (void)startVehicleCapture {
@@ -1282,11 +1230,20 @@ static NSDictionary *VehicleTrialObservation(void) {
     [self writeTrialReport];
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
-- (void)startVehicleTrial {
+- (void)startVehicleTrial:(NSUInteger)presetIndex {
     if (self.capturing) return;
+    if (presetIndex >= CCP_VEHICLE_PRESET_COUNT) return;
+    uint32_t menuIndex = CCP_VEHICLE_PRESET_BASE + (uint32_t)presetIndex;
+    // Already applied — keep originalCounter; user must 恢复原车 first.
+    if (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == menuIndex &&
+        VehicleState.active) {
+        atomic_store(&MenuStatus, CCPMenuVehicleTrialApplied);
+        return;
+    }
+    self.vehiclePresetIndex = presetIndex;
     self.capturing = YES; self.vehicleCapturing = NO; self.vehicleTrialMode = YES;
     atomic_store(&MenuBusy, true);
-    atomic_store(&MenuPresetIndex, CCP_VEHICLE_TRIAL_INDEX);
+    atomic_store(&MenuPresetIndex, menuIndex);
     atomic_store(&MenuStatus, CCPMenuVehicleTrialWaiting);
     uint32_t generation = ++self.generation;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
@@ -1304,11 +1261,16 @@ static NSDictionary *VehicleTrialObservation(void) {
         }
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
-        self.trialReport = [@{@"schema_version": @33, @"probe_revision": @33,
+        CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
+        self.trialReport = [@{@"schema_version": @42, @"probe_revision": @42,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
-            @"preset": @"宾利欧陆GT敞篷（火焰橘）", @"target_id": @(CCP_ENQUEUE_TARGET_RES),
+            @"preset": [NSString stringWithUTF8String:preset.targetLabel],
+            @"source_item_id": @(preset.sourceItem),
+            @"source_resource_id": @(preset.sourceResource),
+            @"target_item_id": @(preset.targetItem),
+            @"target_resource_id": @(preset.targetResource),
             @"refresh_strategy": @"create-and-dispatch-puton-split-rx-rw",
-            @"vehicle_appearance_changes_implemented": @NO, @"visual_effect_verified": @NO,
+            @"vehicle_appearance_changes_implemented": @YES, @"visual_effect_verified": @NO,
             @"auto_enqueue_on_session_open": @NO, @"ui_location": @"native-menu-below-position"} mutableCopy];
         [self prepareVehicleTrialOnQueue:generation attempt:0];
     });
@@ -1320,8 +1282,9 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.trialReport[@"before"] = before;
     uintptr_t base = VehicleContext.coreBase ? VehicleContext.coreBase : (uintptr_t)_dyld_get_image_header(0);
     BOOL entries = EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
-        EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && EntryMatches(base + 0x620B8, WritePrefix);
-    if (!VehicleContext.game || !VehicleContext.avatar || !VehicleContext.vehicle ||
+        EntryMatches(base + 0x620B8, WritePrefix);
+    if (!VehicleContext.game || !VehicleContext.avatar || !VehicleContext.vehicleUser ||
+        !VehicleContext.vehicle ||
         !VehicleContext.target.write || !TrialBindingValid(&VehicleContext) || !entries) {
         NSDictionary *vehicle = before[@"vehicle_candidate"];
         BOOL noCar = [vehicle[@"status"] isEqualToString:@"current-vehicle-unavailable"] ||
@@ -1338,32 +1301,88 @@ static NSDictionary *VehicleTrialObservation(void) {
     }
     NSDictionary *vehicle = before[@"vehicle_candidate"];
     uint32_t skinBefore = [vehicle[@"vehicle_skin_id"] unsignedIntValue];
+    CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
+    if (skinBefore != preset.sourceItem) {
+        self.trialReport[@"status"] = @"source-vehicle-skin-mismatch";
+        self.trialReport[@"observed_source_item_id"] = @(skinBefore);
+        atomic_store(&MenuStatus, CCPMenuVehicleWrongCar);
+        [self writeTrialReport];
+        [self finishVehicleTrialOnQueue:generation reason:@"source-incompatible"];
+        return;
+    }
+    CCPVehicleSample source = {0};
+    if (!VehicleContextSample(&VehicleContext, preset.sourceItem, true, &source)) {
+        self.trialReport[@"status"] = @"waiting-for-stable-source-render-state";
+        self.trialReport[@"waiting_attempts"] = @(attempt + 1);
+        [self writeTrialReport];
+        if (attempt >= 60) {
+            atomic_store(&MenuStatus, CCPMenuFailed);
+            [self finishVehicleTrialOnQueue:generation reason:@"source-readiness-timeout"];
+        } else dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), self.captureQueue,
+            ^{ [self prepareVehicleTrialOnQueue:generation attempt:attempt + 1]; });
+        return;
+    }
     VehicleState = (CCPVehicleTrial){
         .game = VehicleContext.game, .pawn = VehicleContext.pawn, .controller = VehicleContext.controller,
-        .vehicle = VehicleContext.vehicle, .avatar = VehicleContext.avatar,
+        .user = VehicleContext.vehicleUser, .vehicle = VehicleContext.vehicle, .avatar = VehicleContext.avatar,
         .originalCounter = skinBefore, .active = YES, .prepared = YES
     };
     CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
-    CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
     CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
-        VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle, skinBefore,
-        CCP_ENQUEUE_TARGET_RES, VehicleContext.target.read, VehicleContext.target.write, symbolCall, remoteCall);
+        VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.controller,
+        VehicleContext.vehicleComponentOffset, VehicleContext.vehicleComponentHeap,
+        VehicleContext.vehicleComponentBitmapWord, VehicleContext.vehicleComponentBit,
+        VehicleContext.vehicleUser, VehicleContext.vehicle, skinBefore, 0,
+        preset.targetItem, preset.targetResource, false,
+        VehicleContext.target.read, VehicleContext.target.write, remoteCall);
+    VehicleState.putOnTaskCompleted = enqueued.taskCompleted;
+    if (enqueued.putOnAttempted && !enqueued.mappingReleased &&
+        enqueued.codePage && enqueued.dataPage && enqueued.mappingLength) {
+        VehicleState.pendingApplyMapping = enqueued.codePage;
+        VehicleState.pendingApplyDataPage = enqueued.dataPage;
+        VehicleState.pendingApplyMappingLength = enqueued.mappingLength;
+    }
     self.trialReport[@"enqueue"] = @{
         @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
         @"remote_status": @(enqueued.remoteStatus),
         @"put_on_attempted": @(enqueued.putOnAttempted),
+        @"target_item_id": @(enqueued.targetItem),
+        @"target_resource_id": @(enqueued.targetResource),
         @"skin_before": @(enqueued.skinBefore),
         @"skin_after": @(enqueued.skinAfter),
         @"skin_id_changed": @(enqueued.skinChanged),
+        @"task_completed": @(enqueued.taskCompleted),
+        @"task_rejected_context": @(enqueued.taskRejectedContext),
+        @"mapping_released": @(enqueued.mappingReleased),
+        @"mapping_length": @(enqueued.mappingLength),
         @"code_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.codePage],
         @"data_page": [NSString stringWithFormat:@"0x%llx", (unsigned long long)enqueued.dataPage]
     };
-    BOOL ok = enqueued.putOnAttempted && strcmp(enqueued.status, "create-and-dispatch-returned") == 0;
-    self.trialReport[@"status"] = ok ? @"puton-enqueued-awaiting-visual-confirmation" : @"puton-enqueue-failed";
-    atomic_store(&MenuOwned, ok);
-    atomic_store(&MenuStatus, ok ? CCPMenuVehicleTrialApplied : CCPMenuFailed);
+    BOOL stateObserved = CCPVehicleTargetObserved(&enqueued);
+    CCPVehicleSample rendered = {0};
+    BOOL confirmed = NO;
+    if (stateObserved) {
+        for (unsigned settle = 0; settle < 20 && !confirmed; settle++) {
+            confirmed = VehicleContextSample(&VehicleContext, preset.targetItem, true, &rendered);
+            if (!confirmed) usleep(250000);
+        }
+    }
+    BOOL dispatched = CCPVehiclePutOnDispatched(&enqueued);
+    self.trialReport[@"target_state_observed"] = @(stateObserved);
+    self.trialReport[@"render_entity_observed"] = @(confirmed);
+    self.trialReport[@"loaded_handle_item_id"] = @(rendered.entity.loadedID);
+    self.trialReport[@"master_sync_item_id"] = @(rendered.count ? rendered.items[0].item : 0);
+    self.trialReport[@"mesh_path_present"] = @(rendered.entity.meshPathPresent);
+    self.trialReport[@"state_change_confirmed"] = @(stateObserved);
+    self.trialReport[@"appearance_ready_confirmed"] = @(confirmed);
+    self.trialReport[@"status"] = confirmed ? @"target-render-state-observed" :
+        (stateObserved ? @"target-item-observed-render-not-ready" :
+        (dispatched ? @"puton-dispatched-target-not-observed" : @"puton-enqueue-failed"));
+    atomic_store(&MenuOwned, dispatched);
+    atomic_store(&MenuStatus, confirmed ? CCPMenuVehicleTrialApplied :
+        (dispatched ? CCPMenuRestorePending : CCPMenuFailed));
     [self writeTrialReport];
-    if (!ok) VehicleState.active = NO;
+    if (!dispatched) VehicleState.active = NO;
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
 - (void)finishVehicleTrialOnQueue:(uint32_t)generation reason:(NSString *)reason {
@@ -1373,34 +1392,151 @@ static NSDictionary *VehicleTrialObservation(void) {
     self.trialReport[@"finish_reason"] = reason;
     uintptr_t base = VehicleContext.coreBase ? VehicleContext.coreBase : (uintptr_t)_dyld_get_image_header(0);
     BOOL restored = NO;
+    BOOL abandonedForExternalChange = NO;
     uint32_t original = VehicleState.originalCounter;
     if (VehicleState.active && original != 0 && VehicleContext.game && VehicleContext.avatar &&
-        VehicleContext.vehicle && VehicleContext.target.write &&
-        EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
-        EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && TrialBindingValid(&VehicleContext)) {
+        VehicleContext.vehicleUser && VehicleContext.vehicle && VehicleContext.target.write &&
+        EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix)) {
         atomic_store(&MenuStatus, CCPMenuVehicleRestoring);
+        CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
         CCPRemoteCallByAddress remoteCall = (CCPRemoteCallByAddress)SignedEntry(base + 0x39A80);
-        CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
-        CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
-            VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle,
-            CCP_ENQUEUE_TARGET_RES, original, VehicleContext.target.read, VehicleContext.target.write,
-            symbolCall, remoteCall);
-        restored = enqueued.putOnAttempted && strcmp(enqueued.status, "create-and-dispatch-returned") == 0;
+        CCPVehicleMappingRelease applyRelease = CCPReleaseCompletedVehicleMapping(
+            VehicleContext.target.pid, VehicleState.pendingApplyMapping,
+            VehicleState.pendingApplyDataPage, VehicleState.pendingApplyMappingLength,
+            VehicleContext.target.read, remoteCall);
+        if (applyRelease.completionValue == 1) VehicleState.putOnTaskCompleted = true;
+        if (applyRelease.mappingReleased) {
+            VehicleState.pendingApplyMapping = 0;
+            VehicleState.pendingApplyDataPage = 0;
+            VehicleState.pendingApplyMappingLength = 0;
+        }
+        CCPVehicleSample current = {0};
+        BOOL restoreBindingValid = TrialBindingValid(&VehicleContext);
+        if (!restoreBindingValid || !VehicleContextSample(&VehicleContext, 0, false, &current)) {
+            BOOL releaseOwnership = !restoreBindingValid ||
+                VehicleState.putOnTaskCompleted ||
+                applyRelease.completionValue == 1 || applyRelease.completionValue == 2;
+            if (releaseOwnership) VehicleState.active = NO;
+            self.trialReport[@"restore"] = @{@"status": @"restore-context-or-state-unconfirmed",
+                @"original_skin_id": @(original), @"state_observed": @NO,
+                @"render_entity_observed": @NO,
+                @"binding_valid": @(restoreBindingValid),
+                @"ownership_released": @(releaseOwnership)};
+            atomic_store(&MenuOwned, VehicleState.active);
+            atomic_store(&MenuStatus, VehicleState.active ? CCPMenuRestorePending : CCPMenuIdle);
+            self.trialReport[@"status"] = releaseOwnership ?
+                @"changed-context-abandoned-ownership-released" :
+                @"restore-not-confirmed-change-still-owned";
+            [self writeTrialReport];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+            return;
+        }
+        uint32_t skinNow = current.skin;
+        CCPVehicleEnqueueResult enqueued = {0};
+        CCPVehicleMappingRelease restoreRelease = CCPReleaseCompletedVehicleMapping(
+            VehicleContext.target.pid, VehicleState.pendingRestoreMapping,
+            VehicleState.pendingRestoreDataPage, VehicleState.pendingRestoreMappingLength,
+            VehicleContext.target.read, remoteCall);
+        BOOL restoreFinished = restoreRelease.completionValue == 1;
+        BOOL restoreStillPending = VehicleState.pendingRestoreMapping &&
+            restoreRelease.completionValue == 0;
+        BOOL restoreCleanupPending = VehicleState.pendingRestoreMapping &&
+            restoreRelease.completionValue == 2 && !restoreRelease.mappingReleased;
+        if (restoreRelease.mappingReleased) {
+            VehicleState.pendingRestoreMapping = 0;
+            VehicleState.pendingRestoreDataPage = 0;
+            VehicleState.pendingRestoreMappingLength = 0;
+        }
+        BOOL conflict = skinNow != preset.targetItem && skinNow != original;
+        if (conflict) {
+            enqueued.status = "restore-conflict-third-party-skin";
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else if (restoreStillPending) {
+            enqueued.status = "task-not-completed";
+            enqueued.putOnAttempted = true;
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else if (restoreCleanupPending) {
+            enqueued.status = "completed-task-mapping-release-pending";
+            enqueued.taskRejectedContext = true;
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else if (restoreFinished) {
+            enqueued.status = skinNow == original ? "target-observed" : "target-not-observed";
+            enqueued.putOnAttempted = true;
+            enqueued.taskCompleted = true;
+            enqueued.skinBefore = skinNow;
+            enqueued.skinAfter = skinNow;
+            enqueued.targetItem = original;
+            enqueued.targetResource = preset.sourceResource;
+        } else {
+            BOOL forceRestore = (!VehicleState.putOnTaskCompleted &&
+                                 applyRelease.completionValue != 2) ||
+                                skinNow == preset.targetItem;
+            enqueued = CCPEnqueuePutOnByResID(
+                VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.controller,
+                VehicleContext.vehicleComponentOffset, VehicleContext.vehicleComponentHeap,
+                VehicleContext.vehicleComponentBitmapWord, VehicleContext.vehicleComponentBit,
+                VehicleContext.vehicleUser, VehicleContext.vehicle, skinNow,
+                !VehicleState.putOnTaskCompleted ? preset.targetItem : 0,
+                original, preset.sourceResource, forceRestore,
+                VehicleContext.target.read, VehicleContext.target.write, remoteCall);
+        }
+        if (enqueued.putOnAttempted && !enqueued.mappingReleased && enqueued.codePage && enqueued.dataPage &&
+            enqueued.mappingLength && !VehicleState.pendingRestoreMapping) {
+            VehicleState.pendingRestoreMapping = enqueued.codePage;
+            VehicleState.pendingRestoreDataPage = enqueued.dataPage;
+            VehicleState.pendingRestoreMappingLength = enqueued.mappingLength;
+        }
+        BOOL restoreStateObserved = CCPVehicleRestoreObserved(&enqueued);
+        CCPVehicleSample rendered = {0};
+        if (restoreStateObserved) {
+            for (unsigned settle = 0; settle < 20 && !restored; settle++) {
+                restored = VehicleContextSample(&VehicleContext, original, true, &rendered);
+                if (!restored) usleep(250000);
+            }
+        }
+        abandonedForExternalChange = conflict &&
+            (VehicleState.putOnTaskCompleted || applyRelease.completionValue == 2);
         self.trialReport[@"restore"] = @{
             @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
             @"original_skin_id": @(original),
+            @"restore_resource_id": @(enqueued.targetResource),
+            @"skin_before": @(skinNow),
             @"put_on_attempted": @(enqueued.putOnAttempted),
-            @"skin_after": @(enqueued.skinAfter)
+            @"skin_after": @(enqueued.skinAfter),
+            @"task_completed": @(enqueued.taskCompleted),
+            @"task_rejected_context": @(enqueued.taskRejectedContext),
+            @"mapping_released": @(enqueued.mappingReleased),
+            @"prior_apply_mapping_released": @(applyRelease.mappingReleased),
+            @"prior_restore_mapping_released": @(restoreRelease.mappingReleased),
+            @"conflict": @(conflict),
+            @"ownership_abandoned_for_external_change": @(abandonedForExternalChange),
+            @"state_observed": @(restoreStateObserved),
+            @"render_entity_observed": @(restored),
+            @"loaded_handle_item_id": @(rendered.entity.loadedID),
+            @"master_sync_item_id": @(rendered.count ? rendered.items[0].item : 0),
+            @"mesh_path_present": @(rendered.entity.meshPathPresent)
         };
     }
-    VehicleState.active = NO;
-    atomic_store(&MenuOwned, false);
-    if ([reason isEqualToString:@"readiness-timeout"])
+    if (restored || abandonedForExternalChange) VehicleState.active = NO;
+    atomic_store(&MenuOwned, VehicleState.active);
+    if ([reason isEqualToString:@"readiness-timeout"] && !VehicleState.active)
         atomic_store(&MenuStatus, CCPMenuFailed);
     else if (restored) atomic_store(&MenuStatus, CCPMenuVehicleDataRestored);
+    else if (VehicleState.active) atomic_store(&MenuStatus, CCPMenuRestorePending);
     else if (self.trialReport[@"enqueue"]) atomic_store(&MenuStatus, CCPMenuIdle);
-    self.trialReport[@"status"] = restored ? @"original-puton-enqueued" :
-        (self.trialReport[@"status"] ?: @"trial-finished");
+    self.trialReport[@"status"] = restored ? @"original-item-observed" :
+        (abandonedForExternalChange ? @"external-vehicle-skin-preserved-ownership-released" :
+        (VehicleState.active ? @"restore-not-confirmed-change-still-owned" :
+        (self.trialReport[@"status"] ?: @"trial-finished")));
     [self writeTrialReport];
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
@@ -1441,8 +1577,10 @@ __attribute__((visibility("default"))) void CoreCosmeticsRenderPage(void) {
         .button = (bool (*)(const char *, const char *, bool))SignedEntry(base + 0xC7A60),
     };
     static unsigned category, page;
+    // Only owned changes draw as checked. MenuBusy must not force a fake
+    // selection — that made a second tap cancel the in-flight clothes apply.
     CCPDrawCosmeticsPage(ui, scale, (CCPMenuStatus)atomic_load(&MenuStatus),
-        atomic_load(&MenuBusy) || atomic_load(&MenuOwned), atomic_load(&MenuPresetIndex), &category, &page, NativeMenuAction);
+        atomic_load(&MenuOwned), atomic_load(&MenuPresetIndex), &category, &page, NativeMenuAction);
 }
 __attribute__((constructor)) static void StartCosmeticsProbe(void) {
     CCPCosmeticsController *controller = [CCPCosmeticsController new];

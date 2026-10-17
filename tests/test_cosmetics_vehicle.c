@@ -167,6 +167,17 @@ int main(void) {
     Setup(); f.changeController = true; Failed(reader, CCPVehicleChanged);
     Setup(); f.changeSource = true; Failed(reader, CCPVehicleChanged);
     Setup(); f.fail = true; Failed(reader, CCPVehicleResolverUnconfirmed);
+    CCPVehicleSample ready = {.status = CCPVehicleSampled, .skin = 3349002, .count = 1};
+    ready.items[0].item = 3349002;
+    ready.entity = (CCPVehicleEntityDiagnostic){.status = CCPEntitySampled, .handleKeyRead = true,
+        .loadedID = 3349002, .meshComponentAvailable = true, .meshPathPresent = true,
+        .renderFlagsRead = true};
+    assert(CCPVehicleAppearanceReady(&ready, 3349002));
+    ready.entity.renderDirty = 1; assert(!CCPVehicleAppearanceReady(&ready, 3349002));
+    ready.entity.renderDirty = 0; ready.entity.loadedID = 3349001;
+    assert(!CCPVehicleAppearanceReady(&ready, 3349002));
+    ready.entity.loadedID = 3349002; ready.items[0].item = 3349001;
+    assert(!CCPVehicleAppearanceReady(&ready, 3349002));
     puts("PASS: controller resolution, native class ancestry, sparse inline/heap components, ownership and concurrent source/array changes");
     return 0;
 }
