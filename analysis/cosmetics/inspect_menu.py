@@ -388,10 +388,15 @@ while len(offline_strings) < 4:
 for row in offline_symbols:
     address = int(row['value'], 16)
     if offline.code_address(address):
-        execution_lines += [f'\n### CoreOffline {row["name"]} {address:#x}'] + disassemble(offline, address, 0x80)
+        execution_lines += [f'\n### CoreOffline {row["name"]} {address:#x}'] + disassemble(offline, address, 0x160)
 offline.file.close()
 offline_path.unlink()
+offline_literals = {hex(address): offline.string(address) for address in (0x7823, 0x784A, 0x7877, 0x787C)}
+pointer_bits = None
+if offline.code_address(0x102F0) or any(segment['address'] <= 0x102F0 < segment['address'] + segment['length'] for segment in offline.segments):
+    pointer_bits = hex(struct.unpack_from('<Q', offline_data, offline.offset(0x102F0))[0])
 offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
+    literals=offline_literals, image_pointer_raw=pointer_bits,
     text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
 (output / 'core-execution.txt').write_text('\n'.join(execution_lines) + '\n')
 (output / 'core-execution-candidates.json').write_text(json.dumps(dict(
