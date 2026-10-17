@@ -583,6 +583,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 @property(nonatomic) uint32_t generation;
 @property(nonatomic) NSUInteger presetIndex;
 @property(nonatomic) NSUInteger trialPresetIndex;
+@property(nonatomic) NSUInteger vehiclePresetIndex;
 @property(nonatomic) NSUInteger pendingPresetIndex;
 @property(nonatomic) BOOL vehicleCapturing;
 @property(nonatomic) BOOL vehicleTrialMode;
@@ -596,7 +597,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
 - (void)startVehicleCapture;
 - (void)captureVehicleOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)finishVehicleCaptureOnQueue:(uint32_t)generation reason:(NSString *)reason;
-- (void)startVehicleTrial;
+- (void)startVehicleTrial:(NSUInteger)presetIndex;
 - (void)prepareVehicleTrialOnQueue:(uint32_t)generation attempt:(unsigned)attempt;
 - (void)finishVehicleTrialOnQueue:(uint32_t)generation reason:(NSString *)reason;
 @end
@@ -714,7 +715,9 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         dispatch_async(self.captureQueue, ^{ [self finishVehicleCaptureOnQueue:generation reason:@"manual-stop"]; });
         return;
     }
-    if (self.vehicleTrialMode || (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == CCP_VEHICLE_TRIAL_INDEX)) {
+    uint32_t selected = atomic_load(&MenuPresetIndex);
+    if (self.vehicleTrialMode || (atomic_load(&MenuOwned) &&
+        selected >= CCP_VEHICLE_PRESET_BASE && selected < CCP_VEHICLE_CAPTURE_INDEX)) {
         dispatch_async(self.captureQueue, ^{
             if (VehicleState.active && !self.capturing) self.trialFinishing = NO;
             [self finishVehicleTrialOnQueue:generation reason:@"manual-restore"];
@@ -1113,6 +1116,21 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     });
 }
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index >= CCP_VEHICLE_PRESET_BASE && index < CCP_VEHICLE_CAPTURE_INDEX) {
+        if (!enabled) {
+            if (index != atomic_load(&MenuPresetIndex)) return;
+            self.pendingPresetIndex = NSNotFound;
+            [self restoreTrial];
+        } else if (self.capturing || atomic_load(&MenuOwned)) {
+            self.pendingPresetIndex = index;
+            [self restoreTrial];
+        } else {
+            self.vehiclePresetIndex = index - CCP_VEHICLE_PRESET_BASE;
+            self.pendingPresetIndex = NSNotFound;
+            [self startVehicleTrial:self.vehiclePresetIndex];
+        }
+        return;
+    }
     if (index == CCP_REMOTE_EXEC_INDEX) {
         if (enabled) [self startRemoteExecCheck];
         return;
@@ -1128,14 +1146,6 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     if (index == CCP_VEHICLE_CAPTURE_INDEX) {
         if (enabled) [self startVehicleCapture];
         else if (self.vehicleCapturing) { self.pendingPresetIndex = NSNotFound; [self restoreTrial]; }
-        return;
-    }
-    if (index == CCP_VEHICLE_TRIAL_INDEX) {
-        if (enabled) [self startVehicleTrial];
-        else if (self.vehicleTrialMode || (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == index)) {
-            self.pendingPresetIndex = NSNotFound;
-            [self restoreTrial];
-        }
         return;
     }
     if (index >= CCP_PRESET_COUNT) return;
@@ -1178,10 +1188,16 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         [UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];
         self.backgroundTask = UIBackgroundTaskInvalid;
     }
-    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex < CCP_PRESET_COUNT) {
-        self.presetIndex = self.pendingPresetIndex;
+    if (!atomic_load(&MenuOwned) && self.pendingPresetIndex != NSNotFound) {
+        NSUInteger pending = self.pendingPresetIndex;
         self.pendingPresetIndex = NSNotFound;
-        [self startTrial];
+        if (pending >= CCP_VEHICLE_PRESET_BASE && pending < CCP_VEHICLE_CAPTURE_INDEX) {
+            self.vehiclePresetIndex = pending - CCP_VEHICLE_PRESET_BASE;
+            [self startVehicleTrial:self.vehiclePresetIndex];
+        } else if (pending < CCP_PRESET_COUNT) {
+            self.presetIndex = pending;
+            [self startTrial];
+        }
     }
 }
 - (void)startVehicleCapture {
@@ -1250,17 +1266,20 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     [self writeTrialReport];
     dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
 }
-- (void)startVehicleTrial {
+- (void)startVehicleTrial:(NSUInteger)presetIndex {
     if (self.capturing) return;
+    if (presetIndex >= CCP_VEHICLE_PRESET_COUNT) return;
+    uint32_t menuIndex = CCP_VEHICLE_PRESET_BASE + (uint32_t)presetIndex;
     // Already applied — keep originalCounter; user must 恢复原车 first.
-    if (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == CCP_VEHICLE_TRIAL_INDEX &&
+    if (atomic_load(&MenuOwned) && atomic_load(&MenuPresetIndex) == menuIndex &&
         VehicleState.active) {
         atomic_store(&MenuStatus, CCPMenuVehicleTrialApplied);
         return;
     }
+    self.vehiclePresetIndex = presetIndex;
     self.capturing = YES; self.vehicleCapturing = NO; self.vehicleTrialMode = YES;
     atomic_store(&MenuBusy, true);
-    atomic_store(&MenuPresetIndex, CCP_VEHICLE_TRIAL_INDEX);
+    atomic_store(&MenuPresetIndex, menuIndex);
     atomic_store(&MenuStatus, CCPMenuVehicleTrialWaiting);
     uint32_t generation = ++self.generation;
     if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
@@ -1278,13 +1297,16 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         }
         VehicleContext = (CCPResolvedTarget){0};
         VehicleState = (CCPVehicleTrial){0};
-        self.trialReport = [@{@"schema_version": @34, @"probe_revision": @34,
+        CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
+        self.trialReport = [@{@"schema_version": @35, @"probe_revision": @35,
             @"mode": @"explicit-menu-puton-enqueue", @"game_version": @"1.38.12", @"game_build": @"15915",
-            @"preset": @"宾利欧陆GT敞篷（火焰橘）",
-            @"target_item_id": @(CCP_ENQUEUE_TARGET_ITEM_ID),
-            @"target_resource_id": @(CCP_ENQUEUE_TARGET_RES_ID),
+            @"preset": [NSString stringWithUTF8String:preset.targetLabel],
+            @"source_item_id": @(preset.sourceItem),
+            @"source_resource_id": @(preset.sourceResource),
+            @"target_item_id": @(preset.targetItem),
+            @"target_resource_id": @(preset.targetResource),
             @"refresh_strategy": @"create-and-dispatch-puton-split-rx-rw",
-            @"vehicle_appearance_changes_implemented": @NO, @"visual_effect_verified": @NO,
+            @"vehicle_appearance_changes_implemented": @YES, @"visual_effect_verified": @NO,
             @"auto_enqueue_on_session_open": @NO, @"ui_location": @"native-menu-below-position"} mutableCopy];
         [self prepareVehicleTrialOnQueue:generation attempt:0];
     });
@@ -1314,6 +1336,15 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     }
     NSDictionary *vehicle = before[@"vehicle_candidate"];
     uint32_t skinBefore = [vehicle[@"vehicle_skin_id"] unsignedIntValue];
+    CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
+    if (skinBefore != preset.sourceItem) {
+        self.trialReport[@"status"] = @"source-vehicle-skin-mismatch";
+        self.trialReport[@"observed_source_item_id"] = @(skinBefore);
+        atomic_store(&MenuStatus, CCPMenuVehicleWrongCar);
+        [self writeTrialReport];
+        [self finishVehicleTrialOnQueue:generation reason:@"source-incompatible"];
+        return;
+    }
     VehicleState = (CCPVehicleTrial){
         .game = VehicleContext.game, .pawn = VehicleContext.pawn, .controller = VehicleContext.controller,
         .vehicle = VehicleContext.vehicle, .avatar = VehicleContext.avatar,
@@ -1323,7 +1354,8 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
     CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
     CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
         VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle, skinBefore,
-        CCP_ENQUEUE_TARGET_ITEM_ID, VehicleContext.target.read, VehicleContext.target.write, symbolCall, remoteCall);
+        preset.targetItem, preset.targetResource, VehicleContext.target.read, VehicleContext.target.write,
+        symbolCall, remoteCall);
     self.trialReport[@"enqueue"] = @{
         @"status": [NSString stringWithUTF8String:enqueued.status ?: "unknown"],
         @"remote_status": @(enqueued.remoteStatus),
@@ -1357,7 +1389,8 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         EntryMatches(base + 0x39A80, RemoteCallByAddressPrefix) &&
         EntryMatches(base + 0x3A3E8, RemoteSymbolPrefix) && TrialBindingValid(&VehicleContext)) {
         atomic_store(&MenuStatus, CCPMenuVehicleRestoring);
-        uint32_t skinNow = CCP_ENQUEUE_TARGET_ITEM_ID;
+        CCPVehiclePreset preset = CCPVehiclePresets[self.vehiclePresetIndex];
+        uint32_t skinNow = preset.targetItem;
         uint32_t skinWords[4] = {0};
         if (VehicleContext.target.read(VehicleContext.target.pid, VehicleContext.vehicle + 0x20AC,
                                        sizeof(skinWords), skinWords))
@@ -1366,7 +1399,7 @@ static NSDictionary *TrialResultJSON(CCPTrialResult result) {
         CCPRemoteSymbolCall symbolCall = (CCPRemoteSymbolCall)SignedEntry(base + 0x3A3E8);
         CCPVehicleEnqueueResult enqueued = CCPEnqueuePutOnByResID(
             VehicleContext.target.pid, VehicleContext.game, VehicleContext.avatar, VehicleContext.vehicle,
-            skinNow, original, VehicleContext.target.read, VehicleContext.target.write,
+            skinNow, original, preset.sourceResource, VehicleContext.target.read, VehicleContext.target.write,
             symbolCall, remoteCall);
         restored = (enqueued.putOnAttempted &&
                     strcmp(enqueued.status, "create-and-dispatch-returned") == 0) ||

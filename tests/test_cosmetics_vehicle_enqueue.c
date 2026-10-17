@@ -12,6 +12,13 @@ int main(void) {
     assert(!CCPEnqueueResourceIDForItem(0, &resource));
     assert(!CCPEnqueueResourceIDForItem(UINT32_MAX, &resource));
     assert(!CCPEnqueueResourceIDForItem(3349002u, NULL));
-    puts("PASS: vehicle item IDs convert to PutOn resource IDs without overflow");
+    CCPVehicleEnqueueResult special = CCPEnqueuePutOnByResID(
+        0, 0, 0, 0, 3312001u, 412009u, 412009u, NULL, NULL, NULL, NULL);
+    assert(!strcmp(special.status, "bad-arguments"));
+    assert(special.targetItem == 412009u && special.targetResource == 412009u);
+    CCPVehicleEnqueueResult missingResource = CCPEnqueuePutOnByResID(
+        0, 0, 0, 0, 3312001u, 412009u, 0, NULL, NULL, NULL, NULL);
+    assert(!strcmp(missingResource.status, "bad-arguments"));
+    puts("PASS: vehicle PutOn preserves explicit catalog resource IDs");
     return 0;
 }

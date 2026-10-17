@@ -157,15 +157,16 @@ def main(ipa, cosmetics_probe=False):
         assert info["CFBundleVersion"] == (COSMETICS_BUNDLE_BUILD if cosmetics_probe else BUNDLE_BUILD)
         assert info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         if cosmetics_probe:
-            assert info["CoreCosmeticsProbeVersion"] == "34" and info["CoreCosmeticsMode"] == "early-game-session"
+            assert info["CoreCosmeticsProbeVersion"] == "35" and info["CoreCosmeticsMode"] == "early-game-session"
             assert info["CoreCosmeticsUILocation"] == "native-menu-below-position"
             assert b"CCPCosmeticsController\0" in patch_library
             assert b"_CoreCosmeticsRenderPage" in exported
             for product_marker in (
-                "装目标车皮".encode(), "恢复原车".encode(), b"menu-explicit-only\0",
+                "合金龙骨红".encode(), "宾利欧陆GT敞篷(火焰橘)".encode(),
+                "霜月冰狼".encode(), b"menu-explicit-only\0",
                 b"create-and-dispatch-returned\0", b"CAD-x8-tramp\0",
             ):
-                assert product_marker in patch_library, f"Missing r34 product marker: {product_marker!r}"
+                assert product_marker in patch_library, f"Missing r35 product marker: {product_marker!r}"
         else:
             assert "CoreCosmeticsProbeVersion" not in info and b"CCPCosmeticsController\0" not in patch_library
         assert info["CoreFeatureProfile"] == PROFILE

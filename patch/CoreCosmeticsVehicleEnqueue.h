@@ -14,8 +14,6 @@
 #define CCP_ENQUEUE_PUTON_RVA 0x47f2824u
 #define CCP_ENQUEUE_TF_DESTROY_RVA 0x2704da4u
 #define CCP_ENQUEUE_EVENT_RELEASE_RVA 0x35691fcu
-#define CCP_ENQUEUE_TARGET_ITEM_ID 3349002u
-#define CCP_ENQUEUE_TARGET_RES_ID 334900200u
 #define CCP_ENQUEUE_PAGE 0x1000u
 
 typedef uint64_t (*CCPEnqueueRemoteCall)(uint64_t timeout, uint64_t function, const char *label,
@@ -65,13 +63,14 @@ static inline bool CCPEnqueueWrite(CCPEnqueueReadFn read, CCPEnqueueWriteFn writ
 // takes the catalog resource ID (item ID * 100, for example 334900200).
 static inline CCPVehicleEnqueueResult CCPEnqueuePutOnByResID(
     uint32_t pid, uint64_t game, uint64_t avatar, uint64_t vehicle, uint32_t skinBefore,
-    uint32_t targetItem, CCPEnqueueReadFn read, CCPEnqueueWriteFn write,
+    uint32_t targetItem, uint32_t targetResource, CCPEnqueueReadFn read, CCPEnqueueWriteFn write,
     CCPEnqueueSymbolCall symbolCall, CCPEnqueueRemoteCall remoteCall) {
     CCPVehicleEnqueueResult out = {0};
     out.status = "not-started";
     out.skinBefore = skinBefore;
     out.targetItem = targetItem;
-    if (!CCPEnqueueResourceIDForItem(targetItem, &out.targetResource)) {
+    out.targetResource = targetResource;
+    if (!targetItem || !targetResource) {
         out.status = "bad-arguments";
         return out;
     }
