@@ -17,17 +17,20 @@ typedef enum { CCPMenuIdle, CCPMenuWaiting, CCPMenuApplied, CCPMenuRestored,
                CCPMenuVehicleWaiting, CCPMenuVehicleCaptured,
                CCPMenuVehicleTrialWaiting, CCPMenuVehicleTrialApplied, CCPMenuVehicleWrongCar,
                CCPMenuVehicleRestoring, CCPMenuVehicleDataRestored,
-               CCPMenuProcessChecking, CCPMenuProcessVisible, CCPMenuProcessAbsent } CCPMenuStatus;
+               CCPMenuProcessChecking, CCPMenuProcessVisible, CCPMenuProcessAbsent,
+               CCPMenuGameOpening, CCPMenuGameOpenReturned, CCPMenuGameOpenBlocked } CCPMenuStatus;
 #define CCP_VEHICLE_CAPTURE_INDEX ((uint32_t)CCP_PRESET_COUNT)
 #define CCP_VEHICLE_TRIAL_INDEX ((uint32_t)CCP_PRESET_COUNT + 1)
 #define CCP_PROCESS_PROBE_INDEX ((uint32_t)CCP_PRESET_COUNT + 2)
+#define CCP_GAME_OPEN_INDEX ((uint32_t)CCP_PRESET_COUNT + 3)
 static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus status,
     bool enabled, uint32_t selected, unsigned *category, unsigned *page, void (*action)(uint32_t, bool)) {
     const char *states[] = {
         "15 秒试穿", "等待角色", "试穿中", "已恢复原外观",
         "请先穿戴对应物品", "请查看报告", "等待恢复", "正在读取车辆", "车辆报告已保存",
         "等待4座敞篷跑车", "车辆限时试换", "请驾驶4座敞篷跑车", "正在恢复原车", "原车数据已恢复",
-        "正在检查进程", "游戏进程可见", "未找到游戏进程"
+        "正在检查进程", "游戏进程可见", "未找到游戏进程",
+        "正在打开游戏", "打开调用已返回", "隔离状态挡住打开"
     };
     static const uint32_t slots[] = {5,2,6,7,11,0};
     static const char *categories[] = {"外套", "头发", "裤子", "鞋子", "降落伞", "车辆适配"};
@@ -61,6 +64,9 @@ static inline void CCPDrawCosmeticsPage(CCPUI ui, float scale, CCPMenuStatus sta
             row.x = 155 * scale; row.y = 70 * scale; ui.cursor(&row);
             if (ui.button("g", "探测游戏进程", enabled && selected == CCP_PROCESS_PROBE_INDEX))
                 action(CCP_PROCESS_PROBE_INDEX, true);
+            row.x = 8 * scale; row.y = 112 * scale; ui.cursor(&row);
+            if (ui.button("o", "尝试打开游戏", enabled && selected == CCP_GAME_OPEN_INDEX))
+                action(CCP_GAME_OPEN_INDEX, true);
         }
         unsigned index = 0;
         for (unsigned i = 0; i < CCP_PRESET_COUNT; i++) {

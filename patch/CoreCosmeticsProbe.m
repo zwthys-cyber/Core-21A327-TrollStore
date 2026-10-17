@@ -58,6 +58,11 @@ static const uint8_t ProcessLookupPrefix[32] = {
     0xfd,0x7b,0x03,0xa9,0xfd,0xc3,0x00,0x91,0xf3,0x03,0x00,0xaa,0x83,0xff,0xff,0x97
 };
 typedef uint64_t (*CCPProcessLookup)(const char *);
+static const uint8_t RemoteOpenPrefix[32] = {
+    0x0b,0x24,0xff,0x17,0xfc,0x6f,0xba,0xa9,0xfa,0x67,0x01,0xa9,0xf8,0x5f,0x02,0xa9,
+    0xf6,0x57,0x03,0xa9,0xf4,0x4f,0x04,0xa9,0xfd,0x7b,0x05,0xa9,0xfd,0x43,0x01,0x91
+};
+typedef uint64_t (*CCPRemoteOpen)(const char *, uint64_t);
 static bool LocalRead(void *context, uint64_t address, void *out, size_t length) {
     vm_size_t copied = 0;
     return vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)length,
@@ -588,7 +593,79 @@ static NSDictionary *VehicleTrialObservation(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
     });
 }
+- (void)startGameOpen {
+    if (self.capturing || atomic_load(&MenuOwned)) return;
+    self.capturing = YES;
+    atomic_store(&MenuBusy, true);
+    atomic_store(&MenuPresetIndex, CCP_GAME_OPEN_INDEX);
+    atomic_store(&MenuStatus, CCPMenuGameOpening);
+    uint32_t generation = ++self.generation;
+    if (!self.captureQueue) self.captureQueue = dispatch_queue_create("Core.cosmetics.operations", DISPATCH_QUEUE_SERIAL);
+    self.backgroundTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Core game open attempt"
+        expirationHandler:^{}];
+    dispatch_async(self.captureQueue, ^{
+        if (self.generation != generation) return;
+        CCPReader local = {LocalRead, NULL};
+        uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+        uint32_t quarantineBefore = 0, quarantineAfter = 0, targetPid = 0;
+        uint8_t fatalBefore = 0, fatalAfter = 0, remoteReady = 0;
+        BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantineBefore, sizeof(quarantineBefore));
+        BOOL fatalRead = CCPReadBytes(local, base + 0xC1D2E8, &fatalBefore, sizeof(fatalBefore));
+        NSString *lookup = @"unavailable";
+        NSString *openResult = @"not-called";
+        NSString *status = @"core-identity-mismatch";
+        BOOL called = NO;
+        if (CCPIdentity(local, base, CoreUUID) && EntryMatches(base + 0x35F08, ProcessLookupPrefix) &&
+            EntryMatches(base + 0x64C7C, SnapshotPrefix) && EntryMatches(base + 0x3A7D4, RemoteOpenPrefix)) {
+            CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
+            CCPSnapshot ready = {0};
+            if (!snapshot(&ready) || !ready.words[1]) status = @"core-session-not-ready";
+            else if (!quarantineRead || quarantineBefore != 0 || !fatalRead || fatalBefore != 0) status = @"open-blocked-by-recorded-fault";
+            else {
+                uint64_t found = ((CCPProcessLookup)SignedEntry(base + 0x35F08))("ShadowTrackerExtra");
+                if (found == 0) lookup = @"zero";
+                else if (found == ~(uint64_t)0) lookup = @"not-found";
+                else lookup = @"located";
+                if (![lookup isEqualToString:@"located"]) status = @"game-process-not-visible";
+                else {
+                    called = YES;
+                    uint64_t returned = ((CCPRemoteOpen)SignedEntry(base + 0x3A7D4))("ShadowTrackerExtra", 0);
+                    uint32_t code = (uint32_t)returned;
+                    if (code == 0) openResult = @"returned-zero";
+                    else if (code == 0xFFFFFFFFu) openResult = @"returned-failure";
+                    else openResult = @"returned-other";
+                    status = @"game-open-attempt-finished";
+                }
+            }
+        }
+        CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
+        CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
+        BOOL pidRead = CCPReadBytes(local, base + 0xC53460, &targetPid, sizeof(targetPid));
+        BOOL readyRead = CCPReadBytes(local, base + 0xBD4C5C, &remoteReady, sizeof(remoteReady));
+        self.trialReport = [@{@"schema_version": @13, @"probe_revision": @13,
+            @"mode": @"game-process-open-attempt", @"game_version": @"1.38.12", @"game_build": @"15915",
+            @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
+            @"status": status, @"session_open_attempted": @(called),
+            @"vehicle_appearance_changes_implemented": @NO, @"target_pid_published": @(pidRead && targetPid != 0),
+            @"remote_ready": @(readyRead && remoteReady != 0),
+            @"quarantine_before": @(quarantineBefore), @"quarantine_after": @(quarantineAfter),
+            @"fatal_before": @(fatalBefore), @"fatal_after": @(fatalAfter),
+            @"quarantine_read": @(quarantineRead), @"fatal_read": @(fatalRead),
+            @"quarantine_changed": @(quarantineRead && quarantineBefore != quarantineAfter),
+            @"ui_location": @"native-menu-below-position"} mutableCopy];
+        [self writeTrialReport];
+        CCPMenuStatus shown = CCPMenuGameOpenReturned;
+        if ([status isEqualToString:@"open-blocked-by-recorded-fault"]) shown = CCPMenuGameOpenBlocked;
+        else if (!called && ![status isEqualToString:@"game-open-attempt-finished"]) shown = CCPMenuFailed;
+        atomic_store(&MenuStatus, shown);
+        dispatch_async(dispatch_get_main_queue(), ^{ [self finishGeneration:generation]; });
+    });
+}
 - (void)selectPreset:(uint32_t)index enabled:(BOOL)enabled {
+    if (index == CCP_GAME_OPEN_INDEX) {
+        if (enabled) [self startGameOpen];
+        return;
+    }
     if (index == CCP_PROCESS_PROBE_INDEX) {
         if (enabled) [self startProcessProbe];
         return;
