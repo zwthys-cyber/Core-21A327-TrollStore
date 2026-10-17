@@ -549,6 +549,28 @@ for index, (word,) in enumerate(struct.iter_unpack('<I', text_bytes)):
 for site in slot_stores:
     address = int(site, 16)
     execution_lines += [f'\n### CoreOffline image-slot store {address:#x}'] + disassemble(offline, max(offline.text['address'], address - 0x80), 0xC0)
+publisher_entries = []
+for site in slot_stores:
+    store = int(site, 16)
+    for back in range(0, 0x240, 4):
+        address = store - back
+        if address < offline.text['address']:
+            break
+        word = struct.unpack_from('<I', offline_data, offline.offset(address))[0]
+        if word == 0xD503237F:
+            publisher_entries.append(hex(address))
+            execution_lines += [f'\n### CoreOffline base publisher {address:#x}'] + disassemble(offline, address, min(back + 0x40, 0x280))
+            break
+publisher_calls = []
+for index, (word,) in enumerate(struct.iter_unpack('<I', text_bytes)):
+    if word & 0xFC000000 not in (0x14000000, 0x94000000):
+        continue
+    relative = word & 0x3FFFFFF
+    if relative & (1 << 25):
+        relative -= 1 << 26
+    target = offline.text['address'] + index * 4 + relative * 4
+    if hex(target) in publisher_entries:
+        publisher_calls.append(hex(offline.text['address'] + index * 4))
 initializers = []
 for section in offline.sections:
     if section['name'] not in ('__mod_init_func', '__init_offsets'):
@@ -605,7 +627,8 @@ if offline.code_address(0x102F0) or any(segment['address'] <= 0x102F0 < segment[
 offline_report = dict(symbols=offline_symbols, exports=offline_export, strings=offline_strings,
     literals=offline_literals, image_pointer_raw=pointer_bits, fixup=fixup,
     loaded_libraries=offline_dylibs, pretext_symbol=pretext_symbol, image_slot_references=slot_refs,
-    image_slot_stores=slot_stores, initializers=initializers, base_symbols=base_symbols,
+    image_slot_stores=slot_stores, publisher_entries=publisher_entries, publisher_calls=publisher_calls,
+    initializers=initializers, base_symbols=base_symbols,
     veneer_symbols=veneer_symbols,
     veneer_calls=veneer_calls,
     text=dict(address=hex(offline.text['address']), length=hex(offline.text['length'])))
