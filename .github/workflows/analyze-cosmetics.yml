@@ -11,7 +11,9 @@ on:
       - '!analysis/cosmetics/menu-windows.json'
       - '.github/workflows/analyze-cosmetics.yml'
   push:
-    branches: [feat/kernel-cosmetics]
+    branches:
+      - feat/kernel-cosmetics
+      - 'cursor/**'
     paths:
       - 'analysis/cosmetics/**'
       - '!analysis/cosmetics/vehicle_review.py'

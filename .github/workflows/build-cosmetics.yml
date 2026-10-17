@@ -10,7 +10,9 @@ on:
       - 'analysis/cosmetics/采集版使用说明.txt'
       - '.github/workflows/build*.yml'
   push:
-    branches: [feat/kernel-cosmetics]
+    branches:
+      - feat/kernel-cosmetics
+      - 'cursor/**'
     paths:
       - 'patch/**'
       - 'scripts/**'
