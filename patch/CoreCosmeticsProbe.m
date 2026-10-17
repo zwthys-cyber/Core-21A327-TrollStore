@@ -638,6 +638,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         NSString *openResult = @"not-called";
         NSString *callResult = @"not-called";
         NSString *status = @"early-window-missed";
+        NSString *waitBlocker = @"not-started";
         BOOL called = NO, sessionReady = NO, execCalled = NO, pidMatches = NO, entry = NO;
         unsigned waits = 0;
         BOOL identity = CCPIdentity(local, base, CoreUUID);
@@ -648,7 +649,7 @@ static NSDictionary *VehicleTrialObservation(void) {
         entry = entryRead && !memcmp(seenEntry, RemoteSymbolPrefix, sizeof(seenEntry));
         if (!identity) status = @"core-identity-mismatch";
         else if (!prefixes) status = @"core-entry-mismatch";
-        else for (waits = 0; waits < 75 && !called && !sessionReady; waits++) {
+        else for (waits = 0; waits < 600 && !called && !sessionReady; waits++) {
             uint32_t quarantine = 0, pid = 0, port = 0;
             uint8_t fatal = 0, ready = 0;
             BOOL quarantineRead = CCPReadBytes(local, base + 0xC1D2F8, &quarantine, sizeof(quarantine));
@@ -659,6 +660,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             quarantineBefore = quarantine;
             fatalBefore = fatal;
             if (!quarantineRead || quarantine != 0 || !fatalRead || fatal != 0) {
+                waitBlocker = @"recorded-fault";
                 status = @"open-blocked-by-recorded-fault";
                 break;
             }
@@ -668,12 +670,14 @@ static NSDictionary *VehicleTrialObservation(void) {
                 break;
             }
             if (portRead && port != 0) {
+                waitBlocker = @"remote-port-in-progress";
                 usleep(200000);
                 continue;
             }
             CCPSnapshotFunction snapshot = (CCPSnapshotFunction)SignedEntry(base + 0x64C7C);
             CCPSnapshot readyState = {0};
             if (!snapshot(&readyState) || !readyState.words[1]) {
+                waitBlocker = @"snapshot-not-ready";
                 usleep(200000);
                 continue;
             }
@@ -682,6 +686,7 @@ static NSDictionary *VehicleTrialObservation(void) {
             else if (found == ~(uint64_t)0) lookup = @"not-found";
             else lookup = @"located";
             if (![lookup isEqualToString:@"located"]) {
+                waitBlocker = @"game-process-not-visible";
                 usleep(200000);
                 continue;
             }
@@ -714,10 +719,11 @@ static NSDictionary *VehicleTrialObservation(void) {
         }
         CCPReadBytes(local, base + 0xC1D2F8, &quarantineAfter, sizeof(quarantineAfter));
         CCPReadBytes(local, base + 0xC1D2E8, &fatalAfter, sizeof(fatalAfter));
-        self.trialReport = [@{@"schema_version": @17, @"probe_revision": @17,
+        self.trialReport = [@{@"schema_version": @18, @"probe_revision": @18,
             @"mode": @"early-game-session", @"game_version": @"1.38.12", @"game_build": @"15915",
             @"process_name": @"ShadowTrackerExtra", @"lookup_result": lookup, @"open_result": openResult,
             @"status": status, @"session_open_attempted": @(called), @"wait_ticks": @(waits),
+            @"wait_blocker": waitBlocker,
             @"symbol": @"getpid", @"call_result": callResult, @"exec_call_attempted": @(execCalled),
             @"entry_matches": @(entry), @"pid_matches_published": @(pidMatches),
             @"vehicle_appearance_changes_implemented": @NO,
