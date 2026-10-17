@@ -271,9 +271,10 @@ static void AttemptPutOnEnqueue(NSMutableDictionary *out, uintptr_t base, uint64
     out[@"enqueue_status"] = @"create-and-dispatch-returned";
     out[@"status"] = @"put-on-enqueued";
 }
+#endif
 // After getpid matches the published game session: call IsSafeForGameThread and
-// FTaskGraphInterface::Get by address. When any current vehicle Avatar is ready
-// and skin is not already 3349002, install RX CAD trampoline and enqueue PutOn.
+// FTaskGraphInterface::Get by address. Vehicle resolve is read-only. PutOn enqueue
+// stays disabled after the r30 device freeze.
 static NSDictionary *RunGameThreadProbe(uintptr_t base) {
     NSMutableDictionary *out = [@{
         @"attempted": @NO, @"remote_call_entry": @NO, @"game_base_read": @NO,
