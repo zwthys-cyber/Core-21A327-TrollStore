@@ -84,10 +84,13 @@ def main():
         count = int(entry['count'])
         if not 0 < count <= 128:
             raise ValueError('Native registration count outside reviewed bound')
+        stride = int(entry.get('stride', 16))
+        if stride not in (16, 24, 48):
+            raise ValueError('Native registration stride outside reviewed layouts')
         address = int(entry['address'], 16)
         rows = []
         for index in range(count):
-            offset = image.offset(address + index * 16)
+            offset = image.offset(address + index * stride)
             name_address, function = image.qword(offset), image.qword(offset + 8)
             name = image.string(name_address)
             name_encoding = 'utf-8-cstring'
@@ -107,7 +110,7 @@ def main():
                              table_index=index, confirmed=confirmed, name_encoding=name_encoding))
             if confirmed:
                 windows.append((entry['label'] + ': ' + name, function, 0x300))
-        registrations.append(dict(label=entry['label'], address=hex(address), rows=rows))
+        registrations.append(dict(label=entry['label'], address=hex(address), stride=stride, rows=rows))
     report['native_registrations'] = registrations
     for table, entry in zip(tables, config['pointer_tables']):
         for row in table['rows']:
