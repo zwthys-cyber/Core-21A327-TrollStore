@@ -206,6 +206,11 @@ def main():
         game_thread_pages[page] = {
             int(offset, 16): label for offset, label in entry.get('offsets', {}).items()
         }
+    for entry in config.get('taskgraph_pool_pages', []):
+        page = int(entry['page'], 16)
+        game_thread_pages.setdefault(page, {}).update({
+            int(offset, 16): label for offset, label in entry.get('offsets', {}).items()
+        })
     code_offset, code_size = image.text['offset'], image.text['length']
     code = image.data[code_offset:code_offset + (code_size & ~3)]
     for index, (word,) in enumerate(struct.iter_unpack('<I', code)):
@@ -263,7 +268,10 @@ def main():
                             address=hex(pc), game_thread_global=label, offset=hex(offset),
                             access=access, use_address=hex(pc + delta * 4), kind='game-thread-global'))
                         game_thread_global_count += 1
-                        if game_thread_global_count <= 128:
+                        # Prefer stores and TaskGraph pool touches for disassembly;
+                        # ordinary IsInGameThread loads are too numerous.
+                        interesting = ('str' in access) or label.startswith('FBaseGraph') or label.startswith('TaskGraph')
+                        if interesting or game_thread_global_count <= 32:
                             windows.append(('game thread global ' + label, pc - 0x80, 0x200))
         if word & 0x9F000000 == 0x10000000 and scheduler_addresses:
             relative = (((word >> 5) & 0x7FFFF) << 2) | ((word >> 29) & 3)

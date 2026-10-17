@@ -37,7 +37,23 @@
       }
     }
   ],
-  "call_targets": ["0x47ee7c8", "0x5a403e4", "0x42f1574", "0x42f1508", "0x42f1560", "0x47ed4f8", "0x42e53e8", "0x42c4c9c", "0x7522a68", "0x7522a78", "0x3750630", "0x47f2824", "0x8aff5a0", "0x8b0097c", "0x8b00994", "0x35e3c10", "0x26dc768", "0x26df35c", "0x26df258", "0x26dbe80", "0x26df2f8"],
+  "taskgraph_pool_pages": [
+    {
+      "page": "0x111fab000",
+      "offsets": {
+        "0x600": "FBaseGraphTaskPoolA",
+        "0x680": "FBaseGraphTaskPoolB",
+        "0x188": "TaskGraphScratch"
+      }
+    },
+    {
+      "page": "0x111faa000",
+      "offsets": {
+        "0xe30": "TaskGraphSingletonSlot"
+      }
+    }
+  ],
+  "call_targets": ["0x42c4c9c", "0x7522a68", "0x35d82b0", "0x35e3c10", "0x35e3f2c", "0x3568bdc", "0x3568c2c", "0x8aff5a0", "0x8aff5e8", "0x8aff814", "0x8af68a0", "0x8af6900", "0x8b00804", "0x8b0097c", "0x8b00994", "0x47f2824"],
   "native_registration_tables": [
     {"label": "AvatarEntity reflected native methods", "address": "0x10edce658", "count": 71, "stride": 24},
     {"label": "VehicleAvatarComponent reflected native methods", "address": "0x10fc51d00", "count": 97, "stride": 24}
@@ -120,5 +136,12 @@
     ,{"label": "PixUI async task submit helper", "offset": "0x26dbe80", "length": "0x200"}
     ,{"label": "current thread id helper A", "offset": "0xaf28744", "length": "0x80"}
     ,{"label": "current thread id helper B", "offset": "0xaf2866c", "length": "0x80"}
+    ,{"label": "GGameThreadId store / TaskGraph startup", "offset": "0x35d8200", "length": "0x400"}
+    ,{"label": "TaskGraph queue helper 0x35e3c10", "offset": "0x35e3c10", "length": "0x400"}
+    ,{"label": "TaskGraph queue helper 0x35e3f2c", "offset": "0x35e3f2c", "length": "0x300"}
+    ,{"label": "TaskGraph pool alloc A", "offset": "0x3568bdc", "length": "0x100"}
+    ,{"label": "TaskGraph pool alloc B", "offset": "0x3568c2c", "length": "0x100"}
+    ,{"label": "TaskGraph ProcessThreadUntilRequestReturn", "offset": "0x8aff5e8", "length": "0x300"}
+    ,{"label": "TaskGraph task setup/dispatch candidate", "offset": "0x8aff814", "length": "0x300"}
   ]
 }
