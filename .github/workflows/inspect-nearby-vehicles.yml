@@ -1,0 +1,24 @@
+name: Inspect native nearby vehicle paths
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/nearby-vehicles]
+    paths: [analysis/nearby-vehicles/review_native.py, .github/workflows/inspect-nearby-vehicles.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install capstone==5.0.3
+      - run: python analysis/nearby-vehicles/review_native.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-nearby-vehicle-review
+          path: analysis/nearby-vehicles/output/*
+          retention-days: 14
