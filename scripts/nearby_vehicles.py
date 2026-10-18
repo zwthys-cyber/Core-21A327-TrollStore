@@ -55,7 +55,7 @@ def changes():
     # preference dirty bit; EndChild runs exactly once after the two checkboxes.
     add(0xCD7F4, cbz(0xCD7F4, 0xCD814, 0), cbz(0xCD7F4, 0xCD804, 0),
         "unchanged enemy checkbox continues to independent vehicle checkbox")
-    add(0xCD804, "00e4002f", branch(0xCD804, 0xCD818), "show vehicle checkbox inside original child")
+    add(0xCD804, branch(0xCD804, 0xCD814), branch(0xCD804, 0xCD818), "show vehicle checkbox inside original child")
     menu = b"".join([
         adrp(0xCD818, 0x743000, 0), word(0x91000000 | (0xF71 << 10)),
         word(0x91000000 | (0x22 << 10) | (23 << 5) | 1),

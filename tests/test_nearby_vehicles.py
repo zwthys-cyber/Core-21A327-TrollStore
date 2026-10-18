@@ -122,6 +122,74 @@ class NearbyVehicleTests(unittest.TestCase):
             self.assertEqual(mu.reg_read(r.UC_ARM64_REG_PC), BASE + (0xD9EB0 if accepted else 0xD9EC8))
             self.assertEqual(mu.reg_read(r.UC_ARM64_REG_S11), fbits(distance))
 
+    def test_native_collector_appends_only_valid_vehicle_records(self):
+        rows = [('吉普车', 450, 1, 0), ('蹦蹦车', 600, 1, 0),
+                ('M416', 20, 0, 0), ('Grenade', 10, 1, 1),
+                ('轿车', 601, 1, 0), ('快艇', math.nan, 1, 0)]
+        for enabled, enemy in product([0, 1], repeat=2):
+            mu = self.emulator()
+            source, metadata = STACK + 0x2000, STACK + 0x4000
+            mu.mem_write(CONFIG, b'\xff' * 0x500)
+            mu.mem_write(CONFIG, struct.pack('<3f', 1, 800, 600))
+            mu.mem_write(CONFIG + 0x22, bytes([enabled, enemy]))
+            mu.mem_write(CONFIG + 0x1F4, b'\0' * 52)
+            mu.mem_write(CONFIG + 0x3D8, struct.pack('<2Q', source, source + len(rows) * 32))
+            for i, (name, distance, vehicle, projectile) in enumerate(rows):
+                entry, meta = source + i * 32, metadata + i * 0x80
+                mu.mem_write(entry, struct.pack('<2Q', 0x200000000 + i * 0x1000, meta))
+                mu.mem_write(entry + 0x10, bytes([projectile, 0]))
+                mu.mem_write(meta, b'\0' * 0x40)
+                mu.mem_write(meta + 0x15, bytes([vehicle]))
+            mu.mem_write(STACK + 0x80B8, struct.pack('<Q', CONFIG + 0x1F4))
+            appends, reads = [], []
+
+            def collector(uc, address, size, _):
+                if address == BASE + 0xD9F10:
+                    uc.emu_stop()
+                    return
+                ins = struct.unpack('<I', uc.mem_read(address, 4))[0]
+                if ins & 0xFC000000 != 0x94000000:
+                    return
+                delta = ins & 0x3FFFFFF
+                if delta & 0x2000000:
+                    delta -= 0x4000000
+                target = address + delta * 4 - BASE
+                if target == 0x123D2C:
+                    uc.reg_write(r.UC_ARM64_REG_D0, struct.unpack('<Q', struct.pack('<d', 5.0))[0])
+                elif target == 0xDA474:
+                    actor = uc.reg_read(r.UC_ARM64_REG_X0)
+                    index = (actor - 0x200000000) // 0x1000
+                    reads.append(index)
+                    uc.reg_write(r.UC_ARM64_REG_S0, fbits(rows[index][1] * 100))
+                    uc.reg_write(r.UC_ARM64_REG_S1, fbits(0))
+                    uc.reg_write(r.UC_ARM64_REG_S2, fbits(0))
+                elif target == 0xDA704:
+                    uc.reg_write(r.UC_ARM64_REG_S0, fbits(250))
+                    uc.reg_write(r.UC_ARM64_REG_S1, fbits(200))
+                elif target == 0x29410:
+                    self.assertEqual(uc.reg_read(r.UC_ARM64_REG_X0), CONFIG + 0x408)
+                    record = bytes(uc.mem_read(uc.reg_read(r.UC_ARM64_REG_X1), 0x58))
+                    appends.append(record)
+                else:
+                    self.fail(f'Unexpected vehicle collector call {target:#x}')
+                uc.reg_write(r.UC_ARM64_REG_PC, address + 4)
+
+            mu.hook_add(UC_HOOK_CODE, collector)
+            mu.reg_write(r.UC_ARM64_REG_X19, CONFIG)
+            mu.emu_start(BASE + 0xD9514, BASE + 0xD9F14, count=3000)
+            self.assertEqual(reads, [0, 1, 4, 5] if enabled else [])
+            self.assertEqual(len(appends), 2 if enabled else 0)
+            for i, record in enumerate(appends):
+                actor, = struct.unpack_from('<Q', record)
+                meta, = struct.unpack_from('<Q', record, 0x10)
+                distance, = struct.unpack_from('<f', record, 0x38)
+                self.assertEqual(actor, 0x200000000 + i * 0x1000)
+                self.assertEqual(meta, metadata + i * 0x80)
+                self.assertEqual(distance, rows[i][1])
+                self.assertEqual((record[8], record[0x4D], record[0x50]), (0, 1, 1))
+            self.assertEqual(mu.reg_read(r.UC_ARM64_REG_PC), BASE + 0xD9F10)
+            self.assertEqual(mu.reg_read(r.UC_ARM64_REG_SP), STACK + 0x8000)
+
     def test_native_record_loop_draws_vehicle_names_and_distance_only(self):
         # Execute the real shared-list traversal and native label formatting
         # branches. Only libc formatting/text submission are synthetic calls.
