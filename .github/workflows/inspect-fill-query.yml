@@ -2,7 +2,7 @@ name: Inspect native fill query and actor paths
 on:
   workflow_dispatch:
   push:
-    branches: [fix/fill-query]
+    branches: [fix/fill-query, diagnostic/actor-visibility]
     paths: [analysis/fill-query/review_native.py, .github/workflows/inspect-fill-query.yml]
 permissions:
   contents: read

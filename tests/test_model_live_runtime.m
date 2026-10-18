@@ -22,6 +22,10 @@ static unsigned LargeReads,LargeVertexReads;
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
 static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene,ResourceMemory,FailResourceRead,ReallocatedActors,SlowProjection,SchemaMemory;
 static bool GeometryReady;
+#ifdef CORE_ACTOR_TRACE
+static bool TraceMutate;
+static void TraceOnCopy(uintptr_t address);
+#endif
 static unsigned CameraMotion;
 static bool CameraMoved;
 static bool CheckObserverProgress;
@@ -38,7 +42,11 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
         memcpy((void *)dest,(void *)address,8);*copied=8;return KERN_SUCCESS;}
     else if(ReallocatedActors&&address==(uintptr_t)Context+0x3F0&&size==16){memset((void *)dest,0,size);*copied=size;return KERN_SUCCESS;}
     else {const void *arrays[]={Context,ActorRecord,SourceRecord,Frame,DrawList};const size_t sizes[]={sizeof(Context),sizeof(ActorRecord),sizeof(SourceRecord),sizeof(Frame),sizeof(DrawList)};
-        for(unsigned i=0;i<5;i++)if(address>=(uintptr_t)arrays[i]&&size<=sizes[i]&&address-(uintptr_t)arrays[i]<=sizes[i]-size){memcpy((void *)dest,(void *)address,size);*copied=size;return KERN_SUCCESS;}return KERN_INVALID_ADDRESS;}
+        for(unsigned i=0;i<5;i++)if(address>=(uintptr_t)arrays[i]&&size<=sizes[i]&&address-(uintptr_t)arrays[i]<=sizes[i]-size){memcpy((void *)dest,(void *)address,size);*copied=size;
+#ifdef CORE_ACTOR_TRACE
+            TraceOnCopy(address);
+#endif
+            return KERN_SUCCESS;}return KERN_INVALID_ADDRESS;}
     if(size>8)return KERN_INVALID_ADDRESS;memcpy((void *)dest,&value,size);*copied=size;return KERN_SUCCESS;
 }
 #define CORE_MODEL_CAPTURE_TESTING 1
@@ -48,6 +56,9 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
 #include "../patch/CoreModelCapture.m"
 #undef vm_read_overwrite
 #undef clock_gettime
+#ifdef CORE_ACTOR_TRACE
+static void TraceOnCopy(uintptr_t address){if(TraceMutate&&address==(uintptr_t)ActorRecord){atomic_fetch_add(&CAVGeneration,1);TraceMutate=false;}}
+#endif
 static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzeroCapture(out,size,0,address,TestBase+0xE1960);
 #ifdef CORE_FILL_WORK
     if(LargeStatic){const uint64_t base[]={0x600000000ULL,0x600010000ULL,0x600020000ULL,0x600030000ULL};const void *data[]={LargeVertices,LargeWeights,TriangleData,&BonePalette};const size_t lengths[]={sizeof(LargeVertices),sizeof(LargeWeights),sizeof(TriangleData),sizeof(BonePalette)};
@@ -92,6 +103,10 @@ static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
     TestTime=10000000000ULL;NativeDelay=0;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
     GeometryReady=true;
+#ifdef CORE_ACTOR_TRACE
+    TraceMutate=false;atomic_store(&CAVGeneration,0);atomic_store(&CAVNativeActive,0);atomic_store(&CAVLastNativeEnd,0);
+    CAVTargets=nil;CAVEvents=nil;CAVReport=nil;CAVSamples=CAVBusy=CAVFailures=CAVReadBytes=CAVTimeTotal=CAVTimeMaximum=CAVNextID=CAVCapacity=0;
+#endif
     CameraMotion=0;CameraMoved=false;
     CheckObserverProgress=false;memset(LastProjectedCamera,0,sizeof(LastProjectedCamera));
     memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
@@ -122,6 +137,9 @@ static void Setup(void){
     CMGDescriptors *g=gpu.mutableBytes;g->count=1;g->descriptors[0].asset_address=Asset;g->descriptors[0].asset_index=0;g->descriptors[0].lod_count=2;g->descriptors[0].name_index=100;
     CMBBinding *b=binding.mutableBytes;b->assets.count=1;b->assets.references[0].address=Asset;b->link_count=1;b->links[0]=(CMBLink){GameComponent,Asset,0};
     target.gpu=gpu;target.binding=binding;target.refs=refs;target.names=names;[CMLTargets addObject:target];
+#ifdef CORE_ACTOR_TRACE
+    Context[0x3B8]=1;uintptr_t sourceBegin=(uintptr_t)SourceRecord,sourceEnd=sourceBegin+sizeof(SourceRecord);memcpy(Context+0x3C0,&sourceBegin,8);memcpy(Context+0x3C8,&sourceEnd,8);memcpy(SourceRecord+8,&team,4);
+#endif
 }
 static void Array(void *data,unsigned offset,uint64_t address,int32_t count){memcpy((uint8_t *)data+offset,&address,8);memcpy((uint8_t *)data+offset+8,&count,4);memcpy((uint8_t *)data+offset+12,&count,4);}
 static CMLTarget *Reusable(void){
@@ -177,7 +195,29 @@ static void CheckStaticResume(void) {
     assert(CMLPendingBytes==CML_STATIC_STAGE_BYTES&&staging.chunks.count==256);CMLActivePending=nil;CMLDropPending(staging);assert(!CMLPendingBytes);
 }
 #endif
+#ifdef CORE_ACTOR_TRACE
+static void CheckActorTrace(void) {
+    Setup();Context[0x20]=0;Draw();assert(!Reads&&!Fills&&atomic_load(&CAVGeneration)==2&&!atomic_load(&CAVNativeActive));
+    CAVSample((uintptr_t)Context);assert(!Reads&&CAVSamples==1&&[CAVReport[@"source_enemy_candidates"] intValue]==1&&[CAVReport[@"cache_0_to_300m"] intValue]==1&&CAVEvents.count==1);
+    NSNumber *id=CAVEvents.lastObject[@"target_id"];float distance=450;memcpy(ActorRecord+0x40,&distance,4);TestTime+=1000000000ULL;Draw();CAVSample((uintptr_t)Context);
+    assert([CAVReport[@"cache_300_to_600m"] intValue]==1&&CAVEvents.count==2&&[CAVEvents.lastObject[@"target_id"] isEqual:id]);
+    uintptr_t begin=(uintptr_t)ActorRecord,end=begin+sizeof(ActorRecord);memcpy(Context+0x3F8,&begin,8);TestTime+=1000000000ULL;Draw();CAVSample((uintptr_t)Context);
+    NSDictionary *event=CAVEvents.lastObject;assert([CAVReport[@"source_without_cache"] intValue]==1&&[event[@"source_present"] boolValue]&&![event[@"cache_present"] boolValue]&&event[@"current_cached_distance_metres"]==NSNull.null&&[event[@"last_cached_distance_metres"] floatValue]==450&&[event[@"last_cached_age_ms"] intValue]==1000);
+    uintptr_t sourceBegin=(uintptr_t)SourceRecord;memcpy(Context+0x3C8,&sourceBegin,8);TestTime+=1000000000ULL;Draw();CAVSample((uintptr_t)Context);assert(![CAVEvents.lastObject[@"source_present"] boolValue]&&![CAVEvents.lastObject[@"cache_present"] boolValue]);
+    uint64_t samples=CAVSamples;atomic_store(&CAVNativeActive,1);CAVSample((uintptr_t)Context);atomic_store(&CAVNativeActive,0);assert(CAVSamples==samples&&CAVBusy==1);
+    memcpy(Context+0x3F8,&end,8);TraceMutate=true;CAVSample((uintptr_t)Context);assert(CAVSamples==samples&&CAVBusy==2); // A collector epoch changes during the vector copy: no false disappearance event.
+    end++;memcpy(Context+0x3F8,&end,8);CAVSample((uintptr_t)Context);assert(CAVSamples==samples&&CAVFailures==1);
+    end=begin+513*0x1F8;memcpy(Context+0x3F8,&end,8);CAVSample((uintptr_t)Context);assert(CAVSamples==samples&&CAVFailures==2&&!Reads);
+    TestTime+=1000000001ULL;CAVSample((uintptr_t)Context);assert(CAVSamples==samples&&CAVBusy==3);
+    Setup();Context[0x20]=0;for(unsigned i=0;i<70;i++){distance=i%2?450:150;memcpy(ActorRecord+0x40,&distance,4);Draw();CAVSample((uintptr_t)Context);}assert(CAVEvents.count==CAV_EVENTS&&!Reads&&!Fills);
+    assert(CAVBucket(300)==1&&CAVBucket(300.01f)==2&&CAVBucket(600)==2&&CAVBucket(600.01f)==3&&!CAVBucket(NAN)&&!CAVBucket(-1));
+    NSData *json=[NSJSONSerialization dataWithJSONObject:CAVStatus() options:0 error:NULL];assert(json.length&&json.length<30000);puts("PASS: background actor source/cache stage events, 300/600m boundaries, cached-range age, fill-off zero remote reads, original-draw epoch rejection, malformed/oversized/stale snapshots and bounded history");
+}
+#endif
 int main(void){@autoreleasepool {
+#ifdef CORE_ACTOR_TRACE
+    CheckActorTrace();
+#endif
 #ifdef CORE_FILL_WORK
     CheckStaticResume();
 #endif

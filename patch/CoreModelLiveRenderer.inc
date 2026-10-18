@@ -691,6 +691,9 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
     if(pthread_mutex_trylock(&CMLDrawMutex)){atomic_fetch_add(&CMLStats.drawBusyFrames,1);return;}
     CMLDrawFrame(context);pthread_mutex_unlock(&CMLDrawMutex);
 }
+#ifdef CORE_ACTOR_TRACE
+#include "CoreActorVisibilityTrace.inc"
+#endif
 __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintptr_t entryReturn) {
     int saved=errno;uintptr_t caller=CMStripReturn((void *)entryReturn),base=CMBase;
     if(!base)base=(uintptr_t)_dyld_get_image_header(0);
@@ -700,8 +703,14 @@ __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintpt
         if(previous&&start>=previous&&previousMode==mode){uint64_t gap=start-previous;
             if(fill){atomic_fetch_add(&CMLStats.fillOnGapSamples,1);atomic_fetch_add(&CMLStats.fillOnGapTotal,gap);CMLMaximum(&CMLStats.fillOnGapMaximum,gap);}
             else{atomic_fetch_add(&CMLStats.fillOffGapSamples,1);atomic_fetch_add(&CMLStats.fillOffGapTotal,gap);CMLMaximum(&CMLStats.fillOffGapMaximum,gap);}}
+#ifdef CORE_ACTOR_TRACE
+        atomic_fetch_add(&CAVNativeActive,1);atomic_fetch_add(&CAVGeneration,1);
+#endif
         void (*original)(void *)=CMLOriginalDraw ?: (void (*)(void *))CMCallable(base+0xDB144);original(context);
         uint64_t nativeEnd=CMNow(),native=nativeEnd-start;
+#ifdef CORE_ACTOR_TRACE
+        atomic_store(&CAVLastNativeEnd,nativeEnd);atomic_fetch_add(&CAVGeneration,1);atomic_fetch_sub(&CAVNativeActive,1);
+#endif
         CMLDraw((uintptr_t)context);uint64_t total=CMNow()-start;
         atomic_fetch_add(&CMLStats.nativeDrawTotal,native);CMLMaximum(&CMLStats.nativeDrawMaximum,native);
         atomic_fetch_add(&CMLStats.callbackTotal,total);CMLMaximum(&CMLStats.callbackMaximum,total);
@@ -726,7 +735,9 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-#ifdef CORE_FILL_WORK
+#ifdef CORE_ACTOR_TRACE
+    const int renderVersion=15;
+#elif defined(CORE_FILL_WORK)
     const int renderVersion=14;
 #elif defined(CORE_OVERLAY_LATENCY)
     const int renderVersion=13;
@@ -735,7 +746,11 @@ static void CMLWriteStatus(NSURL *url) {
 #else
     const int renderVersion=11;
 #endif
-    NSDictionary *status=@{ @"render_version":@(renderVersion),@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+    NSDictionary *status=@{
+#ifdef CORE_ACTOR_TRACE
+        @"actor_visibility_trace":CAVStatus(),
+#endif
+        @"render_version":@(renderVersion),@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"independent_fill_switch":@(renderVersion>=13),@"fill_currently_requested":@(CMLFillRequested(CMLExpectedContext)),@"detailed_capture_enabled":@(atomic_load(&CMEnabled)),
         @"native_draw_time_total_ns":CML_VALUE(nativeDrawTotal),@"native_draw_time_maximum_ns":CML_VALUE(nativeDrawMaximum),@"draw_callback_time_total_ns":CML_VALUE(callbackTotal),@"draw_callback_time_maximum_ns":CML_VALUE(callbackMaximum),
         @"fill_off_callbacks":CML_VALUE(fillOffCallbacks),@"fill_off_native_time_total_ns":CML_VALUE(fillOffNativeTotal),@"fill_off_native_time_maximum_ns":CML_VALUE(fillOffNativeMaximum),@"fill_off_callback_time_total_ns":CML_VALUE(fillOffCallbackTotal),@"fill_off_callback_time_maximum_ns":CML_VALUE(fillOffCallbackMaximum),
@@ -788,6 +803,10 @@ static void CMLStartup(void) {
     // cover this path. Per-frame comparisons still fall back to the wrappers.
     CMLIntersect=(void (*)(void *,CMRayHit *,void *))CMCallable(CMBase+0x2AD2A0);atomic_store(&CMLBatchDisabled,false);atomic_store(&CMLReady,true);
     dispatch_async(CMReportQueue, ^{NSURL *url=[CMReportURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Core-model-render-status.json"];CMLWriteStatus(url);
+#ifdef CORE_ACTOR_TRACE
+        CAVTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CAVTimer,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),NSEC_PER_SEC,NSEC_PER_SEC/10);
+        dispatch_source_set_event_handler(CAVTimer, ^{CAVSample(CMLExpectedContext);});dispatch_resume(CAVTimer);
+#endif
         CMLStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CMLStatusTimer,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC),5*NSEC_PER_SEC,NSEC_PER_SEC);
         dispatch_source_set_event_handler(CMLStatusTimer, ^{CMLWriteStatus(url);});dispatch_resume(CMLStatusTimer);});
 }

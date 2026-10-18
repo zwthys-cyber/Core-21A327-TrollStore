@@ -180,6 +180,7 @@ def main():
     parser.add_argument("--nearby-vehicles", action="store_true", help="Add independent native vehicle name/distance labels to the live mesh build")
     parser.add_argument("--overlay-latency", action="store_true", help="Separate fill control, stop automatic detailed capture and record overlay callback latency")
     parser.add_argument("--fill-work", action="store_true", help="Resume static model reads with shared frame budget and parallel exact raster rows")
+    parser.add_argument("--actor-trace", action="store_true", help="Background diagnostic comparison of existing native actor source and marker vectors")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -192,6 +193,8 @@ def main():
         parser.error("--overlay-latency requires --model-render --nearby-vehicles")
     if args.fill_work and not args.overlay_latency:
         parser.error("--fill-work requires --overlay-latency")
+    if args.actor_trace and not args.fill_work:
+        parser.error("--actor-trace requires --fill-work")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -239,6 +242,8 @@ def main():
         common.append("-DCORE_OVERLAY_LATENCY=1")
     if args.fill_work:
         common.append("-DCORE_FILL_WORK=1")
+    if args.actor_trace:
+        common.append("-DCORE_ACTOR_TRACE=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -294,6 +299,8 @@ def main():
                     CoreOverlayLatencyVersion=latency_version, CoreFeatureProfile=latency_profile)
     if args.fill_work:
         info.update(CFBundleVersion="42", CoreModelRenderVersion="14", CoreFillWorkVersion="1")
+    if args.actor_trace:
+        info.update(CFBundleVersion="43", CoreModelRenderVersion="15", CoreActorVisibilityTraceVersion="1")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -325,6 +332,8 @@ def main():
         artifact = dist / latency_artifact
     if args.fill_work:
         artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v14-latency-work.ipa"
+    if args.actor_trace:
+        artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v15-actor-visibility.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -394,7 +403,9 @@ def main():
             device_latency_fixed=False, off_mode="original enemy/vehicle drawing without fill observer reads or fill computation"))
     if args.fill_work:
         report["fill_work"]=dict(version=1, static_work_budget_ns=3000000, budget_scope="shared across all target static loads in one draw; cooperative between backend reads; dynamic state/poses not cached", static_stage_chunk_byte_limit=4*1024*1024,static_stage_entries=8,failed_static_load_retry_seconds=1,raster_workers=2,raster_work="disjoint full rows, same float operations and triangle order; remote reads, geometry queries and UI remain on original thread",device_performance_verified=False)
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
+    if args.actor_trace:
+        report["actor_visibility_trace"]=dict(version=1,interval_ms=1000,local_vector_record_limit=512,tracked_target_limit=512,stage_event_limit=64,remote_game_reads=False,scope="background report queue; original-draw generation and vector headers checked; not an atomic game snapshot",missing_target_bug_fixed=False)
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,
