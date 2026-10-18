@@ -144,3 +144,37 @@ class WeaponDisplayTests(unittest.TestCase):
         mu.reg_write(r.UC_ARM64_REG_W8,0);mu.emu_start(BASE+0xDD32C,BASE+0xDD338,count=4);self.assertEqual(mu.reg_read(r.UC_ARM64_REG_PC),BASE+0xDD338)
         mu.emu_start(BASE+0xDD398,BASE+0xDD3A4,count=4);self.assertEqual(mu.reg_read(r.UC_ARM64_REG_W3),0xffffffff)
         mu.emu_start(BASE+0xDD3A8,BASE+0xDD3AC,count=1);self.assertEqual(mu.reg_read(r.UC_ARM64_REG_S1),bits(14))
+
+    def test_native_render_loop_draws_only_enabled_vehicles_and_exact_two_ground_names(self):
+        rows=[('爆炸猎弓',600,0,1,0),('十字弩',450,0,1,0),('吉普车',300,1,1,0),('M416',10,0,1,0),('燃点复合弓',10,0,1,0),('十字弩',600.01,0,1,0),('十字弩',30,0,0,0),('爆炸猎弓',math.nan,0,1,0),('十字弩',20,0,1,1)]
+        for vehicle_on,bow_on in product([0,1],repeat=2):
+            mu=self.emulator();context,records,metas=STACK+0x1000,STACK+0x2000,STACK+0x4000
+            mu.mem_write(context,struct.pack('<3f',1,800,600));mu.mem_write(context+0x408,struct.pack('<2Q',records,records+len(rows)*0x58))
+            mu.mem_write(CONFIG,b'\xff'*0x500);mu.mem_write(CONFIG+0x21,bytes([bow_on,vehicle_on]))
+            labels=[]
+            for i,(name,distance,vehicle,projected,projectile) in enumerate(rows):
+                record,meta=records+i*0x58,metas+i*0x100;self.metadata(mu,meta,name,long=i==0,vehicle=vehicle)
+                mu.mem_write(record+8,bytes([projectile]));mu.mem_write(record+0x10,struct.pack('<Q',meta));mu.mem_write(record+0x18,struct.pack('<2f',200+i*20,250));mu.mem_write(record+0x38,struct.pack('<f',distance));mu.mem_write(record+0x4D,bytes([vehicle]));mu.mem_write(record+0x50,bytes([projected]))
+            def string(uc,pointer):
+                return bytes(uc.mem_read(pointer,128)).split(b'\0')[0].decode()
+            def hook(uc,address,size,_):
+                if address==BASE+0xDE5A0:uc.emu_stop();return
+                ins=struct.unpack('<I',uc.mem_read(address,4))[0]
+                if ins&0xFC000000!=0x94000000:return
+                delta=ins&0x3ffffff
+                if delta&0x2000000:delta-=0x4000000
+                target=address+delta*4-BASE
+                if target==PREDICATE:return
+                if target==0x726A30:
+                    fmt=string(uc,uc.reg_read(r.UC_ARM64_REG_X2));self.assertIn('%s',fmt);self.assertIn('%d',fmt)
+                    text,distance=struct.unpack('<2Q',uc.mem_read(uc.reg_read(r.UC_ARM64_REG_SP),16));value=f'{string(uc,text)} {distance}m'.encode()
+                    self.assertLess(len(value),uc.reg_read(r.UC_ARM64_REG_X1));uc.mem_write(uc.reg_read(r.UC_ARM64_REG_X0),value+b'\0')
+                elif target==0x726B20:uc.reg_write(r.UC_ARM64_REG_X0,len(string(uc,uc.reg_read(r.UC_ARM64_REG_X0)).encode()))
+                elif target==0xDF47C:
+                    labels.append(bytes(uc.mem_read(uc.reg_read(r.UC_ARM64_REG_X0),uc.reg_read(r.UC_ARM64_REG_X1))).decode());self.assertEqual(uc.reg_read(r.UC_ARM64_REG_W3),0xff00ffff);self.assertEqual(uc.reg_read(r.UC_ARM64_REG_S2),bits(14));self.assertEqual(uc.reg_read(r.UC_ARM64_REG_W2),1)
+                else:self.fail(f'Unexpected label call {target:#x}')
+                uc.reg_write(r.UC_ARM64_REG_PC,address+4)
+            mu.hook_add(UC_HOOK_CODE,hook);mu.reg_write(r.UC_ARM64_REG_X19,context);mu.reg_write(r.UC_ARM64_REG_X27,CONFIG);mu.emu_start(BASE+0xDDEBC,BASE+0xDE5A4,count=5000)
+            self.assertEqual(labels,(['爆炸猎弓 600m','十字弩 450m'] if bow_on else [])+(['吉普车 300m'] if vehicle_on else []))
+            self.assertEqual(mu.reg_read(r.UC_ARM64_REG_PC),BASE+0xDE5A0)
+            self.assertEqual(mu.reg_read(r.UC_ARM64_REG_SP),STACK+0x8000)
