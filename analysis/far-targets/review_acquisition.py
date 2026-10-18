@@ -1,4 +1,4 @@
-"""Read-only pinned Core review. Run binary analysis only in GitHub Actions."""
+"""Read-only pinned Core acquisition review; run only in GitHub Actions."""
 from pathlib import Path
 import hashlib
 import json

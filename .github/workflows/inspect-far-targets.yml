@@ -17,7 +17,7 @@ jobs:
       - name: Install disassembly dependency
         run: python -m pip install capstone==5.0.3
       - name: Inspect pinned baseline acquisition and range checks
-        run: python analysis/far-targets/inspect.py
+        run: python analysis/far-targets/review_acquisition.py
       - uses: actions/upload-artifact@v4
         with:
           name: Core-far-target-acquisition-review
