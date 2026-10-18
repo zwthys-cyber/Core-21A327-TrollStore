@@ -18,6 +18,7 @@ with zipfile.ZipFile(ROOT / 'input/Core.ipa') as z:
 patched = minimal_core(original)
 decoder = Cs(CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN)
 windows = {'acquisition': (0xD7A88, 0xDB144),
+           'upstream_sources': (0xC5000, 0xD7A88),
            'render_filter': (0xDB144, 0xDB6A0),
            'original_geometry_query': (0xD33F4, 0xD3650)}
 summary = {'original_core_sha256': hashlib.sha256(original).hexdigest(),
@@ -29,7 +30,9 @@ for name, (start, end) in windows.items():
     (out / f'{name}.txt').write_text('\n'.join(lines) + '\n')
     interesting = []
     for index, ins in enumerate(instructions):
-        if ins.mnemonic.startswith(('fcmp', 'fcmpe')) or re.search(r'#(?:0x12c|0x258|0x4396|0x4416)(?:\b|,)', ins.op_str):
+        constant = ins.mnemonic in ('mov', 'movk', 'movz', 'cmp', 'fmov') and '[' not in ins.op_str and re.search(r'#(?:0x12c|0x258|0x4396|0x4416|0x43960000|0x44160000)(?:\b|,)', ins.op_str)
+        vector_access = re.search(r'\[x\d+, #0x3[cCfF][08]\]', ins.op_str)
+        if (name != 'upstream_sources' and ins.mnemonic.startswith(('fcmp', 'fcmpe'))) or constant or vector_access:
             interesting.append({'address': hex(ins.address), 'instruction': f'{ins.mnemonic} {ins.op_str}',
                                 'context': lines[max(0, index-4):index+5]})
     summary['windows'][name] = interesting
