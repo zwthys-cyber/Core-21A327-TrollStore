@@ -14,6 +14,11 @@ static uint8_t VertexData[96],WeightData[24];static uint16_t TriangleData[3]={0,
 static uint8_t ChildData[4096];static uint32_t WideTriangleData[3]={0,1,2};
 static uint64_t TestTime=10000000000ULL;
 static uint64_t NativeDelay;
+#ifdef CORE_FILL_WORK
+static bool LargeStatic;
+static uint8_t LargeVertices[2048*24],LargeWeights[2048*8];
+static unsigned LargeReads,LargeVertexReads;
+#endif
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
 static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene,ResourceMemory,FailResourceRead,ReallocatedActors,SlowProjection,SchemaMemory;
 static bool GeometryReady;
@@ -44,6 +49,10 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
 #undef vm_read_overwrite
 #undef clock_gettime
 static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzeroCapture(out,size,0,address,TestBase+0xE1960);
+#ifdef CORE_FILL_WORK
+    if(LargeStatic){const uint64_t base[]={0x600000000ULL,0x600010000ULL,0x600020000ULL,0x600030000ULL};const void *data[]={LargeVertices,LargeWeights,TriangleData,&BonePalette};const size_t lengths[]={sizeof(LargeVertices),sizeof(LargeWeights),sizeof(TriangleData),sizeof(BonePalette)};
+        for(unsigned i=0;i<4;i++)if(address>=base[i]&&size<=lengths[i]&&address-base[i]<=lengths[i]-size){memcpy(out,(const uint8_t *)data[i]+(address-base[i]),size);LargeReads++;if(!i)LargeVertexReads++;TestTime+=1100000ULL;return true;}}
+#endif
     // The original context can receive a newer camera after CMLDraw captured
     // its view, while remote mesh/pose reads are still in progress.
     if(address==GameComponent&&CameraMotion&&!CameraMoved){float view[13];memcpy(view,Context+0x1F4,sizeof(view));
@@ -89,6 +98,9 @@ static void Setup(void){
     CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
     CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLLoadingMeshes=nil;CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLDiscoveries=[NSMutableDictionary dictionary];CMLSchemaStepUsed=false;CMLFailureRecords=[NSMutableArray array];CMLFailureKeyCount=0;atomic_store(&CMLFailureSamplesTruncated,false);CMLCachedBytes=0;
+#ifdef CORE_FILL_WORK
+    CMLPendingMeshes=[NSMutableArray array];CMLActivePending=nil;CMLPendingBytes=0;CMLStaticRemaining=CML_STATIC_WORK_NS;LargeStatic=false;LargeReads=LargeVertexReads=0;
+#endif
     CMBase=TestBase;CMReadRemote=Reader;CMProject=Project;CMLock=Lock;CMUnlock=Unlock;for(unsigned i=0;i<3;i++)CMRayFunctions[i]=Ray;
     CMLExpectedContext=(uintptr_t)Context;CMLOriginalDraw=Original;CMLGetDrawList=List;CMLPolygon=Polygon;
     CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=7;h.name_index=100;memcpy(ComponentData,&h,40);
@@ -141,7 +153,34 @@ static CMLTarget *WithStride(uint32_t stride) {
     NSMutableData *gpu=[target.gpu mutableCopy];((CMGDescriptors *)gpu.mutableBytes)->descriptors[0].vertex_stride=stride;memcpy(LODData+0xD0,&stride,4);target.gpu=gpu;target.meshes=@[];return target;
 }
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
+#ifdef CORE_FILL_WORK
+static CMLTarget *LargeStaticTarget(void) {
+    Setup();CMLTarget *target=Reusable();ReferenceEvidence(target);target.meshes=@[];
+    NSMutableData *gpu=[target.gpu mutableCopy];CMGDescriptor *d=&((CMGDescriptors *)gpu.mutableBytes)->descriptors[0];d->vertex_count=2048;uint32_t vertices=2048;memcpy(d->sections+0x70,&vertices,4);target.gpu=gpu;
+    memset(LargeVertices,0,sizeof(LargeVertices));memset(LargeWeights,0,sizeof(LargeWeights));
+    for(unsigned i=0;i<2048;i++){float p[3]={10,(float)(i%3),0};memcpy(LargeVertices+(size_t)i*24+8,p,12);LargeWeights[(size_t)i*8+4]=255;}
+    LargeStatic=true;return target;
+}
+static void CheckStaticResume(void) {
+    CMLTarget *target=LargeStaticTarget();const CMGDescriptor *d=&((const CMGDescriptors *)target.gpu.bytes)->descriptors[0];
+    assert(!CMLLiveMesh(target,d)&&LargeReads==3&&LargeVertexReads==3&&!CMLStaticRemaining&&CMLPendingBytes==sizeof(LargeVertices)&&CMLPendingMeshes.count==1&&!CMLActivePending);
+    unsigned before=Reads;CMGDescriptor second=*d;second.asset_address+=0x10000;assert(!CMLLiveMesh(target,&second)&&Reads==before); // All targets share the same static-work allowance.
+    CMLStaticRemaining=CML_STATIC_WORK_NS;CMLReadDeadline=TestTime+12000000ULL;CMLMesh *mesh=CMLLiveMesh(target,d);
+    assert(mesh&&mesh.vertices==2048&&LargeReads==6&&LargeVertexReads==3&&!CMLPendingBytes&&!CMLPendingMeshes.count&&!CMLActivePending);
+    assert(mesh.vertexData.length==sizeof(LargeVertices)&&!memcmp(mesh.vertexData.bytes,LargeVertices,sizeof(LargeVertices))&&mesh.weightData.length==sizeof(LargeWeights));
+    assert(atomic_load(&CMLStats.staticReuseBytes)>=sizeof(LargeVertices));
+    target=LargeStaticTarget();d=&((const CMGDescriptors *)target.gpu.bytes)->descriptors[0];assert(!CMLLiveMesh(target,d)&&LargeVertexReads==3);
+    CMGDescriptor changed=*d;changed.bounds_extent[0]+=1;CMLStaticRemaining=CML_STATIC_WORK_NS;CMLReadDeadline=TestTime+12000000ULL;
+    assert(!CMLLiveMesh(target,&changed)&&LargeVertexReads==6&&CMLPendingMeshes.count==1&&CMLPendingBytes==sizeof(LargeVertices)); // Changed descriptor discards the previous chunks.
+    Setup();CMLPendingMesh *staging=[CMLPendingMesh new];staging.chunks=[NSMutableDictionary dictionary];[CMLPendingMeshes addObject:staging];CMLActivePending=staging;uint8_t chunk[16384]={0};
+    for(unsigned i=0;i<257;i++)CMLStoreStaticChunk(0x700000000ULL+(uint64_t)i*16384,chunk,sizeof(chunk));
+    assert(CMLPendingBytes==CML_STATIC_STAGE_BYTES&&staging.chunks.count==256);CMLActivePending=nil;CMLDropPending(staging);assert(!CMLPendingBytes);
+}
+#endif
 int main(void){@autoreleasepool {
+#ifdef CORE_FILL_WORK
+    CheckStaticResume();
+#endif
 #ifdef CORE_OVERLAY_LATENCY
     assert(!CMStartDetailedCapture());
     Setup();Context[0x20]=0;NativeDelay=3000000ULL;uint64_t offCallbacks=atomic_load(&CMLStats.fillOffCallbacks),offNative=atomic_load(&CMLStats.fillOffNativeTotal),offTotal=atomic_load(&CMLStats.fillOffCallbackTotal);

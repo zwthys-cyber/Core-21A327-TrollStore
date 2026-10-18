@@ -1,0 +1,51 @@
+name: Build full precision latency work IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/fill-work-budget]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 -m pip install --user --break-system-packages unicorn==2.1.4
+      - run: python3 -m unittest discover -s tests -v
+      - name: Check static-read resume and full pipeline with sanitizers
+        run: |
+          xcrun clang -O2 -DCORE_NEARBY_VEHICLES=1 -DCORE_OVERLAY_LATENCY=1 -DCORE_FILL_WORK=1 -fsanitize=address,undefined -fno-omit-frame-pointer -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/test_model_live_runtime.m -o /tmp/core-work-test
+          /tmp/core-work-test
+      - name: Compare actual concurrent row work with sequential full precision raster
+        run: |
+          xcrun clang -O2 -fblocks -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror tests/test_model_raster_work.m -o /tmp/core-raster-work-test
+          /tmp/core-raster-work-test
+      - name: Check concurrent raster row ownership with ThreadSanitizer
+        run: |
+          xcrun clang -O2 -fblocks -fsanitize=thread -Wall -Wextra -Werror tests/test_model_raster_work.m -o /tmp/core-raster-thread-test
+          /tmp/core-raster-thread-test
+      - name: Check raster reference and model boundaries
+        run: |
+          for task in model_references model_binding model_mesh_evidence model_gpu_streams model_skinning model_pixels model_raster model_reflection model_ray_abi; do
+            xcrun clang -O2 -Wall -Wextra -Werror tests/test_${task}_runtime.c -o /tmp/core-${task}-test
+            /tmp/core-${task}-test
+          done
+      - name: Check standalone capture compatibility
+        run: |
+          xcrun clang -O2 -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/test_model_capture_runtime.m -o /tmp/core-capture-test
+          /tmp/core-capture-test
+      - run: node --test tests/test_model_mesh_preview.mjs
+      - name: Build device IPA
+        run: python3 scripts/build.py --model-render --nearby-vehicles --overlay-latency --fill-work
+      - name: Verify exact payload, permissions and signatures
+        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-model-render-v14-latency-work.ipa
+      - name: Check compiled entry forwarding
+        run: python3 scripts/check_model_capture_entry.py dist/Core-17.0-21A327-TrollStore-model-render-v14-latency-work.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-v14-latency-work
+          path: dist/*
+          retention-days: 14

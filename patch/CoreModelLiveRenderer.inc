@@ -3,6 +3,7 @@
 // background list before Render/Metal submission. No executable runtime writes.
 #include "CoreModelSkinning.h"
 #include "CoreModelPixels.h"
+#include "CoreModelRasterWork.h"
 #include "CoreModelReflection.h"
 #include <pthread.h>
 #include <unistd.h>
@@ -13,6 +14,9 @@
 #define CML_PIXEL_LIMIT (4*1024*1024)
 #define CML_SPAN_LIMIT 4096
 #define CML_RAY_SCRATCH_BYTES (8*1024*1024)
+#define CML_STATIC_STAGE_BYTES (4*1024*1024)
+#define CML_STATIC_STAGE_ENTRIES 8
+#define CML_STATIC_WORK_NS 3000000ULL
 @interface CMLMesh : NSObject
 @property(nonatomic) CMGKey key;
 @property(nonatomic) uint32_t lod,bones,vertices,vertexStride,sectionCount,indexCount,indexWidth,byteCost;
@@ -20,6 +24,20 @@
 @end
 @implementation CMLMesh
 @end
+#ifdef CORE_FILL_WORK
+@interface CMLPendingMesh : NSObject
+@property(nonatomic,strong) NSData *descriptor,*reference;
+@property(nonatomic,strong) NSMutableDictionary<NSNumber *,NSData *> *chunks;
+@property(nonatomic) uint64_t retryAfter;
+@property(nonatomic) size_t bytes;
+@end
+@implementation CMLPendingMesh
+@end
+static NSMutableArray<CMLPendingMesh *> *CMLPendingMeshes;
+static CMLPendingMesh *CMLActivePending;
+static size_t CMLPendingBytes;
+static uint64_t CMLStaticRemaining;
+#endif
 @interface CMLDrawItem : NSObject
 @property(nonatomic,strong) CMLMesh *mesh;
 @property(nonatomic,strong) NSData *pose;
@@ -74,6 +92,8 @@ typedef struct {
     atomic_uint_fast64_t fillOffCallbacks,fillOffNativeTotal,fillOffNativeMaximum,fillOffCallbackTotal,fillOffCallbackMaximum;
     atomic_uint_fast64_t fillOnCallbacks,fillOnNativeTotal,fillOnNativeMaximum,fillOnCallbackTotal,fillOnCallbackMaximum;
     atomic_uint_fast64_t fillOffGapSamples,fillOffGapTotal,fillOffGapMaximum,fillOnGapSamples,fillOnGapTotal,fillOnGapMaximum;
+    atomic_uint_fast64_t staticReadBytes,staticReuseBytes,staticDeferrals,staticBackoffs,staticStageMaximum,staticStageEvictions,staticWorkTotal,staticWorkMaximum;
+    atomic_uint_fast64_t parallelRasterFrames;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
@@ -117,10 +137,31 @@ static bool CMLRead(uint64_t address,void *out,size_t size) {
     if (!CMRemoteRange(address,size)||CMLReads>=1024||CMNow()>=CMLReadDeadline) return false;
     CMLReads++;return CMReadRemote(address,out,size);
 }
+#ifdef CORE_FILL_WORK
+static void CMLDropPending(CMLPendingMesh *pending) {
+    CMLPendingBytes-=pending.bytes;pending.bytes=0;[pending.chunks removeAllObjects];[CMLPendingMeshes removeObjectIdenticalTo:pending];
+}
+static void CMLStoreStaticChunk(uint64_t address,const void *bytes,size_t size) {
+    if(!CMLActivePending||size>CML_STATIC_STAGE_BYTES)return;
+    NSData *previous=CMLActivePending.chunks[@(address)];if(previous){CMLActivePending.bytes-=previous.length;CMLPendingBytes-=previous.length;[CMLActivePending.chunks removeObjectForKey:@(address)];}
+    while(CMLPendingBytes>CML_STATIC_STAGE_BYTES-size){CMLPendingMesh *old=nil;for(CMLPendingMesh *p in CMLPendingMeshes)if(p!=CMLActivePending){old=p;break;}
+        if(!old)return;CMLDropPending(old);atomic_fetch_add(&CMLStats.staticStageEvictions,1);}
+    CMLActivePending.chunks[@(address)]=[NSData dataWithBytes:bytes length:size];CMLActivePending.bytes+=size;CMLPendingBytes+=size;CMLMaximum(&CMLStats.staticStageMaximum,CMLPendingBytes);
+}
+#endif
 static NSData *CMLBytes(uint64_t address,size_t size) {
     if (!size||size>1024*1024||address<0x100000000ULL||address>=(1ULL<<39)||size>(1ULL<<39)-address) return nil;
     NSMutableData *data=[NSMutableData dataWithLength:size];
-    for (size_t offset=0;offset<size;) {size_t n=size-offset;if(n>16384)n=16384;if(!CMLRead(address+offset,(uint8_t *)data.mutableBytes+offset,n))return nil;offset+=n;}
+    for (size_t offset=0;offset<size;) {size_t n=size-offset;if(n>16384)n=16384;
+#ifdef CORE_FILL_WORK
+        NSData *chunk=CMLActivePending.chunks[@(address+offset)];
+        if(chunk.length==n){memcpy((uint8_t *)data.mutableBytes+offset,chunk.bytes,n);atomic_fetch_add(&CMLStats.staticReuseBytes,n);offset+=n;continue;}
+#endif
+        if(!CMLRead(address+offset,(uint8_t *)data.mutableBytes+offset,n))return nil;
+#ifdef CORE_FILL_WORK
+        if(CMLActivePending){CMLStoreStaticChunk(address+offset,(uint8_t *)data.bytes+offset,n);atomic_fetch_add(&CMLStats.staticReadBytes,n);}
+#endif
+        offset+=n;}
     return data;
 }
 static bool CMLSameObject(CMRHeader a,CMRHeader b) {
@@ -338,7 +379,31 @@ static bool CMLPrepareMetadata(CMLTarget *target,uint64_t now,bool *checked) {
 static CMLMesh *CMLLiveMesh(CMLTarget *target,const CMGDescriptor *descriptor) {
     for(CMLMesh *mesh in target.meshes)if(mesh.lod==descriptor->lod_index&&mesh.key.asset==descriptor->asset_address)return mesh;
     if(target.evidence.length!=sizeof(CMEMeshEvidence))return nil;
-    CMLMesh *mesh=CMLLoadMesh(descriptor,CMEResourceAt(target.evidence.bytes,descriptor->asset_index));
+    const CMEResource *resource=CMEResourceAt(target.evidence.bytes,descriptor->asset_index);CMLMesh *mesh=nil;
+#ifdef CORE_FILL_WORK
+    // Only immutable static buffers participate in resumable staging. State,
+    // transforms, poses and camera reads never use this cache.
+    NSMutableData *reference=resource?[NSMutableData dataWithBytes:resource length:sizeof(*resource)]:nil;if(reference)((CMEResource *)reference.mutableBytes)->asset_index=0;
+    CMLPendingMesh *pending=nil;CMGKey wanted=CMGKeyFor(descriptor);
+    for(CMLPendingMesh *p in [CMLPendingMeshes copy]){const CMGDescriptor *old=p.descriptor.bytes;CMGKey key=CMGKeyFor(old);
+        if(!CMGKeyEqual(&key,&wanted))continue;
+        if(CMLSameMeshDescriptor(old,descriptor)&&old->bounds_shape_valid==descriptor->bounds_shape_valid&&!memcmp(old->bounds_origin,descriptor->bounds_origin,24)&&(p.reference==reference||[p.reference isEqualToData:reference]))pending=p;
+        else CMLDropPending(p);}
+    if(pending&&CMNow()<pending.retryAfter){atomic_fetch_add(&CMLStats.staticBackoffs,1);return nil;}
+    if(!CMLStaticRemaining){atomic_fetch_add(&CMLStats.staticDeferrals,1);return nil;}
+    if(!pending){while(CMLPendingMeshes.count>=CML_STATIC_STAGE_ENTRIES){CMLDropPending(CMLPendingMeshes.firstObject);atomic_fetch_add(&CMLStats.staticStageEvictions,1);}
+        pending=[CMLPendingMesh new];pending.descriptor=[NSData dataWithBytes:descriptor length:sizeof(*descriptor)];pending.reference=reference;pending.chunks=[NSMutableDictionary dictionary];[CMLPendingMeshes addObject:pending];}
+    else{[CMLPendingMeshes removeObjectIdenticalTo:pending];[CMLPendingMeshes addObject:pending];}
+    uint64_t savedDeadline=CMLReadDeadline,start=CMNow(),deadline=start+CMLStaticRemaining;if(CMLReadDeadline>deadline)CMLReadDeadline=deadline;
+    CMLActivePending=pending;mesh=CMLLoadMesh(descriptor,resource);CMLActivePending=nil;
+    uint64_t elapsed=CMNow()-start;CMLReadDeadline=savedDeadline;CMLStaticRemaining=elapsed>=CMLStaticRemaining?0:CMLStaticRemaining-elapsed;
+    atomic_fetch_add(&CMLStats.staticWorkTotal,elapsed);CMLMaximum(&CMLStats.staticWorkMaximum,elapsed);
+    if(mesh)CMLDropPending(pending);
+    else if(CMLLastLoadFailure!=CML_LOAD_READ_BUDGET){CMLPendingBytes-=pending.bytes;pending.bytes=0;[pending.chunks removeAllObjects];pending.retryAfter=CMNow()+1000000000ULL;}
+    else atomic_fetch_add(&CMLStats.staticDeferrals,1);
+#else
+    mesh=CMLLoadMesh(descriptor,resource);
+#endif
     if(!mesh){atomic_fetch_add(&CMLStats.meshUnavailable,1);CMLRecordLoadFailure(target,descriptor);return nil;}
     NSMutableArray *selected=[NSMutableArray array];for(CMLMesh *old in target.meshes)if(old.key.asset!=descriptor->asset_address)[selected addObject:old];[selected addObject:mesh];target.meshes=selected;return mesh;
 }
@@ -501,6 +566,9 @@ __attribute__((noinline)) static void CMLDrawFrame(uintptr_t context) {
     uint64_t drawStart=CMNow();atomic_fetch_add(&CMLStats.eligibleFrames,1);
     CMInside=true;pthread_mutex_lock(&CMLMutex);
     CMLSchemaStepUsed=false;
+#ifdef CORE_FILL_WORK
+    CMLStaticRemaining=CML_STATIC_WORK_NS;
+#endif
     @autoreleasepool {
         NSMutableArray<NSMutableData *> *worldPoints=[NSMutableArray array],*worldValid=[NSMutableArray array];NSMutableArray<NSData *> *worldTriangles=[NSMutableArray array];
         NSMutableArray<NSData *> *projected=[NSMutableArray array],*triangleArrays=[NSMutableArray array],*validArrays=[NSMutableArray array];NSMutableArray<CMLDrawItem *> *items=[NSMutableArray array];bool refreshed=false;uint64_t now=CMNow();uint32_t localTeam=0;NSData *actors=CMLReadActors(context,&localTeam);
@@ -588,8 +656,15 @@ __attribute__((noinline)) static void CMLDrawFrame(uintptr_t context) {
             uint64_t bytes=count*sizeof(CMPPixel);uint_fast64_t maximum=atomic_load(&CMLStats.maskBytesMaximum);while(bytes>maximum&&!atomic_compare_exchange_weak(&CMLStats.maskBytesMaximum,&maximum,bytes)){}
             NSMutableData *pixels=[NSMutableData dataWithLength:bytes];CMPMask mask={x,y,right-x,bottom-y,pixels.mutableBytes};uint64_t triangles=0;
             uint32_t rowWords=((uint32_t)mask.width+63)/64;NSMutableData *coverageData=[NSMutableData dataWithLength:(size_t)rowWords*mask.height*8];CMPCoverage coverage={coverageData.mutableBytes,rowWords,0};
-            for(NSUInteger j=0;j<projected.count;j++){const CMPVertex *points=projected[j].bytes;NSData *data=triangleArrays[j];const uint32_t *tris=data.bytes;size_t triangleCount=data.length/12;const uint8_t *valid=validArrays[j].bytes;
-                for(size_t i=0;i<triangleCount;i++){uint32_t a=tris[i*3],b=tris[i*3+1],c=tris[i*3+2];if(!valid[a]||!valid[b]||!valid[c])continue;CMPVertex t[3]={points[a],points[b],points[c]};if(CMPRasterTriangleCovered(&mask,t,&coverage))triangles++;}}atomic_fetch_add(&CMLStats.triangles,triangles);
+            NSMutableData *rasterMeshes=[NSMutableData dataWithLength:projected.count*sizeof(CMPRasterMesh)];CMPRasterMesh *raster=rasterMeshes.mutableBytes;uint64_t triangleCount=0;
+            for(NSUInteger j=0;j<projected.count;j++){raster[j]=(CMPRasterMesh){projected[j].bytes,triangleArrays[j].bytes,validArrays[j].bytes,triangleArrays[j].length/12,(uint32_t)(projected[j].length/sizeof(CMPVertex))};triangleCount+=raster[j].triangle_count;}
+            unsigned workers=1;
+#ifdef CORE_FILL_WORK
+            if(mask.height>=128&&count>=65536&&triangleCount>=4096){workers=2;atomic_fetch_add(&CMLStats.parallelRasterFrames,1);}
+#else
+            (void)triangleCount;
+#endif
+            triangles=CMPRasterMeshWork(&mask,&coverage,raster,projected.count,workers);atomic_fetch_add(&CMLStats.triangles,triangles);
             atomic_fetch_add(&CMLStats.gridPixels,count);atomic_fetch_add(&CMLStats.coveredPixels,coverage.count);CMLMaximum(&CMLStats.coveredMaximum,coverage.count);CMLTime(&CMLStats.rasterTimeTotal,&CMLStats.rasterTimeMaximum,rasterStart);
             uint64_t queryStart=CMNow();
             CMLQueryContext query={{NULL,NULL,NULL},CMNow()+12000000ULL};bool complete=false;uint32_t white=0,red=0;
@@ -651,7 +726,9 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-#ifdef CORE_OVERLAY_LATENCY
+#ifdef CORE_FILL_WORK
+    const int renderVersion=14;
+#elif defined(CORE_OVERLAY_LATENCY)
     const int renderVersion=13;
 #elif defined(CORE_NEARBY_VEHICLES)
     const int renderVersion=12;
@@ -666,6 +743,9 @@ static void CMLWriteStatus(NSURL *url) {
         @"fill_off_callback_gap_samples":CML_VALUE(fillOffGapSamples),@"fill_off_callback_gap_total_ns":CML_VALUE(fillOffGapTotal),@"fill_off_callback_gap_maximum_ns":CML_VALUE(fillOffGapMaximum),@"fill_on_callback_gap_samples":CML_VALUE(fillOnGapSamples),@"fill_on_callback_gap_total_ns":CML_VALUE(fillOnGapTotal),@"fill_on_callback_gap_maximum_ns":CML_VALUE(fillOnGapMaximum),
         @"callback_timing_scope":@"native draw entry through fill return; excludes subsequent ImGui/Metal submission and game display latency",@"callback_gap_semantics":@"consecutive calls with same sampled fill state; includes idle gaps; not game FPS",
         @"camera_age_semantics":@"elapsed since local camera copy; source engine frame age is unknown",
+        @"static_buffer_resume":@(renderVersion>=14),@"static_buffer_bytes_read":CML_VALUE(staticReadBytes),@"static_buffer_bytes_reused":CML_VALUE(staticReuseBytes),@"static_load_deferrals":CML_VALUE(staticDeferrals),@"static_load_backoffs":CML_VALUE(staticBackoffs),
+        @"static_stage_bytes_maximum":CML_VALUE(staticStageMaximum),@"static_stage_byte_limit":@CML_STATIC_STAGE_BYTES,@"static_stage_evictions":CML_VALUE(staticStageEvictions),@"static_work_time_total_ns":CML_VALUE(staticWorkTotal),@"static_work_time_maximum_ns":CML_VALUE(staticWorkMaximum),@"static_work_budget_ns":@CML_STATIC_WORK_NS,
+        @"parallel_raster_frames":CML_VALUE(parallelRasterFrames),@"raster_worker_limit":@(renderVersion>=14?2:1),@"raster_worker_scope":@"disjoint depth/coverage rows only; game reads, occlusion queries and UI remain on original thread",
         @"camera_sampling_stage":@"after-gather-and-skinning",@"late_camera_samples":CML_VALUE(lateCameraSamples),@"draw_callbacks_busy":CML_VALUE(drawBusyFrames),
         @"target_mutex_scope":@"gather-only",@"observer_mutex_wait_total_ns":CML_VALUE(observerWaitTotal),@"observer_mutex_wait_maximum_ns":CML_VALUE(observerWaitMaximum),
         @"projection_stage_time_total_ns":CML_VALUE(projectionTimeTotal),@"projection_stage_time_maximum_ns":CML_VALUE(projectionTimeMaximum),@"camera_age_at_fill_total_ns":CML_VALUE(cameraAgeAtSubmitTotal),@"camera_age_at_fill_maximum_ns":CML_VALUE(cameraAgeAtSubmitMaximum),
@@ -701,6 +781,9 @@ static void CMLWriteStatus(NSURL *url) {
 static void CMLStartup(void) {
     CMLTargets=[NSMutableArray array];CMLCache=[NSMutableArray array];CMLSchemas=[NSMutableDictionary dictionary];CMLSchemaStore=[CMLSchemaSnapshot new];CMLDiscoveries=[NSMutableDictionary dictionary];CMLFailureRecords=[NSMutableArray array];CMLExpectedContext=CMBase+0xC54270;
     CMLOriginalDraw=(void (*)(void *))CMCallable(CMBase+0xDB144);CMLGetDrawList=(void *(*)(void))CMCallable(CMBase+0x123E30);CMLPolygon=(void (*)(void *,const CMVec2 *,int,uint32_t))CMCallable(CMBase+0x13C8AC);
+#ifdef CORE_FILL_WORK
+    CMLPendingMeshes=[NSMutableArray array];CMLActivePending=nil;CMLPendingBytes=0;CMLStaticRemaining=CML_STATIC_WORK_NS;
+#endif
     // The full 96-byte result ABI and independent tail-write regression now
     // cover this path. Per-frame comparisons still fall back to the wrappers.
     CMLIntersect=(void (*)(void *,CMRayHit *,void *))CMCallable(CMBase+0x2AD2A0);atomic_store(&CMLBatchDisabled,false);atomic_store(&CMLReady,true);
