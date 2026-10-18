@@ -18,7 +18,8 @@ assert hashlib.sha256(data).hexdigest() == CORE_SHA256
 decoder = Cs(CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN)
 for name, start, end in [('ui', 0xCD6A4, 0xCE0EC),
                          ('collector', 0xD4A08, 0xDB144),
-                         ('render', 0xDB144, 0xDF47C)]:
+                         ('render', 0xDB144, 0xDF47C),
+                         ('item_classifier', 0xF8B34, 0xFB800)]:
     lines = [f'{i.address:08x} {i.bytes.hex():8s} {i.mnemonic:8s} {i.op_str}'
              for i in decoder.disasm(data[start:end], start)]
     (out / f'{name}.txt').write_text('\n'.join(lines) + '\n')
