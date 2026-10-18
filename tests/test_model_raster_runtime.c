@@ -26,13 +26,14 @@ static bool Reference(CMPMask *mask,const CMPVertex t[3],CMPCoverage *coverage) 
 static uint32_t RandomState=123456789;
 static float Random(float range){RandomState=RandomState*1664525U+1013904223U;return ((float)(RandomState>>8)/16777216.f*2-1)*range;}
 int main(void) {
+    CMTransform identity={{0,0,0,1,0,0,0,0,1,1,1}};CMVec3 origin;assert(CMWorldPosition(&identity,&identity,&origin));
     enum {W=129,H=97,WORDS=3};size_t count=W*H,bytes=count*sizeof(CMPPixel),wordBytes=WORDS*H*8;
     CMPPixel *a=calloc(count,sizeof(*a)),*b=calloc(count,sizeof(*b));uint64_t *ab=calloc(WORDS*H,8),*bb=calloc(WORDS*H,8);assert(a&&b&&ab&&bb);
     CMPMask old={11,17,W,H,a},fast={11,17,W,H,b};CMPCoverage ac={ab,WORDS,0},bc={bb,WORDS,0};
     for(unsigned n=0;n<8000;n++){
         if(n%8==0){memset(a,0,bytes);memset(b,0,bytes);memset(ab,0,wordBytes);memset(bb,0,wordBytes);ac.count=bc.count=0;}
         float range=n%11==0?65535:250;CMPVertex t[3]={0};
-        for(unsigned i=0;i<3;i++){t[i].xy=(CMVec2){Random(range)+75,Random(range)+65};t[i].world=(CMVec3){10+i,2,3};t[i].inverse_depth=.01f+(float)(i+1)*.02f;}
+        for(unsigned i=0;i<3;i++){t[i].xy=(CMVec2){Random(range)+75,Random(range)+65};t[i].world=(CMVec3){origin.x+10+i,origin.y+2,origin.z+3};t[i].inverse_depth=.01f+(float)(i+1)*.02f;}
         if(n%5==0){t[0].xy=(CMVec2){.5f,17.5f};t[1].xy=(CMVec2){140.5f,113.5f};t[2].xy=(CMVec2){139.5f+Random(.01f),113.5f+Random(.01f)};}
         if(n%17==0){t[2].xy=t[1].xy;t[2].xy.y=nextafterf(t[2].xy.y,INFINITY);}
         assert(Reference(&old,t,&ac)==CMPRasterTriangleCovered(&fast,t,&bc));
