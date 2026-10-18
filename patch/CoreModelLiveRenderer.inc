@@ -621,7 +621,12 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-    NSDictionary *status=@{ @"render_version":@11,@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+#ifdef CORE_NEARBY_VEHICLES
+    const int renderVersion=12;
+#else
+    const int renderVersion=11;
+#endif
+    NSDictionary *status=@{ @"render_version":@(renderVersion),@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"camera_sampling_stage":@"after-gather-and-skinning",@"late_camera_samples":CML_VALUE(lateCameraSamples),@"draw_callbacks_busy":CML_VALUE(drawBusyFrames),
         @"target_mutex_scope":@"gather-only",@"observer_mutex_wait_total_ns":CML_VALUE(observerWaitTotal),@"observer_mutex_wait_maximum_ns":CML_VALUE(observerWaitMaximum),
         @"projection_stage_time_total_ns":CML_VALUE(projectionTimeTotal),@"projection_stage_time_maximum_ns":CML_VALUE(projectionTimeMaximum),@"camera_age_at_fill_total_ns":CML_VALUE(cameraAgeAtSubmitTotal),@"camera_age_at_fill_maximum_ns":CML_VALUE(cameraAgeAtSubmitMaximum),

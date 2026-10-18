@@ -177,12 +177,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-capture", action="store_true", help="Build the optional bounded runtime-data capture variant")
     parser.add_argument("--model-render", action="store_true", help="Build continuous real mesh fill and per-pixel geometric occlusion")
+    parser.add_argument("--nearby-vehicles", action="store_true", help="Add independent native vehicle name/distance labels to the live mesh build")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
     parser.add_argument("--linker", default="ld64.lld-21")
     parser.add_argument("--ldid", type=Path)
     args = parser.parse_args()
+    if args.nearby_vehicles and not args.model_render:
+        parser.error("--nearby-vehicles requires --model-render")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -198,6 +201,9 @@ def main():
     from remote_imports import redirect_remote_imports, redirect_model_capture_import
     from minimal_features import PROFILE, minimal_core, manifest
     main_payload = redirect_remote_imports(inject(minimal_core(binary.read_bytes())))
+    if args.nearby_vehicles:
+        from nearby_vehicles import nearby_vehicles
+        main_payload = nearby_vehicles(main_payload)
     if args.model_capture:
         main_payload = redirect_model_capture_import(main_payload)
     if args.model_render:
@@ -218,6 +224,8 @@ def main():
         common.append("-DCORE_MODEL_CAPTURE=1")
     if args.model_render:
         common.append("-DCORE_MODEL_RENDER=1")
+    if args.nearby_vehicles:
+        common.append("-DCORE_NEARBY_VEHICLES=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -263,6 +271,10 @@ def main():
         info.update(CFBundleVersion="27", CoreModelCaptureVersion="7")
     if args.model_render:
         info.update(CFBundleVersion="39",CoreModelRenderVersion="11")
+    if args.nearby_vehicles:
+        from nearby_vehicles import VERSION, PROFILE as vehicle_profile
+        info.update(CFBundleVersion="40", CoreModelRenderVersion="12",
+                    CoreNearbyVehiclesVersion=VERSION, CoreFeatureProfile=vehicle_profile)
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -286,6 +298,9 @@ def main():
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     artifact = dist / ("Core-17.0-21A327-TrollStore-model-render-v11.ipa" if args.model_render else "Core-17.0-21A327-TrollStore-model-capture-v7.ipa" if args.model_capture else ARTIFACT_NAME)
+    if args.nearby_vehicles:
+        from nearby_vehicles import ARTIFACT
+        artifact = dist / ARTIFACT
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -338,7 +353,14 @@ def main():
         entry_return="ARM64 veneer passes original LR in x4 before the C prologue",
         entry_diagnostics="all forwarding entries, unmatched callers, expected reader calls, disabled and recursive reader calls",
         live_mesh_binding_verified=False, full_render_mesh_verified=False, silhouette_implemented=args.model_render)
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=11 if args.model_render else 0,
+    if args.nearby_vehicles:
+        from nearby_vehicles import manifest as vehicle_manifest
+        report.update(feature_profile=vehicle_profile, nearby_vehicles=dict(
+            version=VERSION, range_metres=600, switch="independent original persisted preference +0x22",
+            classification="native metadata +0x15 vehicle bit; projectile source type rejected before position reads",
+            labels="native vehicle name and distance; yellow outline text, font 14 times native scale",
+            changes=vehicle_manifest(), device_runtime_verified=False))
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,
