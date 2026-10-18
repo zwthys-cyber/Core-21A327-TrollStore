@@ -181,6 +181,7 @@ def main():
     parser.add_argument("--overlay-latency", action="store_true", help="Separate fill control, stop automatic detailed capture and record overlay callback latency")
     parser.add_argument("--fill-work", action="store_true", help="Resume static model reads with shared frame budget and parallel exact raster rows")
     parser.add_argument("--actor-trace", action="store_true", help="Background diagnostic comparison of existing native actor source and marker vectors")
+    parser.add_argument("--weapon-display", action="store_true", help="Only ground explosive hunting bow/crossbow labels and independent held weapon text")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -195,6 +196,8 @@ def main():
         parser.error("--fill-work requires --overlay-latency")
     if args.actor_trace and not args.fill_work:
         parser.error("--actor-trace requires --fill-work")
+    if args.weapon_display and not args.actor_trace:
+        parser.error("--weapon-display requires --actor-trace")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -216,6 +219,9 @@ def main():
     if args.overlay_latency:
         from overlay_latency import overlay_latency
         main_payload = overlay_latency(main_payload)
+    if args.weapon_display:
+        from weapon_display import weapon_display
+        main_payload = weapon_display(main_payload)
     if args.model_capture:
         main_payload = redirect_model_capture_import(main_payload)
     if args.model_render:
@@ -244,6 +250,8 @@ def main():
         common.append("-DCORE_FILL_WORK=1")
     if args.actor_trace:
         common.append("-DCORE_ACTOR_TRACE=1")
+    if args.weapon_display:
+        common.append("-DCORE_WEAPON_DISPLAY=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -301,6 +309,9 @@ def main():
         info.update(CFBundleVersion="42", CoreModelRenderVersion="14", CoreFillWorkVersion="1")
     if args.actor_trace:
         info.update(CFBundleVersion="43", CoreModelRenderVersion="15", CoreActorVisibilityTraceVersion="1")
+    if args.weapon_display:
+        from weapon_display import VERSION as weapon_version, PROFILE as weapon_profile
+        info.update(CoreWeaponDisplayVersion=weapon_version, CoreFeatureProfile=weapon_profile)
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -405,6 +416,10 @@ def main():
         report["fill_work"]=dict(version=1, static_work_budget_ns=3000000, budget_scope="shared across all target static loads in one draw; cooperative between backend reads; dynamic state/poses not cached", static_stage_chunk_byte_limit=4*1024*1024,static_stage_entries=8,failed_static_load_retry_seconds=1,raster_workers=2,raster_work="disjoint full rows, same float operations and triangle order; remote reads, geometry queries and UI remain on original thread",device_performance_verified=False)
     if args.actor_trace:
         report["actor_visibility_trace"]=dict(version=1,interval_ms=1000,local_vector_record_limit=512,tracked_target_limit=512,stage_event_limit=64,remote_game_reads=False,scope="background report queue; original-draw generation and vector headers checked; not an atomic game snapshot",missing_target_bug_fixed=False)
+    if args.weapon_display:
+        from weapon_display import manifest as weapon_manifest, PROFILE as weapon_profile
+        report["feature_profile"]=weapon_profile
+        report["weapon_display"]=dict(version=1,ground_whitelist=["爆炸猎弓","十字弩"],range_metres=600,ground_switch="independent persisted +0x21",held_switch="independent persisted +0x24; existing enemy/range/projection filters",held_style="native text name lookup; white outlined 14*scale; original icon preference bypassed",other_ground_items_enabled=False,device_verified=False,changes=weapon_manifest())
     report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",

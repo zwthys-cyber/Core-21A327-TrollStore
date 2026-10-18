@@ -750,6 +750,9 @@ static void CMLWriteStatus(NSURL *url) {
 #ifdef CORE_ACTOR_TRACE
         @"actor_visibility_trace":CAVStatus(),
 #endif
+#ifdef CORE_WEAPON_DISPLAY
+        @"ground_weapon_whitelist":@[@"爆炸猎弓",@"十字弩"],@"ground_weapon_preference_offset":@"0x21",@"held_weapon_preference_offset":@"0x24",
+#endif
         @"render_version":@(renderVersion),@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"independent_fill_switch":@(renderVersion>=13),@"fill_currently_requested":@(CMLFillRequested(CMLExpectedContext)),@"detailed_capture_enabled":@(atomic_load(&CMEnabled)),
         @"native_draw_time_total_ns":CML_VALUE(nativeDrawTotal),@"native_draw_time_maximum_ns":CML_VALUE(nativeDrawMaximum),@"draw_callback_time_total_ns":CML_VALUE(callbackTotal),@"draw_callback_time_maximum_ns":CML_VALUE(callbackMaximum),

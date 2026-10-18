@@ -84,6 +84,9 @@ def main(ipa):
         actor_trace_version=info.get("CoreActorVisibilityTraceVersion")
         assert actor_trace_version in (None,"1"), "Unknown actor-trace protocol"
         assert (actor_trace_version=="1")== (render_version=="15"), "Actor-trace build identity mismatch"
+        weapon_version=info.get("CoreWeaponDisplayVersion")
+        assert weapon_version in (None,"1"), "Unknown weapon display protocol"
+        assert not weapon_version or actor_trace_version=="1", "Weapon display requires actor-trace build"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -103,6 +106,9 @@ def main(ipa):
         if latency_version:
             from overlay_latency import overlay_latency
             expected_main = overlay_latency(expected_main)
+        if weapon_version:
+            from weapon_display import weapon_display
+            expected_main = weapon_display(expected_main)
         if model_capture:
             expected_main = redirect_model_capture_import(expected_main)
         if model_render:
@@ -198,6 +204,8 @@ def main(ipa):
             from nearby_vehicles import PROFILE as expected_profile
         if latency_version:
             from overlay_latency import PROFILE as expected_profile
+        if weapon_version:
+            from weapon_display import PROFILE as expected_profile
         assert info["CoreFeatureProfile"] == expected_profile
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"
