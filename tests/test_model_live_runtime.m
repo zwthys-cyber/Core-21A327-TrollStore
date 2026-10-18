@@ -16,6 +16,8 @@ static uint64_t TestTime=10000000000ULL;
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
 static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene,ResourceMemory,FailResourceRead,ReallocatedActors,SlowProjection,SchemaMemory;
 static bool GeometryReady;
+static unsigned CameraMotion;
+static bool CameraMoved;
 static int TestClock(clockid_t clock,struct timespec *t){(void)clock;if(FailQueryBudget)TestTime+=20000000ULL;t->tv_sec=TestTime/1000000000ULL;t->tv_nsec=TestTime%1000000000ULL;return 0;}
 static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,vm_address_t dest,vm_size_t *copied){
     (void)task;uint64_t value=0;
@@ -39,6 +41,13 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
 #undef vm_read_overwrite
 #undef clock_gettime
 static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzeroCapture(out,size,0,address,TestBase+0xE1960);
+    // The original context can receive a newer camera after CMLDraw captured
+    // its view, while remote mesh/pose reads are still in progress.
+    if(address==GameComponent&&CameraMotion&&!CameraMoved){float view[13];memcpy(view,Context+0x1F4,sizeof(view));
+        if(CameraMotion<=3)view[CameraMotion-1]+=3;
+        else if(CameraMotion<=6)view[CameraMotion+2]+=15;
+        else view[12]+=30;
+        memcpy(Context+0x1F4,view,sizeof(view));CameraMoved=true;}
     if(SchemaMemory&&address==GameClass&&size==80){memset(out,0,size);CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=1;memcpy(out,&h,sizeof(h));uint32_t bytes=4096;memcpy((uint8_t *)out+0x40,&bytes,4);return true;}
     if(address>=GameComponent&&size<=sizeof(ComponentData)&&address-GameComponent<=sizeof(ComponentData)-size){memcpy(out,ComponentData+address-GameComponent,size);return true;}
     if(address>=ChildComponent&&size<=sizeof(ChildData)&&address-ChildComponent<=sizeof(ChildData)-size){memcpy(out,ChildData+address-ChildComponent,size);return true;}
@@ -48,7 +57,7 @@ static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzer
         if(address==0x600020000ULL&&size==6){memcpy(out,TriangleData,6);return true;}if(address==0x600020000ULL&&size==12){memcpy(out,WideTriangleData,12);return true;}if(address==0x600030000ULL&&size==2){memcpy(out,&BonePalette,2);return true;}}
     if((address==GamePose||address==ChildPose)&&size==48){CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};memcpy(out,&t,sizeof(t));return true;}return false;
 }
-static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){assert(camera==Context+0x1F4);CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(SlowProjection)TestTime+=20000000ULL;if(WrongProjection)p.xy.x+=10;return p.xy;}
+static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(SlowProjection)TestTime+=20000000ULL;if(WrongProjection)p.xy.x+=10;return p.xy;}
 static void Lock(void *p){if(p==(void *)(TestBase+0xBD4F78)){assert(!LockDepth);LockDepth=1;return;}
     assert(LockDepth==1);for(unsigned i=0;i<3;i++)if(p==SceneData[i]+0x58){LockDepth|=2U<<i;SceneLocks++;return;}assert(false);}
 static void Unlock(void *p){if(p==(void *)(TestBase+0xBD4F78)){assert(LockDepth==1);LockDepth=0;return;}
@@ -69,6 +78,7 @@ static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
     TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
     GeometryReady=true;
+    CameraMotion=0;CameraMoved=false;
     memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
     CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
@@ -126,6 +136,17 @@ static CMLTarget *WithStride(uint32_t stride) {
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
 int main(void){@autoreleasepool {
     Setup();Draw();assert(OriginalCalls==1&&Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==51);
+    for(unsigned motion=1;motion<=7;motion++){
+        Setup();CameraMotion=motion;uint64_t mismatches=atomic_load(&CMLStats.projectionMismatch);
+        for(unsigned frame=0;frame<6;frame++){
+            float camera[13]={0};camera[0]=frame*.05f;camera[7]=frame*.25f;camera[12]=90;
+            memcpy(Context+0x1F4,camera,sizeof(camera));CameraMoved=false;
+            unsigned fills=Fills,white=WhiteFills,red=RedFills;Draw();
+            assert(CameraMoved&&Fills>fills&&WhiteFills>white&&RedFills>red&&atomic_load(&CMLStats.projectionMismatch)==mismatches);
+            TestTime+=1000000ULL;
+        }
+    }
+    Setup();CameraMotion=4;WrongProjection=true;Draw();assert(CameraMoved&&!Fills); // A real projection error must still reject the mesh.
     Setup();BlockScene=2;Draw();assert(Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==63);
     Setup();CMLIntersect=NULL;Draw();assert(Fills==6&&!SceneLocks&&!RawCalls);
     Setup();WrongRaw=true;Draw();assert(Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==1&&atomic_load(&CMLBatchDisabled));

@@ -1,6 +1,8 @@
 name: Build live mesh fill IPA
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/model-fill-motion]
 permissions:
   contents: read
 jobs:
@@ -21,7 +23,7 @@ jobs:
           /tmp/core-model-capture-test
       - name: Check the production live pipeline
         run: |
-          xcrun clang -O2 -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/test_model_live_runtime.m -o /tmp/core-model-live-test
+          xcrun clang -O2 -fsanitize=address,undefined -fno-omit-frame-pointer -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/test_model_live_runtime.m -o /tmp/core-model-live-test
           /tmp/core-model-live-test
       - name: Check reference, geometry, reflection, skinning and pixel boundaries
         run: |
