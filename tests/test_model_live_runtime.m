@@ -138,7 +138,7 @@ static void Setup(void){
     CMBBinding *b=binding.mutableBytes;b->assets.count=1;b->assets.references[0].address=Asset;b->link_count=1;b->links[0]=(CMBLink){GameComponent,Asset,0};
     target.gpu=gpu;target.binding=binding;target.refs=refs;target.names=names;[CMLTargets addObject:target];
 #ifdef CORE_ACTOR_TRACE
-    Context[0x3B8]=1;uintptr_t sourceBegin=(uintptr_t)SourceRecord,sourceEnd=sourceBegin+sizeof(SourceRecord);memcpy(Context+0x3C0,&sourceBegin,8);memcpy(Context+0x3C8,&sourceEnd,8);memcpy(SourceRecord+8,&team,4);
+    Context[0x3B8]=1;ActorRecord[0x4C]=1;uintptr_t sourceBegin=(uintptr_t)SourceRecord,sourceEnd=sourceBegin+sizeof(SourceRecord);memcpy(Context+0x3C0,&sourceBegin,8);memcpy(Context+0x3C8,&sourceEnd,8);memcpy(SourceRecord+8,&team,4);
 #endif
 }
 static void Array(void *data,unsigned offset,uint64_t address,int32_t count){memcpy((uint8_t *)data+offset,&address,8);memcpy((uint8_t *)data+offset+8,&count,4);memcpy((uint8_t *)data+offset+12,&count,4);}
@@ -200,7 +200,8 @@ static void CheckActorTrace(void) {
     Setup();Context[0x20]=0;Draw();assert(!Reads&&!Fills&&atomic_load(&CAVGeneration)==2&&!atomic_load(&CAVNativeActive));
     CAVSample((uintptr_t)Context);assert(!Reads&&CAVSamples==1&&[CAVReport[@"source_enemy_candidates"] intValue]==1&&[CAVReport[@"cache_0_to_300m"] intValue]==1&&CAVEvents.count==1);
     NSNumber *id=CAVEvents.lastObject[@"target_id"];float distance=450;memcpy(ActorRecord+0x40,&distance,4);TestTime+=1000000000ULL;Draw();CAVSample((uintptr_t)Context);
-    assert([CAVReport[@"cache_300_to_600m"] intValue]==1&&CAVEvents.count==2&&[CAVEvents.lastObject[@"target_id"] isEqual:id]);
+    assert([CAVReport[@"cache_300_to_600m"] intValue]==1&&[CAVReport[@"cache_300_to_600m_native_projection_valid"] intValue]==1&&CAVEvents.count==2&&[CAVEvents.lastObject[@"target_id"] isEqual:id]);
+    ActorRecord[0x4C]=0;CAVSample((uintptr_t)Context);assert(CAVEvents.count==3&&![CAVEvents.lastObject[@"native_projection_valid"] boolValue]&&[CAVReport[@"cache_300_to_600m_native_projection_valid"] intValue]==0);
     uintptr_t begin=(uintptr_t)ActorRecord,end=begin+sizeof(ActorRecord);memcpy(Context+0x3F8,&begin,8);TestTime+=1000000000ULL;Draw();CAVSample((uintptr_t)Context);
     NSDictionary *event=CAVEvents.lastObject;assert([CAVReport[@"source_without_cache"] intValue]==1&&[event[@"source_present"] boolValue]&&![event[@"cache_present"] boolValue]&&event[@"current_cached_distance_metres"]==NSNull.null&&[event[@"last_cached_distance_metres"] floatValue]==450&&[event[@"last_cached_age_ms"] intValue]==1000);
     uintptr_t sourceBegin=(uintptr_t)SourceRecord;memcpy(Context+0x3C8,&sourceBegin,8);TestTime+=1000000000ULL;Draw();CAVSample((uintptr_t)Context);assert(![CAVEvents.lastObject[@"source_present"] boolValue]&&![CAVEvents.lastObject[@"cache_present"] boolValue]);
