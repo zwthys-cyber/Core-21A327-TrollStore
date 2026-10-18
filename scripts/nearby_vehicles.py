@@ -105,7 +105,8 @@ def changes():
     draw_range = word(0xBD403A80) + _range_check(0xDDF80, 0, 0xDE570, 0xDDFD0)
     add(0xDDF7C, "820e40fd883241391f050071211900544840201e4820201e0d060054600640bd0021201ea5050054600a40bd41040c5e2820201e",
         draw_range, "recheck finite 600-metre distance immediately before vehicle labels")
-    add(0xDE3C4, "89364139", branch(0xDE3C4, 0xDE460), "vehicle name and distance without oil or health annotation")
+    add(0xDE3C4, "89364139", branch(0xDE3C4, 0xDE424), "load native distance before the compact vehicle label")
+    add(0xDE42C, "a9010034", branch(0xDE42C, 0xDE460), "vehicle name and distance without oil or health annotation")
     add(0xDE540, "623740bd42d8215e", word(0x1E259002) + word(0xD503201F), "vehicle label font 14 times native scale")
     add(0xDE558, "e30319aa", word(0x12A01FE3), "yellow vehicle labels with original black outline")
     return sorted(patches)

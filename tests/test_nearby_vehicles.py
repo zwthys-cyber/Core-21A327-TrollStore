@@ -33,7 +33,7 @@ class NearbyVehicleTests(unittest.TestCase):
         locations = [(0xCD7F4, 4), (0xCD804, 4), (0xCD818, 44), (0x743F71, 12),
                      (0xD959C, 36), (0xD97AC, 4), (0xD9954, 4), (0xD9E3C, 116),
                      (0xDDEBC, 4), (0xDDF5C, 32), (0xDDF7C, 52),
-                     (0xDE3C4, 4), (0xDE540, 8), (0xDE558, 4)]
+                     (0xDE3C4, 4), (0xDE42C, 4), (0xDE540, 8), (0xDE558, 4)]
         allowed = {i for start, size in locations for i in range(start, start + size)}
         changed = {i for i, (a, b) in enumerate(zip(self.before, self.binary)) if a != b}
         self.assertTrue(changed and changed <= allowed)
