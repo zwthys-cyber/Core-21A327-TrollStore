@@ -178,6 +178,7 @@ def main():
     parser.add_argument("--model-capture", action="store_true", help="Build the optional bounded runtime-data capture variant")
     parser.add_argument("--model-render", action="store_true", help="Build continuous real mesh fill and per-pixel geometric occlusion")
     parser.add_argument("--nearby-vehicles", action="store_true", help="Add independent native vehicle name/distance labels to the live mesh build")
+    parser.add_argument("--overlay-latency", action="store_true", help="Separate fill control, stop automatic detailed capture and record overlay callback latency")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -186,6 +187,8 @@ def main():
     args = parser.parse_args()
     if args.nearby_vehicles and not args.model_render:
         parser.error("--nearby-vehicles requires --model-render")
+    if args.overlay_latency and not args.nearby_vehicles:
+        parser.error("--overlay-latency requires --model-render --nearby-vehicles")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -204,6 +207,9 @@ def main():
     if args.nearby_vehicles:
         from nearby_vehicles import nearby_vehicles
         main_payload = nearby_vehicles(main_payload)
+    if args.overlay_latency:
+        from overlay_latency import overlay_latency
+        main_payload = overlay_latency(main_payload)
     if args.model_capture:
         main_payload = redirect_model_capture_import(main_payload)
     if args.model_render:
@@ -226,6 +232,8 @@ def main():
         common.append("-DCORE_MODEL_RENDER=1")
     if args.nearby_vehicles:
         common.append("-DCORE_NEARBY_VEHICLES=1")
+    if args.overlay_latency:
+        common.append("-DCORE_OVERLAY_LATENCY=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -275,6 +283,10 @@ def main():
         from nearby_vehicles import VERSION, PROFILE as vehicle_profile
         info.update(CFBundleVersion="40", CoreModelRenderVersion="12",
                     CoreNearbyVehiclesVersion=VERSION, CoreFeatureProfile=vehicle_profile)
+    if args.overlay_latency:
+        from overlay_latency import VERSION as latency_version, PROFILE as latency_profile
+        info.update(CFBundleVersion="41", CoreModelRenderVersion="13",
+                    CoreOverlayLatencyVersion=latency_version, CoreFeatureProfile=latency_profile)
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -301,6 +313,9 @@ def main():
     if args.nearby_vehicles:
         from nearby_vehicles import ARTIFACT
         artifact = dist / ARTIFACT
+    if args.overlay_latency:
+        from overlay_latency import ARTIFACT as latency_artifact
+        artifact = dist / latency_artifact
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -324,6 +339,7 @@ def main():
                   license_startup_entries={name: hex(address) for name, address in LICENSE_STARTUP_ENTRIES.items()},
                   build_host=sys.platform, device_runtime_verified=False)
     report["model_runtime_capture"] = dict(enabled=args.model_capture, capture_version=7 if args.model_capture else 0,
+        automatic_snapshot_sampling_enabled=args.model_capture and not args.overlay_latency,
         acquisition="full located component transform array, component transform, native projection, bounded original geometry ray distances",
         report="Core-model-runtime-report.json", max_targets=3, snapshots_per_target=2,
         component_layout_sample_limit_bytes=4096,
@@ -360,7 +376,14 @@ def main():
             classification="native metadata +0x15 vehicle bit; projectile source type rejected before position reads",
             labels="native vehicle name and distance; yellow outline text, font 14 times native scale",
             changes=vehicle_manifest(), device_runtime_verified=False))
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=12 if args.nearby_vehicles else 11 if args.model_render else 0,
+    if args.overlay_latency:
+        from overlay_latency import manifest as latency_manifest
+        report.update(feature_profile=latency_profile, overlay_latency=dict(
+            version=latency_version, independent_fill_switch=True, fill_preference_offset="0x20",
+            detailed_capture_automatically_enabled=False, changes=latency_manifest(),
+            timing_scope="native draw and fill callback only; excludes actual presentation and source engine age",
+            device_latency_fixed=False, off_mode="original enemy/vehicle drawing without fill observer reads or fill computation"))
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,

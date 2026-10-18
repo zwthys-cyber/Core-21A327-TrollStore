@@ -1,0 +1,44 @@
+name: Build independent fill and overlay latency IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/overlay-latency]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 -m pip install --user --break-system-packages unicorn==2.1.4
+      - name: Check native menus, vehicle paths, source preservation and packaging
+        run: python3 -m unittest discover -s tests -v
+      - name: Check full precision pipeline and no-fill latency path with sanitizers
+        run: |
+          xcrun clang -O2 -DCORE_NEARBY_VEHICLES=1 -DCORE_OVERLAY_LATENCY=1 -fsanitize=address,undefined -fno-omit-frame-pointer -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/test_model_live_runtime.m -o /tmp/core-live-latency-test
+          /tmp/core-live-latency-test
+      - name: Check full-resolution raster and model boundaries
+        run: |
+          for task in model_references model_binding model_mesh_evidence model_gpu_streams model_skinning model_pixels model_raster model_reflection model_ray_abi; do
+            xcrun clang -O2 -Wall -Wextra -Werror tests/test_${task}_runtime.c -o /tmp/core-${task}-test
+            /tmp/core-${task}-test
+          done
+      - name: Check standalone capture behavior remains available in capture builds
+        run: |
+          xcrun clang -O2 -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/test_model_capture_runtime.m -o /tmp/core-capture-test
+          /tmp/core-capture-test
+      - run: node --test tests/test_model_mesh_preview.mjs
+      - name: Build device IPA
+        run: python3 scripts/build.py --model-render --nearby-vehicles --overlay-latency
+      - name: Verify exact payload, permissions and signatures
+        run: python3 scripts/verify.py dist/Core-17.0-21A327-TrollStore-model-render-v13-overlay-latency.ipa
+      - name: Check compiled entry forwarding
+        run: python3 scripts/check_model_capture_entry.py dist/Core-17.0-21A327-TrollStore-model-render-v13-overlay-latency.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-v13-overlay-latency
+          path: dist/*
+          retention-days: 14

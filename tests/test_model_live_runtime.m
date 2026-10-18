@@ -13,6 +13,7 @@ static uint8_t AssetData[1048],RenderData[16],LODArray[8],LODData[1024],IndexDat
 static uint8_t VertexData[96],WeightData[24];static uint16_t TriangleData[3]={0,1,2},BonePalette=0;static uint32_t VertexStride=24;
 static uint8_t ChildData[4096];static uint32_t WideTriangleData[3]={0,1,2};
 static uint64_t TestTime=10000000000ULL;
+static uint64_t NativeDelay;
 static unsigned OriginalCalls,Fills,WhiteFills,RedFills,LockDepth,Reads,SceneLocks,RawCalls,BlockScene;
 static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene,ResourceMemory,FailResourceRead,ReallocatedActors,SlowProjection,SchemaMemory;
 static bool GeometryReady;
@@ -75,12 +76,12 @@ static void Intersect(void *handle,CMRayHit *ray,void *context){unsigned slot=(u
     // result slots do. Build 29 placed its scene handle at byte 80 instead.
     uint64_t tail[2]={0x1FFFFFFFFULL,0xA5A55A5A11223344ULL};memcpy((uint8_t *)ray+80,tail,16);
     if(BadRay)ray->far_distance=NAN;if(WrongRaw)ray->geometry_id=123;}
-static void Original(void *p){assert(p==Context);OriginalCalls++;}
+static void Original(void *p){assert(p==Context);OriginalCalls++;TestTime+=NativeDelay;}
 static void *List(void){return DrawList;}
 static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y>points[1].y);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
-    TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
+    TestTime=10000000000ULL;NativeDelay=0;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
     GeometryReady=true;
     CameraMotion=0;CameraMoved=false;
     CheckObserverProgress=false;memset(LastProjectedCamera,0,sizeof(LastProjectedCamera));
@@ -94,6 +95,7 @@ static void Setup(void){
     memcpy(ComponentData+0x1F0,&identity,44);memcpy(ComponentData+0x828,&Asset,8);ComponentData[0x100]=1;
     uint32_t poseCount=1;memcpy(ComponentData+0x848,&GamePose,8);memcpy(ComponentData+0x850,&poseCount,4);memcpy(ComponentData+0x854,&poseCount,4);
     Context[0x23]=1;float screen[2]={8,8},fov=90;memcpy(Context+4,screen,8);memcpy(Context+0x1F4+48,&fov,4);
+    Context[0x20]=1;
     uintptr_t begin=(uintptr_t)ActorRecord,end=begin+sizeof(ActorRecord);memcpy(Context+0x3F0,&begin,8);memcpy(Context+0x3F8,&end,8);uint32_t localTeam=1,team=2;float distance=10;memcpy(Context+0x3A8,&localTeam,4);memcpy(ActorRecord,&GameActor,8);memcpy(ActorRecord+8,&team,4);memcpy(ActorRecord+0x40,&distance,4);memcpy(SourceRecord,&GameActor,8);DrawList[0x30]=4;
     CMFSchema schema={0};schema.visible=(CMFBool){0x100,1,true};schema.hidden=(CMFBool){0x101,1,true};schema.predicted_found=true;schema.predicted_lod=0x900;CMLSchemas[@(GameClass)]=[NSData dataWithBytes:&schema length:sizeof(schema)];CMLSchemaStore.schemas=CMLSchemas;
     CMLMesh *mesh=[CMLMesh new];mesh.key=(CMGKey){.asset=Asset};mesh.vertices=3;mesh.vertexStride=24;mesh.bones=1;mesh.sectionCount=1;mesh.indexCount=3;mesh.indexWidth=2;
@@ -140,6 +142,21 @@ static CMLTarget *WithStride(uint32_t stride) {
 }
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
 int main(void){@autoreleasepool {
+#ifdef CORE_OVERLAY_LATENCY
+    assert(!CMStartDetailedCapture());
+    Setup();Context[0x20]=0;NativeDelay=3000000ULL;uint64_t offCallbacks=atomic_load(&CMLStats.fillOffCallbacks),offNative=atomic_load(&CMLStats.fillOffNativeTotal),offTotal=atomic_load(&CMLStats.fillOffCallbackTotal);
+    Draw();assert(OriginalCalls==1&&!Fills&&!Reads&&!RawCalls&&!SceneLocks&&!CMObserverEnabled());
+    assert(atomic_load(&CMLStats.fillOffCallbacks)==offCallbacks+1&&atomic_load(&CMLStats.fillOffNativeTotal)==offNative+3000000ULL&&atomic_load(&CMLStats.fillOffCallbackTotal)==offTotal+3000000ULL);
+    CMLTarget *disabledTarget=CMLTargets.firstObject;disabledTarget.poseTime=0;CMLObserve(GameComponent,GameActor,GameComponent+0x1F0,GamePose,1,48);assert(!Reads&&!disabledTarget.poseTime);
+    uint64_t offGaps=atomic_load(&CMLStats.fillOffGapSamples);TestTime+=16000000ULL;Draw();assert(OriginalCalls==2&&!Reads&&!Fills&&atomic_load(&CMLStats.fillOffGapSamples)==offGaps+1);
+    Context[0x20]=1;disabledTarget.poseTime=TestTime;uint64_t onCallbacks=atomic_load(&CMLStats.fillOnCallbacks),onNative=atomic_load(&CMLStats.fillOnNativeTotal),onTotal=atomic_load(&CMLStats.fillOnCallbackTotal);
+    Draw();assert(OriginalCalls==3&&Fills&&Reads&&RawCalls&&CMObserverEnabled()&&atomic_load(&CMLStats.fillOnCallbacks)==onCallbacks+1&&atomic_load(&CMLStats.fillOnNativeTotal)==onNative+3000000ULL&&atomic_load(&CMLStats.fillOnCallbackTotal)==onTotal+3000000ULL);
+    // Native-only slowness remains visible in separate timing; disabling fill
+    // is never reported as proving that the whole overlay latency is fixed.
+    Setup();Context[0x20]=0;NativeDelay=40000000ULL;Draw();assert(!Reads&&!Fills&&atomic_load(&CMLStats.fillOffNativeMaximum)>=40000000ULL);
+#else
+    assert(CMStartDetailedCapture());
+#endif
     Setup();Draw();assert(OriginalCalls==1&&Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==51);
     Setup();CheckObserverProgress=true;CameraMotion=5;Draw();assert(Fills&&CameraMoved&&!memcmp(LastProjectedCamera,Context+0x1F4,52));
     Setup();CheckObserverProgress=true;CMLIntersect=NULL;Draw();assert(Fills); // The unbatched query also leaves acquisition unblocked.

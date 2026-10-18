@@ -70,6 +70,10 @@ typedef struct {
     atomic_uint_fast64_t disabledFrames,geometryUnavailableFrames,cameraUnavailableFrames,actorSnapshotUnavailableFrames;
     atomic_uint_fast64_t drawBusyFrames,observerWaitTotal,observerWaitMaximum;
     atomic_uint_fast64_t projectionTimeTotal,projectionTimeMaximum,lateCameraSamples,cameraAgeAtSubmitTotal,cameraAgeAtSubmitMaximum;
+    atomic_uint_fast64_t nativeDrawTotal,nativeDrawMaximum,callbackTotal,callbackMaximum;
+    atomic_uint_fast64_t fillOffCallbacks,fillOffNativeTotal,fillOffNativeMaximum,fillOffCallbackTotal,fillOffCallbackMaximum;
+    atomic_uint_fast64_t fillOnCallbacks,fillOnNativeTotal,fillOnNativeMaximum,fillOnCallbackTotal,fillOnCallbackMaximum;
+    atomic_uint_fast64_t fillOffGapSamples,fillOffGapTotal,fillOffGapMaximum,fillOnGapSamples,fillOnGapTotal,fillOnGapMaximum;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
@@ -91,11 +95,22 @@ static void (*CMLPolygon)(void *,const CMVec2 *,int,uint32_t);
 static void (*CMLIntersect)(void *,CMRayHit *,void *);
 static atomic_bool CMLBatchDisabled;
 static dispatch_source_t CMLStatusTimer;
+static atomic_uint_fast64_t CMLLastCallbackStart;
+static atomic_uint CMLLastCallbackMode;
 static void CMLMaximum(atomic_uint_fast64_t *counter,uint64_t value) {
     uint_fast64_t maximum=atomic_load(counter);while(value>maximum&&!atomic_compare_exchange_weak(counter,&maximum,value)){}
 }
 static void CMLTime(atomic_uint_fast64_t *total,atomic_uint_fast64_t *maximum,uint64_t start) {
     uint64_t elapsed=CMNow()-start;atomic_fetch_add(total,elapsed);CMLMaximum(maximum,elapsed);
+}
+static bool CMLFillRequested(uintptr_t context) {
+    uint8_t enemy=0;
+    if(!context||!CMSelfRead(context+0x23,&enemy,1)||!enemy)return false;
+#ifdef CORE_OVERLAY_LATENCY
+    uint8_t fill=0;return CMSelfRead(context+0x20,&fill,1)&&fill;
+#else
+    return true;
+#endif
 }
 
 static bool CMLRead(uint64_t address,void *out,size_t size) {
@@ -158,6 +173,9 @@ static bool CMLReuseMetadata(CMLTarget *target) {
 }
 static void CMLObserve(uint64_t component,uint64_t actor,uint64_t transformAddress,uint64_t poseAddress,uint32_t count,uint32_t stride) {
     if (!atomic_load(&CMLReady)||!CMRemoteRange(actor,8)) return;
+#ifdef CORE_OVERLAY_LATENCY
+    if(!CMLFillRequested(CMLExpectedContext))return;
+#endif
     uint64_t now=CMNow();pthread_mutex_lock(&CMLMutex);CMLTime(&CMLStats.observerWaitTotal,&CMLStats.observerWaitMaximum,now);
     CMLTarget *target=nil;
     for (CMLTarget *t in CMLTargets) if(t.component==component&&t.actor==actor)target=t;
@@ -476,8 +494,8 @@ static bool CMLActorEligible(NSData *actors,uint32_t localTeam,uint64_t actor) {
     return false;
 }
 __attribute__((noinline)) static void CMLDrawFrame(uintptr_t context) {
-    uint8_t enabled=0,ready=0;float size[2];uint8_t rawView[52];
-    if(!CMSelfRead(context+0x23,&enabled,1)||!enabled){atomic_fetch_add(&CMLStats.disabledFrames,1);return;}
+    uint8_t ready=0;float size[2];uint8_t rawView[52];
+    if(!CMLFillRequested(context)){atomic_fetch_add(&CMLStats.disabledFrames,1);return;}
     if(!CMSelfRead(CMBase+0xC54459,&ready,1)||ready!=1){atomic_fetch_add(&CMLStats.geometryUnavailableFrames,1);return;}
     CMPView view;if(!CMSelfRead(context+4,size,8)||!CMSelfRead(context+0x1F4,rawView,52)||!CMPMakeView(rawView,size[0],size[1],&view)){atomic_fetch_add(&CMLStats.cameraUnavailableFrames,1);return;}
     uint64_t drawStart=CMNow();atomic_fetch_add(&CMLStats.eligibleFrames,1);
@@ -602,7 +620,19 @@ __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintpt
     int saved=errno;uintptr_t caller=CMStripReturn((void *)entryReturn),base=CMBase;
     if(!base)base=(uintptr_t)_dyld_get_image_header(0);
     if(caller==base+0x21BC4||caller==base+0x2263C){
-        void (*original)(void *)=CMLOriginalDraw ?: (void (*)(void *))CMCallable(base+0xDB144);original(context);CMLDraw((uintptr_t)context);errno=saved;return 0;
+        uint64_t start=CMNow();bool fill=CMLFillRequested((uintptr_t)context);
+        uint64_t previous=atomic_exchange(&CMLLastCallbackStart,start);unsigned mode=fill?2:1,previousMode=atomic_exchange(&CMLLastCallbackMode,mode);
+        if(previous&&start>=previous&&previousMode==mode){uint64_t gap=start-previous;
+            if(fill){atomic_fetch_add(&CMLStats.fillOnGapSamples,1);atomic_fetch_add(&CMLStats.fillOnGapTotal,gap);CMLMaximum(&CMLStats.fillOnGapMaximum,gap);}
+            else{atomic_fetch_add(&CMLStats.fillOffGapSamples,1);atomic_fetch_add(&CMLStats.fillOffGapTotal,gap);CMLMaximum(&CMLStats.fillOffGapMaximum,gap);}}
+        void (*original)(void *)=CMLOriginalDraw ?: (void (*)(void *))CMCallable(base+0xDB144);original(context);
+        uint64_t nativeEnd=CMNow(),native=nativeEnd-start;
+        CMLDraw((uintptr_t)context);uint64_t total=CMNow()-start;
+        atomic_fetch_add(&CMLStats.nativeDrawTotal,native);CMLMaximum(&CMLStats.nativeDrawMaximum,native);
+        atomic_fetch_add(&CMLStats.callbackTotal,total);CMLMaximum(&CMLStats.callbackMaximum,total);
+        if(fill){atomic_fetch_add(&CMLStats.fillOnCallbacks,1);atomic_fetch_add(&CMLStats.fillOnNativeTotal,native);CMLMaximum(&CMLStats.fillOnNativeMaximum,native);atomic_fetch_add(&CMLStats.fillOnCallbackTotal,total);CMLMaximum(&CMLStats.fillOnCallbackMaximum,total);}
+        else{atomic_fetch_add(&CMLStats.fillOffCallbacks,1);atomic_fetch_add(&CMLStats.fillOffNativeTotal,native);CMLMaximum(&CMLStats.fillOffNativeMaximum,native);atomic_fetch_add(&CMLStats.fillOffCallbackTotal,total);CMLMaximum(&CMLStats.fillOffCallbackMaximum,total);}
+        errno=saved;return 0;
     }
     uintptr_t result=(uintptr_t)getpid();errno=saved;return result;
 }
@@ -621,12 +651,21 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-#ifdef CORE_NEARBY_VEHICLES
+#ifdef CORE_OVERLAY_LATENCY
+    const int renderVersion=13;
+#elif defined(CORE_NEARBY_VEHICLES)
     const int renderVersion=12;
 #else
     const int renderVersion=11;
 #endif
     NSDictionary *status=@{ @"render_version":@(renderVersion),@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+        @"independent_fill_switch":@(renderVersion>=13),@"fill_currently_requested":@(CMLFillRequested(CMLExpectedContext)),@"detailed_capture_enabled":@(atomic_load(&CMEnabled)),
+        @"native_draw_time_total_ns":CML_VALUE(nativeDrawTotal),@"native_draw_time_maximum_ns":CML_VALUE(nativeDrawMaximum),@"draw_callback_time_total_ns":CML_VALUE(callbackTotal),@"draw_callback_time_maximum_ns":CML_VALUE(callbackMaximum),
+        @"fill_off_callbacks":CML_VALUE(fillOffCallbacks),@"fill_off_native_time_total_ns":CML_VALUE(fillOffNativeTotal),@"fill_off_native_time_maximum_ns":CML_VALUE(fillOffNativeMaximum),@"fill_off_callback_time_total_ns":CML_VALUE(fillOffCallbackTotal),@"fill_off_callback_time_maximum_ns":CML_VALUE(fillOffCallbackMaximum),
+        @"fill_on_callbacks":CML_VALUE(fillOnCallbacks),@"fill_on_native_time_total_ns":CML_VALUE(fillOnNativeTotal),@"fill_on_native_time_maximum_ns":CML_VALUE(fillOnNativeMaximum),@"fill_on_callback_time_total_ns":CML_VALUE(fillOnCallbackTotal),@"fill_on_callback_time_maximum_ns":CML_VALUE(fillOnCallbackMaximum),
+        @"fill_off_callback_gap_samples":CML_VALUE(fillOffGapSamples),@"fill_off_callback_gap_total_ns":CML_VALUE(fillOffGapTotal),@"fill_off_callback_gap_maximum_ns":CML_VALUE(fillOffGapMaximum),@"fill_on_callback_gap_samples":CML_VALUE(fillOnGapSamples),@"fill_on_callback_gap_total_ns":CML_VALUE(fillOnGapTotal),@"fill_on_callback_gap_maximum_ns":CML_VALUE(fillOnGapMaximum),
+        @"callback_timing_scope":@"native draw entry through fill return; excludes subsequent ImGui/Metal submission and game display latency",@"callback_gap_semantics":@"consecutive calls with same sampled fill state; includes idle gaps; not game FPS",
+        @"camera_age_semantics":@"elapsed since local camera copy; source engine frame age is unknown",
         @"camera_sampling_stage":@"after-gather-and-skinning",@"late_camera_samples":CML_VALUE(lateCameraSamples),@"draw_callbacks_busy":CML_VALUE(drawBusyFrames),
         @"target_mutex_scope":@"gather-only",@"observer_mutex_wait_total_ns":CML_VALUE(observerWaitTotal),@"observer_mutex_wait_maximum_ns":CML_VALUE(observerWaitMaximum),
         @"projection_stage_time_total_ns":CML_VALUE(projectionTimeTotal),@"projection_stage_time_maximum_ns":CML_VALUE(projectionTimeMaximum),@"camera_age_at_fill_total_ns":CML_VALUE(cameraAgeAtSubmitTotal),@"camera_age_at_fill_maximum_ns":CML_VALUE(cameraAgeAtSubmitMaximum),

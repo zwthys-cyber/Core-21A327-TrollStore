@@ -69,12 +69,15 @@ def main(ipa):
         assert capture_version in (None, "1", "2", "3", "4", "5", "6", "7"), "Unknown capture protocol"
         model_capture = capture_version is not None
         render_version=info.get("CoreModelRenderVersion")
-        assert render_version in (None,"1","2","3","4","5","6","7","8","9","10","11","12"), "Unknown renderer protocol"
+        assert render_version in (None,"1","2","3","4","5","6","7","8","9","10","11","12","13"), "Unknown renderer protocol"
         model_render=render_version is not None
         assert not model_render or capture_version=="7"
         vehicle_version = info.get("CoreNearbyVehiclesVersion")
         assert vehicle_version in (None, "1"), "Unknown vehicle marker protocol"
-        assert (vehicle_version == "1") == (render_version == "12"), "Vehicle build identity mismatch"
+        assert (vehicle_version == "1") == (render_version in ("12", "13")), "Vehicle build identity mismatch"
+        latency_version = info.get("CoreOverlayLatencyVersion")
+        assert latency_version in (None, "1"), "Unknown overlay-latency protocol"
+        assert (latency_version == "1") == (render_version == "13"), "Latency build identity mismatch"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -91,6 +94,9 @@ def main(ipa):
         if vehicle_version:
             from nearby_vehicles import nearby_vehicles
             expected_main = nearby_vehicles(expected_main)
+        if latency_version:
+            from overlay_latency import overlay_latency
+            expected_main = overlay_latency(expected_main)
         if model_capture:
             expected_main = redirect_model_capture_import(expected_main)
         if model_render:
@@ -179,11 +185,13 @@ def main(ipa):
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
         expected_build = {"1":"21", "2":"22", "3":"23", "4":"24", "5":"25", "6":"26", "7":"27"}.get(capture_version, BUNDLE_BUILD)
         if model_render:
-            expected_build={"1":"28","2":"29","3":"30","4":"31","5":"32","6":"33","7":"34","8":"35","9":"37","10":"38","11":"39","12":"40"}[render_version]
+            expected_build={"1":"28","2":"29","3":"30","4":"31","5":"32","6":"33","7":"34","8":"35","9":"37","10":"38","11":"39","12":"40","13":"41"}[render_version]
         assert info["CFBundleVersion"] == expected_build and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         expected_profile = PROFILE
         if vehicle_version:
             from nearby_vehicles import PROFILE as expected_profile
+        if latency_version:
+            from overlay_latency import PROFILE as expected_profile
         assert info["CoreFeatureProfile"] == expected_profile
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"

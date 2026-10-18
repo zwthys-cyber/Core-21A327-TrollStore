@@ -509,7 +509,7 @@ static void CMQueueSnapshot(NSData *transforms, NSData *worldData, NSData *proje
 #endif
 static bool CMObserverEnabled(void) {
 #ifdef CORE_MODEL_RENDER
-    if(atomic_load_explicit(&CMLReady,memory_order_acquire))return true;
+    if(atomic_load_explicit(&CMLReady,memory_order_acquire)&&CMLFillRequested(CMLExpectedContext))return true;
 #endif
     return atomic_load_explicit(&CMEnabled,memory_order_acquire);
 }
@@ -664,6 +664,13 @@ __attribute__((noinline)) void CoreModelBzeroCapture(void *destination, size_t l
     errno=saved;
 }
 
+static bool CMStartDetailedCapture(void) {
+#ifdef CORE_OVERLAY_LATENCY
+    return false;
+#else
+    return true;
+#endif
+}
 void CoreModelCaptureStartup(void) {
     if (!CMImageMatches()) return;
     CMBase=(uintptr_t)_dyld_get_image_header(0);
@@ -682,7 +689,11 @@ void CoreModelCaptureStartup(void) {
 #endif
     dispatch_async(CMReportQueue, ^{
         @autoreleasepool {
-            CMFrames=[NSMutableArray array];CMGPUBufferCatalog=[NSMutableArray array];CMWriteReport(@"waiting-for-eligible-component-read");
+            CMFrames=[NSMutableArray array];CMGPUBufferCatalog=[NSMutableArray array];
+            if(!CMStartDetailedCapture()){
+                atomic_store_explicit(&CMEnabled,false,memory_order_release);CMWriteReport(@"live-render-only-detailed-capture-disabled");return;
+            }
+            CMWriteReport(@"waiting-for-eligible-component-read");
             CMStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);
             if (CMStatusTimer) {
                 __block unsigned ticks=0;
