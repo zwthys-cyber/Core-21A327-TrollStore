@@ -49,8 +49,8 @@ static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzer
         else view[12]+=30;
         memcpy(Context+0x1F4,view,sizeof(view));CameraMoved=true;}
     if(SchemaMemory&&address==GameClass&&size==80){memset(out,0,size);CMRHeader h={0};h.vtable=TestBase+0x1000;h.class_address=GameClass;h.internal_index=1;memcpy(out,&h,sizeof(h));uint32_t bytes=4096;memcpy((uint8_t *)out+0x40,&bytes,4);return true;}
-    if(address>=GameComponent&&size<=sizeof(ComponentData)&&address-GameComponent<=sizeof(ComponentData)-size){memcpy(out,ComponentData+address-GameComponent,size);return true;}
-    if(address>=ChildComponent&&size<=sizeof(ChildData)&&address-ChildComponent<=sizeof(ChildData)-size){memcpy(out,ChildData+address-ChildComponent,size);return true;}
+    if(address>=GameComponent&&size<=sizeof(ComponentData)&&address-GameComponent<=sizeof(ComponentData)-size){memcpy(out,ComponentData+(address-GameComponent),size);return true;}
+    if(address>=ChildComponent&&size<=sizeof(ChildData)&&address-ChildComponent<=sizeof(ChildData)-size){memcpy(out,ChildData+(address-ChildComponent),size);return true;}
     if(ResourceMemory&&!FailResourceRead){const uint64_t addresses[]={Asset,RenderAddress,LODsAddress,LODAddress,IndexAddress,SectionsAddress};const void *arrays[]={AssetData,RenderData,LODArray,LODData,IndexData,SectionsData};const size_t sizes[]={sizeof(AssetData),sizeof(RenderData),sizeof(LODArray),sizeof(LODData),sizeof(IndexData),sizeof(SectionsData)};
         for(unsigned i=0;i<6;i++)if(address==addresses[i]&&size<=sizes[i]){memcpy(out,arrays[i],size);return true;}
         if(address==0x600000000ULL&&size==(size_t)VertexStride*3){memcpy(out,VertexData,size);return true;}if(address==0x600010000ULL&&size==24){memcpy(out,WeightData,24);return true;}
@@ -229,5 +229,5 @@ int main(void){@autoreleasepool {
     NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:file]);pthread_mutex_unlock(&CMLMutex);
     NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];NSArray *reportedSchemas=status[@"reflected_component_schemas"];
     assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]&&reportedSchemas.count==1&&![status[@"schema_snapshot_busy"] boolValue]&&[status[@"native_ray_result_bytes"] intValue]==96);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
-    puts("PASS: original frame forwarding; exact 24/28/32-byte mesh fill; position bounds and reflected prefixes; bounded/deduplicated immutable failure samples under the draw lock; per-asset LOD selection and switching; four offscreen planes reject before raster while edge-spanning triangles stay visible; native ray ABI, metadata, caches, poses, budgets, errno and status");
+    puts("PASS: camera changes during remote gathering preserve red/white fills across 42 motion frames while genuine projection errors reject; original frame forwarding; exact 24/28/32-byte mesh fill; position bounds and reflected prefixes; bounded/deduplicated immutable failure samples under the draw lock; per-asset LOD selection and switching; four offscreen planes reject before raster while edge-spanning triangles stay visible; native ray ABI, metadata, caches, poses, budgets, errno and status");
 }return 0;}

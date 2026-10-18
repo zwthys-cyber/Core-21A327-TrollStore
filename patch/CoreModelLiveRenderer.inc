@@ -529,7 +529,11 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
             for(uint32_t j=0;j<sections&&projectionOK;j++)for(uint32_t i=sec[j].first_vertex;i<sec[j].first_vertex+sec[j].vertex_count;i++){
                 CMVec3 position;CMSResult result=CMSSkinVertex(vertex+(size_t)i*vertexStride,weight+(size_t)i*8,(const uint16_t *)(palette+(size_t)j*512),sec[j].bone_count,skin,known,bones,&position);
                 if(result!=CMS_OK||!CMPProject(&view,position,&p[i]))continue;
-                if(i%128==0){CMVec2 native=CMProject(&position,(const void *)(context+0x1F4),(int)size[0],(int)size[1]);if(!isfinite(native.x)||!isfinite(native.y)||fabsf(native.x-p[i].xy.x)>0.75f||fabsf(native.y-p[i].xy.y)>0.75f){projectionOK=false;break;}}
+                // The context camera may advance while mesh/pose reads run.
+                // Compare both projections against the same captured view;
+                // mixing a new native view with the old raster view rejects
+                // entire meshes during player/camera movement.
+                if(i%128==0){CMVec2 native=CMProject(&position,rawView,(int)size[0],(int)size[1]);if(!isfinite(native.x)||!isfinite(native.y)||fabsf(native.x-p[i].xy.x)>0.75f||fabsf(native.y-p[i].xy.y)>0.75f){projectionOK=false;break;}}
                 ok[i]=1;meshMinX=fminf(meshMinX,p[i].xy.x);meshMinY=fminf(meshMinY,p[i].xy.y);meshMaxX=fmaxf(meshMaxX,p[i].xy.x);meshMaxY=fmaxf(meshMaxY,p[i].xy.y);
             }
             if(!projectionOK){atomic_fetch_add(&CMLStats.projectionMismatch,1);continue;}
@@ -591,7 +595,7 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-    NSDictionary *status=@{ @"render_version":@9,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+    NSDictionary *status=@{ @"render_version":@10,@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"eligible_draw_frames":CML_VALUE(eligibleFrames),@"projected_mesh_frames":CML_VALUE(meshFrames),@"actor_snapshot_chunks":CML_VALUE(actorSnapshotReads),
         @"toggle_disabled_frames":CML_VALUE(disabledFrames),@"geometry_unavailable_frames":CML_VALUE(geometryUnavailableFrames),@"camera_unavailable_frames":CML_VALUE(cameraUnavailableFrames),@"actor_snapshot_unavailable_frames":CML_VALUE(actorSnapshotUnavailableFrames),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),
