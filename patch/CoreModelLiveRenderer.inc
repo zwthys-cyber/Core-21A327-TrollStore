@@ -68,10 +68,13 @@ typedef struct {
     atomic_uint_fast64_t screenRejectedMeshes,lodDescriptorSkips;
     atomic_uint_fast64_t schemaSteps,schemaRetries,schemaTimeTotal,schemaTimeMaximum;
     atomic_uint_fast64_t disabledFrames,geometryUnavailableFrames,cameraUnavailableFrames,actorSnapshotUnavailableFrames;
+    atomic_uint_fast64_t drawBusyFrames,observerWaitTotal,observerWaitMaximum;
+    atomic_uint_fast64_t projectionTimeTotal,projectionTimeMaximum,lateCameraSamples,cameraAgeAtSubmitTotal,cameraAgeAtSubmitMaximum;
 } CMLCounters;
 static CMLCounters CMLStats;
 static atomic_bool CMLReady;
 static pthread_mutex_t CMLMutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t CMLDrawMutex=PTHREAD_MUTEX_INITIALIZER;
 static NSMutableArray<CMLTarget *> *CMLTargets;
 static NSMutableArray<CMLMesh *> *CMLCache;
 static NSArray<CMLMesh *> *CMLLoadingMeshes;
@@ -155,7 +158,7 @@ static bool CMLReuseMetadata(CMLTarget *target) {
 }
 static void CMLObserve(uint64_t component,uint64_t actor,uint64_t transformAddress,uint64_t poseAddress,uint32_t count,uint32_t stride) {
     if (!atomic_load(&CMLReady)||!CMRemoteRange(actor,8)) return;
-    uint64_t now=CMNow();pthread_mutex_lock(&CMLMutex);
+    uint64_t now=CMNow();pthread_mutex_lock(&CMLMutex);CMLTime(&CMLStats.observerWaitTotal,&CMLStats.observerWaitMaximum,now);
     CMLTarget *target=nil;
     for (CMLTarget *t in CMLTargets) if(t.component==component&&t.actor==actor)target=t;
     if (!target) {
@@ -472,8 +475,7 @@ static bool CMLActorEligible(NSData *actors,uint32_t localTeam,uint64_t actor) {
         return team!=localTeam&&isfinite(distance)&&distance>0&&distance<=600;}
     return false;
 }
-__attribute__((noinline)) static void CMLDraw(uintptr_t context) {
-    atomic_fetch_add(&CMLStats.frames,1);if(!atomic_load(&CMLReady)||context!=CMLExpectedContext||CMInside)return;
+__attribute__((noinline)) static void CMLDrawFrame(uintptr_t context) {
     uint8_t enabled=0,ready=0;float size[2];uint8_t rawView[52];
     if(!CMSelfRead(context+0x23,&enabled,1)||!enabled){atomic_fetch_add(&CMLStats.disabledFrames,1);return;}
     if(!CMSelfRead(CMBase+0xC54459,&ready,1)||ready!=1){atomic_fetch_add(&CMLStats.geometryUnavailableFrames,1);return;}
@@ -482,6 +484,7 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
     CMInside=true;pthread_mutex_lock(&CMLMutex);
     CMLSchemaStepUsed=false;
     @autoreleasepool {
+        NSMutableArray<NSMutableData *> *worldPoints=[NSMutableArray array],*worldValid=[NSMutableArray array];NSMutableArray<NSData *> *worldTriangles=[NSMutableArray array];
         NSMutableArray<NSData *> *projected=[NSMutableArray array],*triangleArrays=[NSMutableArray array],*validArrays=[NSMutableArray array];NSMutableArray<CMLDrawItem *> *items=[NSMutableArray array];bool refreshed=false;uint64_t now=CMNow();uint32_t localTeam=0;NSData *actors=CMLReadActors(context,&localTeam);
         if(!actors)atomic_fetch_add(&CMLStats.actorSnapshotUnavailableFrames,1);
         float minX=view.width,minY=view.height,maxX=0,maxY=0;CMLTrimStaleTargets(now);uint64_t meshStart=CMNow();
@@ -514,6 +517,10 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
                 CMLDrawItem *item=[CMLDrawItem new];item.mesh=mesh;item.pose=pose;item.world=world;[items addObject:item];
             }
         }
+        // Only the gathering stage shares mutable target/cache state. Immutable
+        // draw items retain every mesh and pose needed by the rest of this frame.
+        // Let Core's acquisition observer progress during skinning and queries.
+        pthread_mutex_unlock(&CMLMutex);
         // Remote state/poses for every selected part are collected before CPU
         // skinning. CPU work on an early part must not expire later parts'
         // remote-read deadline and make their meshes disappear.
@@ -524,15 +531,26 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
             const CMSMatrix *pose=item.pose.bytes,*inverse=mesh.inverseData.bytes;const uint8_t *vertex=mesh.vertexData.bytes,*weight=mesh.weightData.bytes,*palette=mesh.paletteData.bytes;const CMSSection *sec=mesh.sectionData.bytes;CMSMatrix world=item.world;
             NSMutableData *skinData=[NSMutableData dataWithLength:bones*sizeof(CMSMatrix)];CMSMatrix *skin=skinData.mutableBytes;
             for(uint32_t i=0;i<bones;i++)skin[i]=CMSMultiply(CMSMultiply(world,pose[i]),inverse[i]);
-            uint8_t known[256];memset(known,1,bones);NSMutableData *points=[NSMutableData dataWithLength:vertices*sizeof(CMPVertex)],*valid=[NSMutableData dataWithLength:vertices];CMPVertex *p=points.mutableBytes;uint8_t *ok=valid.mutableBytes;bool projectionOK=true;
-            float meshMinX=view.width,meshMinY=view.height,meshMaxX=0,meshMaxY=0;
-            for(uint32_t j=0;j<sections&&projectionOK;j++)for(uint32_t i=sec[j].first_vertex;i<sec[j].first_vertex+sec[j].vertex_count;i++){
+            uint8_t known[256];memset(known,1,bones);NSMutableData *points=[NSMutableData dataWithLength:vertices*sizeof(CMPVertex)],*valid=[NSMutableData dataWithLength:vertices];CMPVertex *p=points.mutableBytes;uint8_t *ok=valid.mutableBytes;
+            for(uint32_t j=0;j<sections;j++)for(uint32_t i=sec[j].first_vertex;i<sec[j].first_vertex+sec[j].vertex_count;i++){
                 CMVec3 position;CMSResult result=CMSSkinVertex(vertex+(size_t)i*vertexStride,weight+(size_t)i*8,(const uint16_t *)(palette+(size_t)j*512),sec[j].bone_count,skin,known,bones,&position);
-                if(result!=CMS_OK||!CMPProject(&view,position,&p[i]))continue;
-                // The context camera may advance while mesh/pose reads run.
-                // Compare both projections against the same captured view;
-                // mixing a new native view with the old raster view rejects
-                // entire meshes during player/camera movement.
+                if(result==CMS_OK){p[i].world=position;ok[i]=1;}
+            }
+            [worldPoints addObject:points];[worldTriangles addObject:triangles];[worldValid addObject:valid];
+        }
+        CMLTime(&CMLStats.skinTimeTotal,&CMLStats.skinTimeMaximum,skinStart);
+        // Acquisition can advance while expensive remote gathering/skinning run.
+        // Capture the camera afterwards, then keep that one snapshot consistent
+        // for projection, native parity checks and exact pixel-ray reconstruction.
+        uint64_t projectionStart=CMNow(),cameraTime=projectionStart;
+        bool cameraOK=CMSelfRead(context+4,size,8)&&CMSelfRead(context+0x1F4,rawView,52)&&CMPMakeView(rawView,size[0],size[1],&view);
+        if(!cameraOK)atomic_fetch_add(&CMLStats.cameraUnavailableFrames,1);
+        else {cameraTime=CMNow();atomic_fetch_add(&CMLStats.lateCameraSamples,1);minX=view.width;minY=view.height;
+        for(NSUInteger j=0;j<worldPoints.count;j++){
+            NSMutableData *points=worldPoints[j],*valid=worldValid[j];CMPVertex *p=points.mutableBytes;uint8_t *ok=valid.mutableBytes;uint32_t vertices=(uint32_t)(points.length/sizeof(CMPVertex));bool projectionOK=true;
+            float meshMinX=view.width,meshMinY=view.height,meshMaxX=0,meshMaxY=0;
+            for(uint32_t i=0;i<vertices;i++){
+                if(!ok[i])continue;CMVec3 position=p[i].world;if(!CMPProject(&view,position,&p[i])){ok[i]=0;continue;}
                 if(i%128==0){CMVec2 native=CMProject(&position,rawView,(int)size[0],(int)size[1]);if(!isfinite(native.x)||!isfinite(native.y)||fabsf(native.x-p[i].xy.x)>0.75f||fabsf(native.y-p[i].xy.y)>0.75f){projectionOK=false;break;}}
                 ok[i]=1;meshMinX=fminf(meshMinX,p[i].xy.x);meshMinY=fminf(meshMinY,p[i].xy.y);meshMaxX=fmaxf(meshMaxX,p[i].xy.x);meshMaxY=fmaxf(meshMaxY,p[i].xy.y);
             }
@@ -542,9 +560,9 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
             // cannot cover a screen pixel; straddling meshes remain intact.
             if(meshMaxX<=0||meshMinX>=view.width||meshMaxY<=0||meshMinY>=view.height){atomic_fetch_add(&CMLStats.screenRejectedMeshes,1);continue;}
             minX=fminf(minX,meshMinX);minY=fminf(minY,meshMinY);maxX=fmaxf(maxX,meshMaxX);maxY=fmaxf(maxY,meshMaxY);
-            [projected addObject:points];[triangleArrays addObject:triangles];[validArrays addObject:valid];atomic_fetch_add(&CMLStats.meshFrames,1);
-        }
-        CMLTime(&CMLStats.skinTimeTotal,&CMLStats.skinTimeMaximum,skinStart);
+            [projected addObject:points];[triangleArrays addObject:worldTriangles[j]];[validArrays addObject:valid];atomic_fetch_add(&CMLStats.meshFrames,1);
+        }}
+        CMLTime(&CMLStats.projectionTimeTotal,&CMLStats.projectionTimeMaximum,projectionStart);
         CMLTime(&CMLStats.meshTimeTotal,&CMLStats.meshTimeMaximum,meshStart);
         int x=(int)fmaxf(0,floorf(minX)),y=(int)fmaxf(0,floorf(minY)),right=(int)fminf(view.width,ceilf(maxX)),bottom=(int)fminf(view.height,ceilf(maxY));
         if(right>x&&bottom>y&&projected.count){size_t count=(size_t)(right-x)*(bottom-y);if(count>CML_PIXEL_LIMIT)atomic_fetch_add(&CMLStats.oversizedMasks,1);else {
@@ -562,15 +580,23 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
             NSMutableData *rectangles=[NSMutableData dataWithLength:CML_SPAN_LIMIT*sizeof(CMPRectangle)];uint32_t spans=complete ? CMPRectanglesCovered(&mask,&coverage,rectangles.mutableBytes,CML_SPAN_LIMIT) : 0;
             CMLTime(&CMLStats.packTimeTotal,&CMLStats.packTimeMaximum,packStart);uint64_t submitStart=CMNow();
             if(complete&&spans&&spans<=CML_SPAN_LIMIT){void *list=CMLGetDrawList();uint8_t flags=0;if(list&&CMSelfRead((uintptr_t)list+0x30,&flags,1)){
+                CMLTime(&CMLStats.cameraAgeAtSubmitTotal,&CMLStats.cameraAgeAtSubmitMaximum,cameraTime);
                 *(uint8_t *)((uintptr_t)list+0x30)=flags&~4U;for(uint32_t i=0;i<spans;i++)CMLDrawRectangle(list,((const CMPRectangle *)rectangles.bytes)[i]);*(uint8_t *)((uintptr_t)list+0x30)=flags;
                 atomic_fetch_add(&CMLStats.drawFrames,1);atomic_fetch_add(&CMLStats.white,white);atomic_fetch_add(&CMLStats.red,red);atomic_fetch_add(&CMLStats.spans,spans);}}
             else if(!complete||spans>CML_SPAN_LIMIT){atomic_fetch_add(&CMLStats.budgetFrames,1);if(!complete)atomic_fetch_add(&CMLStats.queryBudgetFrames,1);else atomic_fetch_add(&CMLStats.rectangleBudgetFrames,1);}
             CMLTime(&CMLStats.submitTimeTotal,&CMLStats.submitTimeMaximum,submitStart);
         }}
     }
-    pthread_mutex_unlock(&CMLMutex);CMInside=false;
+    CMInside=false;
     uint64_t elapsed=CMNow()-drawStart;atomic_fetch_add(&CMLStats.drawTimeTotal,elapsed);uint_fast64_t maximum=atomic_load(&CMLStats.drawTimeMaximum);
     while(elapsed>maximum&&!atomic_compare_exchange_weak(&CMLStats.drawTimeMaximum,&maximum,elapsed)){}
+}
+__attribute__((noinline)) static void CMLDraw(uintptr_t context) {
+    atomic_fetch_add(&CMLStats.frames,1);if(!atomic_load(&CMLReady)||context!=CMLExpectedContext||CMInside)return;
+    // Serialize ImGui work without holding up the native target observer, and
+    // never queue stale fill frames behind an overlapping draw callback.
+    if(pthread_mutex_trylock(&CMLDrawMutex)){atomic_fetch_add(&CMLStats.drawBusyFrames,1);return;}
+    CMLDrawFrame(context);pthread_mutex_unlock(&CMLDrawMutex);
 }
 __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintptr_t entryReturn) {
     int saved=errno;uintptr_t caller=CMStripReturn((void *)entryReturn),base=CMBase;
@@ -595,7 +621,10 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-    NSDictionary *status=@{ @"render_version":@10,@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+    NSDictionary *status=@{ @"render_version":@11,@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
+        @"camera_sampling_stage":@"after-gather-and-skinning",@"late_camera_samples":CML_VALUE(lateCameraSamples),@"draw_callbacks_busy":CML_VALUE(drawBusyFrames),
+        @"target_mutex_scope":@"gather-only",@"observer_mutex_wait_total_ns":CML_VALUE(observerWaitTotal),@"observer_mutex_wait_maximum_ns":CML_VALUE(observerWaitMaximum),
+        @"projection_stage_time_total_ns":CML_VALUE(projectionTimeTotal),@"projection_stage_time_maximum_ns":CML_VALUE(projectionTimeMaximum),@"camera_age_at_fill_total_ns":CML_VALUE(cameraAgeAtSubmitTotal),@"camera_age_at_fill_maximum_ns":CML_VALUE(cameraAgeAtSubmitMaximum),
         @"eligible_draw_frames":CML_VALUE(eligibleFrames),@"projected_mesh_frames":CML_VALUE(meshFrames),@"actor_snapshot_chunks":CML_VALUE(actorSnapshotReads),
         @"toggle_disabled_frames":CML_VALUE(disabledFrames),@"geometry_unavailable_frames":CML_VALUE(geometryUnavailableFrames),@"camera_unavailable_frames":CML_VALUE(cameraUnavailableFrames),@"actor_snapshot_unavailable_frames":CML_VALUE(actorSnapshotUnavailableFrames),
         @"metadata_loads":CML_VALUE(metadataLoads),@"metadata_failures":CML_VALUE(metadataFailures),@"mesh_loads":CML_VALUE(meshLoads),@"mesh_cache_bytes":CML_VALUE(cacheBytes),

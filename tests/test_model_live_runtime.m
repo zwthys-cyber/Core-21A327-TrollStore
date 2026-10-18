@@ -18,6 +18,8 @@ static bool BadRay,WrongProjection,FailQueryBudget,WrongRaw,UnreadableScene,Reso
 static bool GeometryReady;
 static unsigned CameraMotion;
 static bool CameraMoved;
+static bool CheckObserverProgress;
+static uint8_t LastProjectedCamera[52];
 static int TestClock(clockid_t clock,struct timespec *t){(void)clock;if(FailQueryBudget)TestTime+=20000000ULL;t->tv_sec=TestTime/1000000000ULL;t->tv_nsec=TestTime%1000000000ULL;return 0;}
 static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,vm_address_t dest,vm_size_t *copied){
     (void)task;uint64_t value=0;
@@ -57,13 +59,15 @@ static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzer
         if(address==0x600020000ULL&&size==6){memcpy(out,TriangleData,6);return true;}if(address==0x600020000ULL&&size==12){memcpy(out,WideTriangleData,12);return true;}if(address==0x600030000ULL&&size==2){memcpy(out,&BonePalette,2);return true;}}
     if((address==GamePose||address==ChildPose)&&size==48){CMTransform t={{0,0,0,1,0,0,0,0,1,1,1}};memcpy(out,&t,sizeof(t));return true;}return false;
 }
-static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(SlowProjection)TestTime+=20000000ULL;if(WrongProjection)p.xy.x+=10;return p.xy;}
+static void ObserverCanProgress(void){if(CheckObserverProgress){assert(!pthread_mutex_trylock(&CMLMutex));pthread_mutex_unlock(&CMLMutex);}}
+static CMVec2 Project(const CMVec3 *world,const void *camera,int width,int height){ObserverCanProgress();memcpy(LastProjectedCamera,camera,52);CMPView view;CMPVertex p;assert(CMPMakeView(camera,width,height,&view)&&CMPProject(&view,*world,&p));if(SlowProjection)TestTime+=20000000ULL;if(WrongProjection)p.xy.x+=10;return p.xy;}
 static void Lock(void *p){if(p==(void *)(TestBase+0xBD4F78)){assert(!LockDepth);LockDepth=1;return;}
     assert(LockDepth==1);for(unsigned i=0;i<3;i++)if(p==SceneData[i]+0x58){LockDepth|=2U<<i;SceneLocks++;return;}assert(false);}
 static void Unlock(void *p){if(p==(void *)(TestBase+0xBD4F78)){assert(LockDepth==1);LockDepth=0;return;}
     for(unsigned i=0;i<3;i++)if(p==SceneData[i]+0x58){assert(LockDepth==(1U|(2U<<i)));LockDepth=1;return;}assert(false);}
-static CMRayHit Ray(void *scene,const CMVec3 *camera,const CMVec3 *world){assert(LockDepth==1);CMVec3 d={world->x-camera->x,world->y-camera->y,world->z-camera->z};CMRayHit hit={0};hit.geometry_id=world->y>=0&&scene==SceneData[BlockScene]?7:UINT32_MAX;hit.far_distance=sqrtf(CMPDot(d,d))*(hit.geometry_id==7?.5f:1);if(BadRay)hit.far_distance=NAN;return hit;}
+static CMRayHit Ray(void *scene,const CMVec3 *camera,const CMVec3 *world){ObserverCanProgress();assert(LockDepth==1);CMVec3 d={world->x-camera->x,world->y-camera->y,world->z-camera->z};CMRayHit hit={0};hit.geometry_id=world->y>=0&&scene==SceneData[BlockScene]?7:UINT32_MAX;hit.far_distance=sqrtf(CMPDot(d,d))*(hit.geometry_id==7?.5f:1);if(BadRay)hit.far_distance=NAN;return hit;}
 static void Intersect(void *handle,CMRayHit *ray,void *context){unsigned slot=(unsigned)(uintptr_t)handle-1;assert(slot<3&&!context&&LockDepth==(1U|(2U<<slot))&&!((uintptr_t)ray&15));RawCalls++;
+    ObserverCanProgress();
     assert(ray->near_distance==0&&ray->time==0&&ray->flags==0&&ray->mask==UINT32_MAX&&ray->geometry_id==UINT32_MAX);
     float norm=ray->direction[0]*ray->direction[0]+ray->direction[1]*ray->direction[1]+ray->direction[2]*ray->direction[2];assert(fabsf(norm-1)<.00001f);
     if(slot==BlockScene&&ray->origin[1]+ray->direction[1]*ray->far_distance>=0){ray->geometry_id=7;ray->far_distance*=.5f;}
@@ -79,6 +83,7 @@ static void Setup(void){
     TestTime=10000000000ULL;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
     GeometryReady=true;
     CameraMotion=0;CameraMoved=false;
+    CheckObserverProgress=false;memset(LastProjectedCamera,0,sizeof(LastProjectedCamera));
     memset(SceneData,0,sizeof(SceneData));for(uintptr_t i=0;i<3;i++){uintptr_t handle=i+1;memcpy(SceneData[i]+8,&handle,8);}
     CMLIntersect=Intersect;atomic_store(&CMLBatchDisabled,false);
     atomic_store(&CMLReady,true);atomic_store(&CMEnabled,false);atomic_flag_clear(&CMBusy);CMInside=false;
@@ -136,13 +141,16 @@ static CMLTarget *WithStride(uint32_t stride) {
 static void Draw(void){errno=ERANGE;CoreModelRenderDispatch(Context,TestBase+0x21BC4);assert(errno==ERANGE&&!LockDepth&&!CMInside&&DrawList[0x30]==4);}
 int main(void){@autoreleasepool {
     Setup();Draw();assert(OriginalCalls==1&&Fills==6&&WhiteFills>0&&RedFills>0&&SceneLocks==3&&RawCalls==51);
+    Setup();CheckObserverProgress=true;CameraMotion=5;Draw();assert(Fills&&CameraMoved&&!memcmp(LastProjectedCamera,Context+0x1F4,52));
+    Setup();CheckObserverProgress=true;CMLIntersect=NULL;Draw();assert(Fills); // The unbatched query also leaves acquisition unblocked.
+    Setup();uint64_t busy=atomic_load(&CMLStats.drawBusyFrames);pthread_mutex_lock(&CMLDrawMutex);Draw();assert(!Fills&&atomic_load(&CMLStats.drawBusyFrames)==busy+1);pthread_mutex_unlock(&CMLDrawMutex);Draw();assert(Fills);
     for(unsigned motion=1;motion<=7;motion++){
         Setup();CameraMotion=motion;uint64_t mismatches=atomic_load(&CMLStats.projectionMismatch);
         for(unsigned frame=0;frame<6;frame++){
             float camera[13]={0};camera[0]=frame*.05f;camera[7]=frame*.25f;camera[12]=90;
             memcpy(Context+0x1F4,camera,sizeof(camera));CameraMoved=false;
             unsigned fills=Fills,white=WhiteFills,red=RedFills;Draw();
-            assert(CameraMoved&&Fills>fills&&WhiteFills>white&&RedFills>red&&atomic_load(&CMLStats.projectionMismatch)==mismatches);
+            assert(CameraMoved&&Fills>fills&&WhiteFills>white&&RedFills>red&&atomic_load(&CMLStats.projectionMismatch)==mismatches&&!memcmp(LastProjectedCamera,Context+0x1F4,52));
             TestTime+=1000000ULL;
         }
     }
@@ -229,5 +237,5 @@ int main(void){@autoreleasepool {
     NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:file]);pthread_mutex_unlock(&CMLMutex);
     NSDictionary *status=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:file] options:0 error:NULL];NSArray *reportedSchemas=status[@"reflected_component_schemas"];
     assert([status[@"silhouette_renderer_connected"] boolValue]&&![status[@"full_requested_effect_verified"] boolValue]&&reportedSchemas.count==1&&![status[@"schema_snapshot_busy"] boolValue]&&[status[@"native_ray_result_bytes"] intValue]==96);[[NSFileManager defaultManager]removeItemAtPath:file error:NULL];
-    puts("PASS: camera changes during remote gathering preserve red/white fills across 42 motion frames while genuine projection errors reject; original frame forwarding; exact 24/28/32-byte mesh fill; position bounds and reflected prefixes; bounded/deduplicated immutable failure samples under the draw lock; per-asset LOD selection and switching; four offscreen planes reject before raster while edge-spanning triangles stay visible; native ray ABI, metadata, caches, poses, budgets, errno and status");
+    puts("PASS: late camera capture follows 42 motion frames; observer mutex is free during projection and both query paths; overlapping draw callbacks do not queue; genuine projection errors reject; original forwarding, exact mesh/pixel fill, LODs, native ray ABI, metadata, caches, poses, budgets, errno and status");
 }return 0;}

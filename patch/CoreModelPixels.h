@@ -2,6 +2,7 @@
 #define CORE_MODEL_PIXELS_H
 #include "CoreModelCaptureMath.h"
 #include <stdlib.h>
+#include <float.h>
 
 // Exact pixel centres and perspective-correct surface positions. No bone-hit
 // interpolation, majority voting, reduced-resolution mask or colour guessing.
@@ -39,6 +40,31 @@ static inline bool CMPProject(const CMPView *v,CMVec3 world,CMPVertex *out) {
     return isfinite(out->xy.x)&&isfinite(out->xy.y)&&fabsf(out->xy.x)<65536&&fabsf(out->xy.y)<65536;
 }
 static inline float CMPEdge(CMVec2 a,CMVec2 b,float x,float y) { return (b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x); }
+// Clip only the candidate interval. The original float barycentric/depth
+// calculation below still decides every covered pixel. A conservative padding
+// accounts for its tolerance/rounding; ill-conditioned or tiny boxes fall back
+// to the complete original scan instead of tightening an uncertain bound.
+static inline int CMPScanPadding(const CMPVertex t[3],float area,int width,int height) {
+    if(width<16||height<4||(int64_t)width*height<128)return -1;
+    double edge=1;for(unsigned i=0;i<3;i++)for(unsigned j=i+1;j<3;j++){
+        edge=fmax(edge,fabs((double)t[i].xy.x-t[j].xy.x));edge=fmax(edge,fabs((double)t[i].xy.y-t[j].xy.y));}
+    double conditioning=edge*edge/fabs((double)area);
+    if(!isfinite(conditioning)||conditioning>1/(64.0*FLT_EPSILON))return -1;
+    double padding=ceil(128.0*FLT_EPSILON*conditioning*edge+6e-6*edge)+2;
+    return padding<width*.25?(int)padding:-1;
+}
+static inline void CMPScanRow(const CMPVertex t[3],int y,int padding,int *first,int *last) {
+    if(padding<0)return;double scan=y+.5,low=INFINITY,high=-INFINITY;
+    for(unsigned i=0;i<3;i++){
+        CMVec2 a=t[i].xy,b=t[(i+1)%3].xy;
+        if(scan<fmin((double)a.y,b.y)||scan>fmax((double)a.y,b.y))continue;
+        if(a.y==b.y){low=fmin(low,fmin((double)a.x,b.x));high=fmax(high,fmax((double)a.x,b.x));}
+        else {double x=(double)a.x+(scan-a.y)*((double)b.x-a.x)/((double)b.y-a.y);low=fmin(low,x);high=fmax(high,x);}
+    }
+    if(!isfinite(low)||!isfinite(high))return;
+    int left=(int)ceil(low-.5)-padding,right=(int)floor(high-.5)+padding;
+    if(left>*first)*first=left;if(right<*last)*last=right;
+}
 static inline bool CMPWorldAtPixel(const CMPView *view,int x,int y,float inverseDepth,CMVec3 *world) {
     if(!isfinite(inverseDepth)||inverseDepth<=0||!isfinite(view->focal)||view->focal<=0)return false;
     float horizontal=(x+.5f-view->width*.5f)/view->focal,vertical=(view->height*.5f-y-.5f)/view->focal,depth=1/inverseDepth;
@@ -57,7 +83,8 @@ static inline bool CMPRasterTriangleCovered(CMPMask *mask,const CMPVertex t[3],C
     float minY=fminf(t[0].xy.y,fminf(t[1].xy.y,t[2].xy.y)),maxY=fmaxf(t[0].xy.y,fmaxf(t[1].xy.y,t[2].xy.y));
     int x0=(int)fmaxf(mask->x,ceilf(minX-0.5f)),x1=(int)fminf(mask->x+mask->width-1,floorf(maxX-0.5f));
     int y0=(int)fmaxf(mask->y,ceilf(minY-0.5f)),y1=(int)fminf(mask->y+mask->height-1,floorf(maxY-0.5f));
-    for (int y=y0;y<=y1;y++) for (int x=x0;x<=x1;x++) {
+    int padding=CMPScanPadding(t,area,x1-x0+1,y1-y0+1);
+    for (int y=y0;y<=y1;y++) {int first=x0,last=x1;CMPScanRow(t,y,padding,&first,&last);for (int x=first;x<=last;x++) {
         float a=CMPEdge(t[1].xy,t[2].xy,x+0.5f,y+0.5f)/area,b=CMPEdge(t[2].xy,t[0].xy,x+0.5f,y+0.5f)/area,c=1-a-b;
         if (a<-1e-6f||b<-1e-6f||c<-1e-6f) continue;
         float depth=a*t[0].inverse_depth+b*t[1].inverse_depth+c*t[2].inverse_depth;
@@ -65,7 +92,7 @@ static inline bool CMPRasterTriangleCovered(CMPMask *mask,const CMPVertex t[3],C
         if (!isfinite(depth)||depth<=p->inverse_depth) continue;
         if(coverage&&!p->inverse_depth){coverage->words[(size_t)(y-mask->y)*coverage->words_per_row+(x-mask->x)/64]|=1ULL<<((x-mask->x)%64);coverage->count++;}
         p->inverse_depth=depth;p->colour=0;
-    }
+    }}
     return true;
 }
 static inline bool CMPRasterTriangle(CMPMask *mask,const CMPVertex t[3]) {return CMPRasterTriangleCovered(mask,t,NULL);}

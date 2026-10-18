@@ -69,7 +69,7 @@ def main(ipa):
         assert capture_version in (None, "1", "2", "3", "4", "5", "6", "7"), "Unknown capture protocol"
         model_capture = capture_version is not None
         render_version=info.get("CoreModelRenderVersion")
-        assert render_version in (None,"1","2","3","4","5","6","7","8","9","10"), "Unknown renderer protocol"
+        assert render_version in (None,"1","2","3","4","5","6","7","8","9","10","11"), "Unknown renderer protocol"
         model_render=render_version is not None
         assert not model_render or capture_version=="7"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
@@ -173,7 +173,7 @@ def main(ipa):
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
         expected_build = {"1":"21", "2":"22", "3":"23", "4":"24", "5":"25", "6":"26", "7":"27"}.get(capture_version, BUNDLE_BUILD)
         if model_render:
-            expected_build={"1":"28","2":"29","3":"30","4":"31","5":"32","6":"33","7":"34","8":"35","9":"37","10":"38"}[render_version]
+            expected_build={"1":"28","2":"29","3":"30","4":"31","5":"32","6":"33","7":"34","8":"35","9":"37","10":"38","11":"39"}[render_version]
         assert info["CFBundleVersion"] == expected_build and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         assert info["CoreFeatureProfile"] == PROFILE
         assert info["CoreRemoteTraceVersion"] == "1"
