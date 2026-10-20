@@ -1,0 +1,24 @@
+name: Inspect ground bow source and distance paths
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/bow-source-range]
+    paths: [analysis/bow-source/review.py, .github/workflows/inspect-bow-source.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install capstone==5.0.3
+      - run: python analysis/bow-source/review.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Core-bow-source-review
+          path: analysis/bow-source/output/*
+          retention-days: 14
