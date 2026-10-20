@@ -182,6 +182,7 @@ def main():
     parser.add_argument("--fill-work", action="store_true", help="Resume static model reads with shared frame budget and parallel exact raster rows")
     parser.add_argument("--actor-trace", action="store_true", help="Background diagnostic comparison of existing native actor source and marker vectors")
     parser.add_argument("--weapon-display", action="store_true", help="Only ground explosive hunting bow/crossbow labels and independent held weapon text")
+    parser.add_argument("--ground-bow-trace", action="store_true", help="Read-only local ground-bow source/cache/projection transitions; does not claim a range fix")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -198,6 +199,8 @@ def main():
         parser.error("--actor-trace requires --fill-work")
     if args.weapon_display and not args.actor_trace:
         parser.error("--weapon-display requires --actor-trace")
+    if args.ground_bow_trace and not args.weapon_display:
+        parser.error("--ground-bow-trace requires --weapon-display")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -252,6 +255,8 @@ def main():
         common.append("-DCORE_ACTOR_TRACE=1")
     if args.weapon_display:
         common.append("-DCORE_WEAPON_DISPLAY=1")
+    if args.ground_bow_trace:
+        common.append("-DCORE_GROUND_BOW_TRACE=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -312,6 +317,8 @@ def main():
     if args.weapon_display:
         from weapon_display import VERSION as weapon_version, PROFILE as weapon_profile
         info.update(CoreWeaponDisplayVersion=weapon_version, CoreFeatureProfile=weapon_profile)
+    if args.ground_bow_trace:
+        info.update(CFBundleVersion="44", CoreModelRenderVersion="16", CoreGroundBowTraceVersion="1")
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -345,6 +352,8 @@ def main():
         artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v14-latency-work.ipa"
     if args.actor_trace:
         artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v15-actor-visibility.ipa"
+    if args.ground_bow_trace:
+        artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v16-bow-source-trace.ipa"
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -420,7 +429,9 @@ def main():
         from weapon_display import manifest as weapon_manifest, PROFILE as weapon_profile
         report["feature_profile"]=weapon_profile
         report["weapon_display"]=dict(version=1,ground_whitelist=["爆炸猎弓","十字弩"],range_metres=600,ground_switch="independent persisted +0x21",held_switch="independent persisted +0x24; existing enemy/range/projection filters",held_style="native text name lookup; white outlined 14*scale; original icon preference bypassed",other_ground_items_enabled=False,device_verified=False,changes=weapon_manifest())
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
+    if args.ground_bow_trace:
+        report["ground_bow_trace"]=dict(version=1,interval_ms=1000,record_limit=8192,metadata_limit=256,local_sample_byte_limit=2*1024*1024,tracked_target_limit=256,event_limit=32,report_file="Core-ground-bow-status.json",remote_game_reads=False,range_fix_verified=False,main_executable_profile="unchanged v15 weapon/vehicle/marker paths; diagnostics only")
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=16 if args.ground_bow_trace else 15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,

@@ -9,6 +9,10 @@ static const uint64_t GameComponent=0x200001000ULL,GamePose=0x200010000ULL,GameA
 static const uint64_t ChildComponent=0x200030000ULL,ChildPose=0x200040000ULL,ChildAsset=0x300010000ULL;
 static const uint64_t RenderAddress=0x500000000ULL,LODsAddress=0x500010000ULL,LODAddress=0x500020000ULL,IndexAddress=0x500030000ULL,SectionsAddress=0x500040000ULL;
 static uint8_t Context[2048],ComponentData[4096],ActorRecord[504],SourceRecord[24],Frame[2048],DrawList[256],SceneData[3][160];
+#ifdef CORE_GROUND_BOW_TRACE
+static uint8_t BowSources[3*32],BowRecords[3*88],BowMetas[3][64],BowLongNames[2][16];
+static bool TraceBowMutate;
+#endif
 static uint8_t AssetData[1048],RenderData[16],LODArray[8],LODData[1024],IndexData[112],SectionsData[256];
 static uint8_t VertexData[96],WeightData[24];static uint16_t TriangleData[3]={0,1,2},BonePalette=0;static uint32_t VertexStride=24;
 static uint8_t ChildData[4096];static uint32_t WideTriangleData[3]={0,1,2};
@@ -41,8 +45,16 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
         if(UnreadableScene||size!=8||(address-(uintptr_t)SceneData)%160!=8)return KERN_INVALID_ADDRESS;
         memcpy((void *)dest,(void *)address,8);*copied=8;return KERN_SUCCESS;}
     else if(ReallocatedActors&&address==(uintptr_t)Context+0x3F0&&size==16){memset((void *)dest,0,size);*copied=size;return KERN_SUCCESS;}
-    else {const void *arrays[]={Context,ActorRecord,SourceRecord,Frame,DrawList};const size_t sizes[]={sizeof(Context),sizeof(ActorRecord),sizeof(SourceRecord),sizeof(Frame),sizeof(DrawList)};
-        for(unsigned i=0;i<5;i++)if(address>=(uintptr_t)arrays[i]&&size<=sizes[i]&&address-(uintptr_t)arrays[i]<=sizes[i]-size){memcpy((void *)dest,(void *)address,size);*copied=size;
+    else {const void *arrays[]={Context,ActorRecord,SourceRecord,Frame,DrawList,
+#ifdef CORE_GROUND_BOW_TRACE
+        BowSources,BowRecords,BowMetas,BowLongNames,
+#endif
+        };const size_t sizes[]={sizeof(Context),sizeof(ActorRecord),sizeof(SourceRecord),sizeof(Frame),sizeof(DrawList),
+#ifdef CORE_GROUND_BOW_TRACE
+        sizeof(BowSources),sizeof(BowRecords),sizeof(BowMetas),sizeof(BowLongNames),
+#endif
+        };
+        for(unsigned i=0;i<sizeof(arrays)/sizeof(arrays[0]);i++)if(address>=(uintptr_t)arrays[i]&&size<=sizes[i]&&address-(uintptr_t)arrays[i]<=sizes[i]-size){memcpy((void *)dest,(void *)address,size);*copied=size;
 #ifdef CORE_ACTOR_TRACE
             TraceOnCopy(address);
 #endif
@@ -57,7 +69,11 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
 #undef vm_read_overwrite
 #undef clock_gettime
 #ifdef CORE_ACTOR_TRACE
-static void TraceOnCopy(uintptr_t address){if(TraceMutate&&address==(uintptr_t)ActorRecord){atomic_fetch_add(&CAVGeneration,1);TraceMutate=false;}}
+static void TraceOnCopy(uintptr_t address){if(TraceMutate&&address==(uintptr_t)ActorRecord){atomic_fetch_add(&CAVGeneration,1);TraceMutate=false;}
+#ifdef CORE_GROUND_BOW_TRACE
+    if(TraceBowMutate&&address==(uintptr_t)BowRecords){atomic_fetch_add(&CAVGeneration,1);TraceBowMutate=false;}
+#endif
+}
 #endif
 static bool Reader(uint64_t address,void *out,size_t size){Reads++;CoreModelBzeroCapture(out,size,0,address,TestBase+0xE1960);
 #ifdef CORE_FILL_WORK
@@ -103,6 +119,10 @@ static void Setup(void){
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
     TestTime=10000000000ULL;NativeDelay=0;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
     GeometryReady=true;
+#ifdef CORE_GROUND_BOW_TRACE
+    memset(BowSources,0,sizeof(BowSources));memset(BowRecords,0,sizeof(BowRecords));memset(BowMetas,0,sizeof(BowMetas));memset(BowLongNames,0,sizeof(BowLongNames));TraceBowMutate=false;
+    BVTTargets=nil;BVTEvents=nil;BVTReport=nil;BVTSamples=BVTBusy=BVTFailures=BVTNextID=BVTBytes=BVTTotalBytes=BVTTimeMaximum=BVTCapacity=0;
+#endif
 #ifdef CORE_ACTOR_TRACE
     TraceMutate=false;atomic_store(&CAVGeneration,0);atomic_store(&CAVNativeActive,0);atomic_store(&CAVLastNativeEnd,0);
     CAVTargets=nil;CAVEvents=nil;CAVReport=nil;CAVSamples=CAVBusy=CAVFailures=CAVReadBytes=CAVTimeTotal=CAVTimeMaximum=CAVNextID=CAVCapacity=0;
@@ -215,7 +235,13 @@ static void CheckActorTrace(void) {
     NSData *json=[NSJSONSerialization dataWithJSONObject:CAVStatus() options:0 error:NULL];assert(json.length&&json.length<30000);puts("PASS: background actor source/cache stage events, 300/600m boundaries, cached-range age, fill-off zero remote reads, original-draw epoch rejection, malformed/oversized/stale snapshots and bounded history");
 }
 #endif
+#ifdef CORE_GROUND_BOW_TRACE
+#include "test_ground_bow_trace.inc"
+#endif
 int main(void){@autoreleasepool {
+#ifdef CORE_GROUND_BOW_TRACE
+    CheckGroundBowTrace();
+#endif
 #ifdef CORE_ACTOR_TRACE
     CheckActorTrace();
 #endif

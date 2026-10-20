@@ -694,6 +694,9 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
 #ifdef CORE_ACTOR_TRACE
 #include "CoreActorVisibilityTrace.inc"
 #endif
+#ifdef CORE_GROUND_BOW_TRACE
+#include "CoreGroundBowTrace.inc"
+#endif
 __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintptr_t entryReturn) {
     int saved=errno;uintptr_t caller=CMStripReturn((void *)entryReturn),base=CMBase;
     if(!base)base=(uintptr_t)_dyld_get_image_header(0);
@@ -735,7 +738,9 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-#ifdef CORE_ACTOR_TRACE
+#ifdef CORE_GROUND_BOW_TRACE
+    const int renderVersion=16;
+#elif defined(CORE_ACTOR_TRACE)
     const int renderVersion=15;
 #elif defined(CORE_FILL_WORK)
     const int renderVersion=14;
@@ -749,6 +754,9 @@ static void CMLWriteStatus(NSURL *url) {
     NSDictionary *status=@{
 #ifdef CORE_ACTOR_TRACE
         @"actor_visibility_trace":CAVStatus(),
+#endif
+#ifdef CORE_GROUND_BOW_TRACE
+        @"ground_bow_trace":BVTStatus(false),@"ground_bow_trace_file":@"Core-ground-bow-status.json",
 #endif
 #ifdef CORE_WEAPON_DISPLAY
         @"ground_weapon_whitelist":@[@"爆炸猎弓",@"十字弩"],@"ground_weapon_preference_offset":@"0x21",@"held_weapon_preference_offset":@"0x24",
@@ -808,8 +816,16 @@ static void CMLStartup(void) {
     dispatch_async(CMReportQueue, ^{NSURL *url=[CMReportURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Core-model-render-status.json"];CMLWriteStatus(url);
 #ifdef CORE_ACTOR_TRACE
         CAVTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CAVTimer,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),NSEC_PER_SEC,NSEC_PER_SEC/10);
-        dispatch_source_set_event_handler(CAVTimer, ^{CAVSample(CMLExpectedContext);});dispatch_resume(CAVTimer);
+        dispatch_source_set_event_handler(CAVTimer, ^{CAVSample(CMLExpectedContext);
+#ifdef CORE_GROUND_BOW_TRACE
+            BVTSample(CMLExpectedContext);
+#endif
+        });dispatch_resume(CAVTimer);
 #endif
         CMLStatusTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,CMReportQueue);dispatch_source_set_timer(CMLStatusTimer,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC),5*NSEC_PER_SEC,NSEC_PER_SEC);
-        dispatch_source_set_event_handler(CMLStatusTimer, ^{CMLWriteStatus(url);});dispatch_resume(CMLStatusTimer);});
+        dispatch_source_set_event_handler(CMLStatusTimer, ^{CMLWriteStatus(url);
+#ifdef CORE_GROUND_BOW_TRACE
+            BVTWriteStatus([url.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Core-ground-bow-status.json"]);
+#endif
+        });dispatch_resume(CMLStatusTimer);});
 }
