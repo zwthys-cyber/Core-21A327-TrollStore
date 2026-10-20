@@ -40,6 +40,7 @@ class GroundItemControlsTests(unittest.TestCase):
         controls=[('附近敌人',0x23,None),('附近载具',0x22,None),('人物填色',0x20,None)]+[(name,offset,i) for i,(name,label,offset) in enumerate(ITEMS)]+[('手持武器',0x24,None)]
         for mask,changed_index in product(range(64),range(-1,10)):
             mu=self.emulator();flags=STACK+0x3000;seen=[];ends=[];commits=[]
+            mu.mem_write(BASE+0xC15A80,struct.pack('<f',1))
             original={offset:(mask>>(i%6))&1 for i,(name,offset,index) in enumerate(controls)}
             for name,offset,index in controls:
                 value=((mask>>index)&1) if index is not None else original[offset]
@@ -69,6 +70,8 @@ class GroundItemControlsTests(unittest.TestCase):
                     changed=index==changed_index
                     if changed:uc.mem_write(pointer,bytes([original[offset]^1]))
                     seen.append(offset);uc.reg_write(r.UC_ARM64_REG_W0,changed)
+                elif target==0xC88B0:
+                    size=uc.reg_read(r.UC_ARM64_REG_X1);self.assertEqual(struct.unpack('<f',uc.mem_read(size+4,4))[0],0)
                 elif target==0x12E620:ends.append(target)
                 uc.reg_write(r.UC_ARM64_REG_PC,address+4)
             mu.hook_add(UC_HOOK_CODE,hook);mu.emu_start(BASE+0xCD6A4,RETURN,count=1400)

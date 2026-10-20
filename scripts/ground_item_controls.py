@@ -90,7 +90,8 @@ def changes():
     from weapon_display import changes as weapon_changes
     old={offset:new for offset,old,new,reason in weapon_changes()}
     layout=json.loads((Path(__file__).resolve().parents[1]/'analysis/ground-item-controls/source-layout.json').read_text())
-    original_helpers=helpers();changes=[(0xCD870,old[0xCD870],branch(0xCD870,MENU)+word(0xD503201F)*((len(old[0xCD870])-4)//4),'six independent item checkboxes with dedicated persisted mask; held control remains separate'),
+    original_helpers=helpers();changes=[(0xCD6F0,bytes.fromhex('286ca852'),word(0x52800008),'use available native child height for all ten controls and its scrollbar'),
+        (0xCD870,old[0xCD870],branch(0xCD870,MENU)+word(0xD503201F)*((len(old[0xCD870])-4)//4),'six independent item checkboxes with dedicated persisted mask; held control remains separate'),
         (0xDDEBC,branch(0xDDEBC,0xCD980),branch(0xDDEBC,GLOBAL_GATE),'any enabled item or vehicle can enter native shared record rendering'),
         (MENU,bytes.fromhex(layout[hex(MENU)]),extra_code(),'reviewed unreachable UI space for six controls and exact enabled-name predicate')]
     for start,end,code in [(0xCD900,0xCD950,collector_helper()),(0xCD950,0xCD980,late_helper()),(0xCD9A0,0xCDA00,render_helper())]:
