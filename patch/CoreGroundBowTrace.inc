@@ -73,7 +73,9 @@ static void BVTSample(uintptr_t context) {
     }
 }
 static NSDictionary *BVTStatus(bool events) {
-#ifdef CORE_GROUND_ESSENTIALS
+#ifdef CORE_GROUND_LATE_CAMERA
+    const int renderVersion=18;
+#elif defined(CORE_GROUND_ESSENTIALS)
     const int renderVersion=17;
 #else
     const int renderVersion=16;

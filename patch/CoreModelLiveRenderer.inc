@@ -738,7 +738,9 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-#ifdef CORE_GROUND_ESSENTIALS
+#ifdef CORE_GROUND_LATE_CAMERA
+    const int renderVersion=18;
+#elif defined(CORE_GROUND_ESSENTIALS)
     const int renderVersion=17;
 #elif defined(CORE_GROUND_BOW_TRACE)
     const int renderVersion=16;
@@ -765,6 +767,9 @@ static void CMLWriteStatus(NSURL *url) {
 #endif
 #ifdef CORE_GROUND_ESSENTIALS
         @"ground_item_whitelist":@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐"],@"ground_item_preference_offset":@"0x21",
+#endif
+#ifdef CORE_GROUND_LATE_CAMERA
+        @"ground_item_filter_stage":@"final-camera native projection flag and finite 0..600m render range; early finite candidates retained for re-projection",
 #endif
         @"render_version":@(renderVersion),@"projection_camera_snapshot":@YES,@"date":NSDate.date.description,@"frames_observed":CML_VALUE(frames),@"pose_updates":CML_VALUE(poseUpdates),
         @"independent_fill_switch":@(renderVersion>=13),@"fill_currently_requested":@(CMLFillRequested(CMLExpectedContext)),@"detailed_capture_enabled":@(atomic_load(&CMEnabled)),

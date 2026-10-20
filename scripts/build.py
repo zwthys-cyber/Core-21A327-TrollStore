@@ -184,6 +184,7 @@ def main():
     parser.add_argument("--weapon-display", action="store_true", help="Only ground explosive hunting bow/crossbow labels and independent held weapon text")
     parser.add_argument("--ground-bow-trace", action="store_true", help="Read-only local ground-bow source/cache/projection transitions; does not claim a range fix")
     parser.add_argument("--ground-essentials", action="store_true", help="Add only painkiller, level 3 backpack and energy drink to the existing two ground bows")
+    parser.add_argument("--ground-late-camera", action="store_true", help="Defer item screen and distance rejection to the existing final camera pass")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -204,6 +205,8 @@ def main():
         parser.error("--ground-bow-trace requires --weapon-display")
     if args.ground_essentials and not args.ground_bow_trace:
         parser.error("--ground-essentials requires --ground-bow-trace")
+    if args.ground_late_camera and not args.ground_essentials:
+        parser.error("--ground-late-camera requires --ground-essentials")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -231,6 +234,9 @@ def main():
     if args.ground_essentials:
         from ground_essentials import ground_essentials
         main_payload = ground_essentials(main_payload)
+    if args.ground_late_camera:
+        from ground_late_camera import ground_late_camera
+        main_payload = ground_late_camera(main_payload)
     if args.model_capture:
         main_payload = redirect_model_capture_import(main_payload)
     if args.model_render:
@@ -265,6 +271,8 @@ def main():
         common.append("-DCORE_GROUND_BOW_TRACE=1")
     if args.ground_essentials:
         common.append("-DCORE_GROUND_ESSENTIALS=1")
+    if args.ground_late_camera:
+        common.append("-DCORE_GROUND_LATE_CAMERA=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -330,6 +338,9 @@ def main():
     if args.ground_essentials:
         from ground_essentials import VERSION as essentials_version, PROFILE as essentials_profile
         info.update(CFBundleVersion="45", CoreModelRenderVersion="17", CoreGroundEssentialsVersion=essentials_version, CoreFeatureProfile=essentials_profile)
+    if args.ground_late_camera:
+        from ground_late_camera import VERSION as late_version, PROFILE as late_profile
+        info.update(CFBundleVersion="46", CoreModelRenderVersion="18", CoreGroundLateCameraVersion=late_version, CoreFeatureProfile=late_profile)
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -367,6 +378,9 @@ def main():
         artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v16-bow-source-trace.ipa"
     if args.ground_essentials:
         artifact = dist / "Core-17.0-21A327-TrollStore-model-render-v17-ground-essentials.ipa"
+    if args.ground_late_camera:
+        from ground_late_camera import ARTIFACT as late_artifact
+        artifact = dist / late_artifact
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -449,7 +463,12 @@ def main():
         report["feature_profile"]=essentials_profile
         report["ground_essentials"]=dict(version=1,ground_whitelist=["爆炸猎弓","十字弩","止痛药","三级包","可乐"],switch="shared persisted +0x21; 物资位置",range_filter_metres=600,device_range_verified=False,other_ground_items_enabled=False,native_source_position_projection_unchanged=True,changes=essentials_manifest())
         report["ground_bow_trace"]["main_executable_profile"]="v17 extends exact ground names and level 3 bag label; source/position/range/vehicle/enemy paths unchanged"
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=17 if args.ground_essentials else 16 if args.ground_bow_trace else 15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
+    if args.ground_late_camera:
+        from ground_late_camera import manifest as late_manifest, PROFILE as late_profile
+        report["feature_profile"]=late_profile
+        report["ground_late_camera"]=dict(version=1,changes=late_manifest(),filter_stage="existing final camera refresh, native re-projection, final screen flag and finite 0..600m render check",early_validation="finite nonnegative candidate distance only",extra_game_reads=False,retained_screen_positions=False,device_disappearance_fix_verified=False)
+        report["ground_bow_trace"]["main_executable_profile"]="v18 defers early item screen/range rejection to unchanged final-camera render gates; offscreen candidates may now remain cached"
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=18 if args.ground_late_camera else 17 if args.ground_essentials else 16 if args.ground_bow_trace else 15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,

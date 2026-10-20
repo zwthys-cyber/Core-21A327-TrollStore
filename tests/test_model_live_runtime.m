@@ -294,7 +294,12 @@ int main(void){@autoreleasepool {
     NSString *diagnosticFile=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:diagnosticFile]);pthread_mutex_unlock(&CMLMutex);NSDictionary *diagnosticStatus=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:diagnosticFile] options:0 error:NULL];NSArray *reportedFailures=diagnosticStatus[@"mesh_load_failure_samples"];assert(reportedFailures.count==16&&[diagnosticStatus[@"mesh_load_failure_samples_truncated"] boolValue]);[[NSFileManager defaultManager]removeItemAtPath:diagnosticFile error:NULL];
 #ifdef CORE_GROUND_ESSENTIALS
     NSArray *groundItems=diagnosticStatus[@"ground_item_whitelist"],*expectedGroundItems=@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐"];
-    assert([diagnosticStatus[@"render_version"] intValue]==17&&[groundItems isEqualToArray:expectedGroundItems]&&[diagnosticStatus[@"ground_item_preference_offset"] isEqualToString:@"0x21"]);
+    assert([groundItems isEqualToArray:expectedGroundItems]&&[diagnosticStatus[@"ground_item_preference_offset"] isEqualToString:@"0x21"]);
+#ifdef CORE_GROUND_LATE_CAMERA
+    assert([diagnosticStatus[@"render_version"] intValue]==18&&diagnosticStatus[@"ground_item_filter_stage"]);
+#else
+    assert([diagnosticStatus[@"render_version"] intValue]==17);
+#endif
 #endif
     Setup();CMLTarget *prefixTarget=CMLTargets.firstObject;assert(CMLStateBytes(GameClass,4096)==0x910);NSMutableData *schemaBytes=[CMLSchemas[@(GameClass)] mutableCopy];CMFSchema *bounded=schemaBytes.mutableBytes;bounded->hide_skin=(CMFBool){0x950,8,true};CMLSchemas[@(GameClass)]=schemaBytes;assert(CMLStateBytes(GameClass,4096)==0x960);
     NSMutableDictionary *state=[NSMutableDictionary dictionary];assert(CMLState(prefixTarget,0,state).length==0x960);bounded->predicted_lod=4092;CMLSchemas[@(GameClass)]=schemaBytes;assert(CMLStateBytes(GameClass,4096)==4096);[CMLSchemas removeAllObjects];assert(CMLStateBytes(GameClass,4096)==4096);
