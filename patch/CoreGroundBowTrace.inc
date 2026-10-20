@@ -76,6 +76,7 @@ static NSDictionary *BVTStatus(bool events) {
     NSMutableDictionary *out=[BVTReport mutableCopy]?:[NSMutableDictionary dictionary];uint64_t sample=[out[@"sample_monotonic_ns"] unsignedLongLongValue],now=CMNow();
     [out addEntriesFromDictionary:@{@"enabled":@YES,@"render_version":@16,@"date":NSDate.date.description,@"last_sample_age_ms":sample&&now>=sample?@((now-sample)/1000000ULL):(id)NSNull.null,@"overlap_or_stale_samples_skipped":@(BVTBusy),@"unavailable_samples":@(BVTFailures),@"local_bytes_total":@(BVTTotalBytes),@"sample_time_maximum_ns":@(BVTTimeMaximum),@"tracking_capacity_rejections":@(BVTCapacity),@"record_limit":@BVT_RECORD_LIMIT,@"metadata_limit":@BVT_METADATA_LIMIT,@"local_sample_byte_limit":@BVT_BYTE_LIMIT,
         @"scope":@"background safe copies of Core local ground source/cache vectors; no game reads, no render mutations, no retained screen positions; header/generation checks do not create an atomic game snapshot",
+        @"source_age_semantics":@"source acquisition retains its original throttle; sample time is not the source game frame age",
         @"target_id_semantics":@"process-local serial for a previously classified actor pointer; pointer reuse is not game identity verification; absent source data does not prove game/server absence",
         @"unknown_metadata_semantics":@"unreadable or over-budget metadata is unknown, not proof that there are no bows",
         @"distance_bucket_legend":@[@"unknown or invalid",@"0 through 20m",@"over 20 through 600m",@"over 600m"]}];
