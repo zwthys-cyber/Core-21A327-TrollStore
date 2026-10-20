@@ -1,8 +1,8 @@
 """Extend v16's ground whitelist using the original medicine/equipment names.
 
 Apply after weapon_display. Keep its native source, position, range and draw
-paths; replace only the exact-name predicate in the previously reviewed helper
-space and the shared ground-items checkbox label.
+paths; replace the exact-name predicate in the previously reviewed helper
+space, two display names and the shared ground-items checkbox label.
 """
 import struct
 from minimal_features import adrp,word

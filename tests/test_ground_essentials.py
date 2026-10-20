@@ -64,6 +64,22 @@ class GroundEssentialsTests(weapons.WeaponDisplayTests):
             mu.hook_add(UC_HOOK_CODE,hook);mu.emu_start(BASE+start,BASE+end,count=200)
             self.assertEqual(seen,expected)
 
+    def test_filter_rejects_other_loot_before_any_position_read(self):
+        mu=self.emulator();source,meta=STACK+0x2000,STACK+0x3000
+        destinations={BASE+0xD95C0,BASE+0xD9EF4}
+        mu.hook_add(UC_HOOK_CODE,lambda uc,a,s,_:uc.emu_stop() if a in destinations else None)
+        names=['爆炸猎弓','十字弩','止痛药','三级包','可乐','M416','饮料弹药','三 甲','三 头','二级包']
+        whitelist={'爆炸猎弓','十字弩','止痛药','三级包','可乐'}
+        for vehicle_on,ground_on,projectile,name,vehicle in product([0,1],[0,1],[0,1],names,[0,1]):
+            mu.mem_write(CONFIG,b'\xff'*0x500);mu.mem_write(CONFIG+0x21,bytes([ground_on,vehicle_on]))
+            mu.mem_write(source+8,struct.pack('<Q',meta));mu.mem_write(source+0x10,bytes([projectile]));self.metadata(mu,meta,name,vehicle=vehicle)
+            mu.reg_write(r.UC_ARM64_REG_X19,CONFIG);mu.reg_write(r.UC_ARM64_REG_X24,source)
+            # Five complete byte comparisons need a higher synthetic instruction
+            # ceiling than v15's unrolled two-name 120-instruction test cap.
+            mu.emu_start(BASE+0xD959C,BASE+0xD9EF8,count=700)
+            accepted=not projectile and (vehicle_on if vehicle else ground_on and name in whitelist)
+            self.assertEqual(mu.reg_read(r.UC_ARM64_REG_PC),BASE+(0xD95C0 if accepted else 0xD9EF4))
+
     def test_new_items_through_native_collection_and_render_with_range_switches_and_projection(self):
         rows=[('爆炸猎弓',450,0,0),('十字弩',600,0,0),('止痛药',30,0,0),('三级包',50,0,0),('吉普车',300,1,0),
               ('可乐',20,0,0),('三 甲',20,0,0),('三 头',20,0,0),('M416',20,0,0),('二级包',20,0,0),
