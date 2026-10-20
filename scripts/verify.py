@@ -99,6 +99,9 @@ def main(ipa):
         assert late_camera_version in (None,"1"), "Unknown ground late-camera protocol"
         assert (late_camera_version=="1")== (render_version=="18"), "Ground late-camera build identity mismatch"
         assert not late_camera_version or essentials_version=="1", "Ground late-camera requires selected essentials"
+        controls_version=info.get("CoreGroundItemControlsVersion")
+        assert controls_version in (None,"1"), "Unknown ground item controls protocol"
+        assert not controls_version or late_camera_version=="1", "Ground item controls requires final-camera build"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -127,6 +130,9 @@ def main(ipa):
         if late_camera_version:
             from ground_late_camera import ground_late_camera
             expected_main = ground_late_camera(expected_main)
+        if controls_version:
+            from ground_item_controls import ground_item_controls
+            expected_main = ground_item_controls(expected_main)
         if model_capture:
             expected_main = redirect_model_capture_import(expected_main)
         if model_render:
@@ -228,6 +234,8 @@ def main(ipa):
             from ground_essentials import PROFILE as expected_profile
         if late_camera_version:
             from ground_late_camera import PROFILE as expected_profile
+        if controls_version:
+            from ground_item_controls import PROFILE as expected_profile
         assert info["CoreFeatureProfile"] == expected_profile
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"

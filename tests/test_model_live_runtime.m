@@ -238,7 +238,13 @@ static void CheckActorTrace(void) {
 #ifdef CORE_GROUND_BOW_TRACE
 #include "test_ground_bow_trace.inc"
 #endif
+#ifdef CORE_GROUND_ITEM_CONTROLS
+#include "test_ground_item_controls.inc"
+#endif
 int main(void){@autoreleasepool {
+#ifdef CORE_GROUND_ITEM_CONTROLS
+    CheckGroundItemControls();
+#endif
 #ifdef CORE_GROUND_BOW_TRACE
     CheckGroundBowTrace();
 #endif
@@ -293,8 +299,13 @@ int main(void){@autoreleasepool {
     for(unsigned i=0;i<20;i++){unsupportedDescriptor.lod_address=LODAddress+(i+1)*0x10000;assert(!CMLLiveMesh(unsupported,&unsupportedDescriptor));}assert(CMLSchemaStore.meshFailures.count==16&&atomic_load(&CMLFailureSamplesTruncated));
     NSString *diagnosticFile=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];pthread_mutex_lock(&CMLMutex);CMLWriteStatus([NSURL fileURLWithPath:diagnosticFile]);pthread_mutex_unlock(&CMLMutex);NSDictionary *diagnosticStatus=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:diagnosticFile] options:0 error:NULL];NSArray *reportedFailures=diagnosticStatus[@"mesh_load_failure_samples"];assert(reportedFailures.count==16&&[diagnosticStatus[@"mesh_load_failure_samples_truncated"] boolValue]);[[NSFileManager defaultManager]removeItemAtPath:diagnosticFile error:NULL];
 #ifdef CORE_GROUND_ESSENTIALS
+#ifdef CORE_GROUND_ITEM_CONTROLS
+    NSArray *groundItems=diagnosticStatus[@"ground_item_whitelist"],*expectedGroundItems=@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐",@"空投"];
+    assert([groundItems isEqualToArray:expectedGroundItems]&&[diagnosticStatus[@"ground_item_controls"][@"independent"] boolValue]);
+#else
     NSArray *groundItems=diagnosticStatus[@"ground_item_whitelist"],*expectedGroundItems=@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐"];
     assert([groundItems isEqualToArray:expectedGroundItems]&&[diagnosticStatus[@"ground_item_preference_offset"] isEqualToString:@"0x21"]);
+#endif
 #ifdef CORE_GROUND_LATE_CAMERA
     assert([diagnosticStatus[@"render_version"] intValue]==18&&diagnosticStatus[@"ground_item_filter_stage"]);
 #else

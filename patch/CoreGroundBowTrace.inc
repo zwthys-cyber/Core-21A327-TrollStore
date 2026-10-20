@@ -42,6 +42,9 @@ static void BVTSample(uintptr_t context) {
     @autoreleasepool {
         NSData *source=nil,*cache=nil;uint8_t enabled=0,ready=0;
         bool copied=BVTRead(context+0x21,&enabled,1)&&BVTRead(context+0x3B8,&ready,1)&&BVTVector(context,0x3D8,32,&source)&&BVTVector(context,0x408,0x58,&cache);
+#ifdef CORE_GROUND_ITEM_CONTROLS
+        uint8_t explosiveEnabled=enabled,crossbowEnabled=0;copied=copied&&BVTRead(context+0x25,&crossbowEnabled,1);enabled=enabled||crossbowEnabled;
+#endif
         if(!copied||ready!=1){BVTFailures++;return;}
         NSMutableDictionary *memo=[NSMutableDictionary dictionary],*current=[NSMutableDictionary dictionary];NSMutableSet *sourceSeen=[NSMutableSet set],*cacheSeen=[NSMutableSet set];unsigned unknown=0,sourceCounts[2]={0},cacheCounts[2]={0},within20=0,beyond20=0,projected=0;float maximum=0;
         if(!BVTTargets)BVTTargets=[NSMutableDictionary dictionary];if(!BVTEvents)BVTEvents=[NSMutableArray array];
@@ -69,6 +72,9 @@ static void BVTSample(uintptr_t context) {
             if(!inSource&&!inCache&&old[@"last_seen_ns"]&&start-[old[@"last_seen_ns"] unsignedLongLongValue]>60000000000ULL)[BVTTargets removeObjectForKey:key];}
         uint64_t elapsed=CMNow()-start;if(elapsed>BVTTimeMaximum)BVTTimeMaximum=elapsed;
         BVTReport=@{@"samples":@(BVTSamples),@"sample_monotonic_ns":@(start),@"native_cache_age_ms":@((start-last)/1000000ULL),@"bow_switch_enabled":@(enabled!=0),@"source_records":@(source.length/32),@"cache_records":@(cache.length/0x58),@"metadata_decode_unknown":@(unknown),@"metadata_objects_sampled":@(memo.count),
+#ifdef CORE_GROUND_ITEM_CONTROLS
+            @"explosive_bow_switch_enabled":@(explosiveEnabled!=0),@"crossbow_switch_enabled":@(crossbowEnabled!=0),
+#endif
             @"source_explosive_bows":@(sourceCounts[0]),@"source_crossbows":@(sourceCounts[1]),@"cache_explosive_bows":@(cacheCounts[0]),@"cache_crossbows":@(cacheCounts[1]),@"cache_at_or_below_20m":@(within20),@"cache_over_20m_through_600m":@(beyond20),@"cache_native_projection_valid":@(projected),@"maximum_cached_distance_metres":@(maximum),@"sample_local_bytes":@(BVTBytes)};
     }
 }

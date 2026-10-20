@@ -691,6 +691,9 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
     if(pthread_mutex_trylock(&CMLDrawMutex)){atomic_fetch_add(&CMLStats.drawBusyFrames,1);return;}
     CMLDrawFrame(context);pthread_mutex_unlock(&CMLDrawMutex);
 }
+#ifdef CORE_GROUND_ITEM_CONTROLS
+#include "CoreGroundItemControls.inc"
+#endif
 #ifdef CORE_ACTOR_TRACE
 #include "CoreActorVisibilityTrace.inc"
 #endif
@@ -700,8 +703,15 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
 __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintptr_t entryReturn) {
     int saved=errno;uintptr_t caller=CMStripReturn((void *)entryReturn),base=CMBase;
     if(!base)base=(uintptr_t)_dyld_get_image_header(0);
+#ifdef CORE_GROUND_ITEM_CONTROLS
+    if(caller==base+0xCDB08){uintptr_t flags=CGIOpen((uintptr_t)context);errno=saved;return flags;}
+    if(caller==base+0xCDD48){CGICommit((uintptr_t)context);errno=saved;return 0;}
+#endif
     if(caller==base+0x21BC4||caller==base+0x2263C){
         uint64_t start=CMNow();bool fill=CMLFillRequested((uintptr_t)context);
+#ifdef CORE_GROUND_ITEM_CONTROLS
+        CGIEnsure();CGIApply((uintptr_t)context);
+#endif
         uint64_t previous=atomic_exchange(&CMLLastCallbackStart,start);unsigned mode=fill?2:1,previousMode=atomic_exchange(&CMLLastCallbackMode,mode);
         if(previous&&start>=previous&&previousMode==mode){uint64_t gap=start-previous;
             if(fill){atomic_fetch_add(&CMLStats.fillOnGapSamples,1);atomic_fetch_add(&CMLStats.fillOnGapTotal,gap);CMLMaximum(&CMLStats.fillOnGapMaximum,gap);}
@@ -763,10 +773,18 @@ static void CMLWriteStatus(NSURL *url) {
         @"ground_bow_trace":BVTStatus(false),@"ground_bow_trace_file":@"Core-ground-bow-status.json",
 #endif
 #ifdef CORE_WEAPON_DISPLAY
+#ifdef CORE_GROUND_ITEM_CONTROLS
+        @"ground_weapon_whitelist":@[@"爆炸猎弓",@"十字弩"],@"ground_weapon_preference_offsets":@{@"爆炸猎弓":@"0x21",@"十字弩":@"0x25"},@"held_weapon_preference_offset":@"0x24",
+#else
         @"ground_weapon_whitelist":@[@"爆炸猎弓",@"十字弩"],@"ground_weapon_preference_offset":@"0x21",@"held_weapon_preference_offset":@"0x24",
 #endif
+#endif
 #ifdef CORE_GROUND_ESSENTIALS
+#ifdef CORE_GROUND_ITEM_CONTROLS
+        @"ground_item_whitelist":@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐",@"空投"],@"ground_item_controls":CGIStatus(),
+#else
         @"ground_item_whitelist":@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐"],@"ground_item_preference_offset":@"0x21",
+#endif
 #endif
 #ifdef CORE_GROUND_LATE_CAMERA
         @"ground_item_filter_stage":@"final-camera native projection flag and finite 0..600m render range; early finite candidates retained for re-projection",

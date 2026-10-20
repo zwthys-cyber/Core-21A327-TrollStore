@@ -37,13 +37,15 @@ class GroundLateCameraTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Unexpected ground late-camera'):
                 ground_late_camera(data)
 
-    def run_frame(self,old_build=False,name='爆炸猎弓',world=(4000,0,0),first_camera=(0,0,0),last_camera=(0,0,0),first_yaw=-90,last_yaw=0,vehicle=False,enabled=True):
+    def run_frame(self,old_build=False,name='爆炸猎弓',world=(4000,0,0),first_camera=(0,0,0),last_camera=(0,0,0),first_yaw=-90,last_yaw=0,vehicle=False,enabled=True,preferences=None):
         # Each build gets identical source records and two camera states.
         saved=self.binary
         if old_build:self.binary=self.before
         mu=self.emulator();self.binary=saved
         source,meta,cache,tls,initialized=STACK+0x2000,STACK+0x4000,STACK+0x6000,STACK+0x1000,STACK+0x1800
         mu.mem_write(CONFIG,b'\0'*0x500);mu.mem_write(CONFIG,struct.pack('<3f',1,800,600));mu.mem_write(CONFIG+0x21,bytes([enabled,enabled]))
+        if preferences is not None:
+            for offset,value in preferences.items():mu.mem_write(CONFIG+offset,bytes([value]))
         mu.mem_write(CONFIG+0x3D8,struct.pack('<2Q',source,source+32));mu.mem_write(CONFIG+0x408,struct.pack('<2Q',cache,cache))
         mu.mem_write(source,struct.pack('<2Q',0x200000000,meta));mu.mem_write(source+0x10,bytes([0,vehicle]))
         essentials.weapons.WeaponDisplayTests.metadata(mu,meta,name,long=True,vehicle=vehicle)
@@ -66,7 +68,7 @@ class GroundLateCameraTests(unittest.TestCase):
             delta=ins&0x3ffffff
             if delta&0x2000000:delta-=0x4000000
             target=address+delta*4-BASE
-            if target in [0xCDA00,0xDA704]:return
+            if target in [0xCDA00,0xDA704] or target in getattr(self,'native_calls',()):return
             if target==0x123D2C:uc.reg_write(r.UC_ARM64_REG_D0,struct.unpack('<Q',struct.pack('<d',5))[0])
             elif target==0xDA474:
                 reads.append(uc.reg_read(r.UC_ARM64_REG_X0))
