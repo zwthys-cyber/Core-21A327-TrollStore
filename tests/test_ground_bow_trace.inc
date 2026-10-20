@@ -33,6 +33,12 @@ static void CheckGroundBowTrace(void) {
     NSMutableDictionary *memo=[NSMutableDictionary dictionary];for(unsigned i=0;i<BVT_METADATA_LIMIT;i++)memo[@(i)]=@0;unsigned unknown=0;assert(BVTClassify((uintptr_t)BowMetas,memo,&unknown)==-1&&unknown==1);
     assert(BVTBucket(20)==1&&BVTBucket(20.01f)==2&&BVTBucket(50)==2&&BVTBucket(600)==2&&BVTBucket(600.01f)==3&&!BVTBucket(NAN));
     BowSetup();for(unsigned i=0;i<70;i++){float distance=i%2?30:10;memcpy(BowRecords+0x38,&distance,4);BowSample();}assert(BVTEvents.count==BVT_EVENT_LIMIT);
-    NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];BVTWriteStatus([NSURL fileURLWithPath:path]);NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:path] options:0 error:NULL];NSArray *reportedEvents=report[@"stage_events"];assert([report[@"render_version"] intValue]==16&&reportedEvents.count==BVT_EVENT_LIMIT);[[NSFileManager defaultManager]removeItemAtPath:path error:NULL];
+    NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];BVTWriteStatus([NSURL fileURLWithPath:path]);NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:path] options:0 error:NULL];NSArray *reportedEvents=report[@"stage_events"];
+#ifdef CORE_GROUND_ESSENTIALS
+    assert([report[@"render_version"] intValue]==17);
+#else
+    assert([report[@"render_version"] intValue]==16);
+#endif
+    assert(reportedEvents.count==BVT_EVENT_LIMIT);[[NSFileManager defaultManager]removeItemAtPath:path error:NULL];
     puts("PASS: bow source/cache/projection transitions distinguish 20/30/50/600m; disappearing cache never becomes a current old position; short/long exact metadata, unknown metadata, overlap rejection, memory/vector/history limits and zero game-reader/UI work");
 }

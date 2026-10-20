@@ -33,7 +33,8 @@ for i in d.disasm(original[0x4000:0x740000],0x4000):
             address=page[1]+i.operands[2].imm
             refs.append({'adrp':hex(page[0]),'add':hex(i.address),'literal':hex(address),'text':strings[hex(address)]})
 (out/'literal-references.json').write_text(json.dumps(refs,ensure_ascii=False,indent=2)+'\n')
-neighbors={};cursor=original.rfind(b'\0',0x745D00,0x745D10)+1
+neighbors={};cursor=original.rfind(b'\0',0x745C00,0x745D10)+1
+assert 0x745C00<cursor<=0x745D10
 while cursor<0x745E70:
     end=original.find(b'\0',cursor)
     if end<0:break
