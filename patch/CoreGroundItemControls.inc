@@ -1,6 +1,7 @@
 // Six dedicated app preferences. UI edits only this byte array, then commits
 // one mask. Native collector mirrors do not use the old coupled enum storage.
-static const unsigned CGIOffsets[6]={0x21,0x25,0x26,0x27,0x28,0x29};
+// Do not use +0x28: it is still an upstream actor-filter setting.
+static const unsigned CGIOffsets[6]={0x21,0x25,0x26,0x27,0x2A,0x29};
 static uint8_t CGIEditFlags[6];
 static atomic_uint CGIMask=63;
 static NSUserDefaults *CGIPreferences;

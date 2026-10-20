@@ -18,7 +18,7 @@ OPEN_RETURN=MENU+8
 COMMIT_RETURN=COMMIT+8
 # Slots are only local mirrors. Dedicated NSUserDefaults mask is authoritative;
 # old enum/preference serialization cannot couple the new item controls.
-ITEMS=[('爆炸猎弓',0x744C4A,0x21),('十字弩',0x744C30,0x25),('止痛药',0x745D94,0x26),('三级包',0xCDAB0,0x27),('可乐',0x745D80,0x28),('空投',0x745A00,0x29)]
+ITEMS=[('爆炸猎弓',0x744C4A,0x21),('十字弩',0x744C30,0x25),('止痛药',0x745D94,0x26),('三级包',0xCDAB0,0x27),('可乐',0x745D80,0x2A),('空投',0x745A00,0x29)]
 
 
 def menu():
@@ -73,7 +73,7 @@ def render_helper():
 
 def extra_code():
     gate=Code(GLOBAL_GATE)
-    for register,offset in [(8,0x21),(9,0x22),(10,0x25),(11,0x26),(13,0x27),(14,0x28),(15,0x29)]:gate.put(_ldrb(register,27,offset))
+    for register,offset in [(8,0x21),(9,0x22),(10,0x25),(11,0x26),(13,0x27),(14,0x2A),(15,0x29)]:gate.put(_ldrb(register,27,offset))
     for register in [9,10,11,13,14,15]:gate.put(word(0x2A000000|(register<<16)|(8<<5)|8))
     gate.put(word(0x7100011F));gate.put(word(0x1A9F07E8));gate.jump(0xDDEC0)
     commit=word(0xA9BF7BFD)+call(COMMIT+4,DRAW_IMPORT_STUB)+word(0xA8C17BFD)+word(0xD65F03C0)
