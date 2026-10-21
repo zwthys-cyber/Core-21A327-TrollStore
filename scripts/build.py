@@ -186,6 +186,7 @@ def main():
     parser.add_argument("--ground-essentials", action="store_true", help="Add only painkiller, level 3 backpack and energy drink to the existing two ground bows")
     parser.add_argument("--ground-late-camera", action="store_true", help="Defer item screen and distance rejection to the existing final camera pass")
     parser.add_argument("--ground-item-controls", action="store_true", help="Add airdrop and six independent saved item checkboxes")
+    parser.add_argument("--source-scan-trace", action="store_true", help="Observe original actor snapshot and read failures without extra game reads")
     parser.add_argument("--input", type=Path, default=ROOT / "input/Core.ipa")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--clang", default="clang-21")
@@ -210,6 +211,8 @@ def main():
         parser.error("--ground-late-camera requires --ground-essentials")
     if args.ground_item_controls and not args.ground_late_camera:
         parser.error("--ground-item-controls requires --ground-late-camera")
+    if args.source_scan_trace and not args.ground_item_controls:
+        parser.error("--source-scan-trace requires --ground-item-controls")
     if args.model_render:
         args.model_capture=True
     original_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
@@ -243,6 +246,9 @@ def main():
     if args.ground_item_controls:
         from ground_item_controls import ground_item_controls
         main_payload = ground_item_controls(main_payload)
+    if args.source_scan_trace:
+        from source_scan_trace import source_scan_trace
+        main_payload = source_scan_trace(main_payload)
     if args.model_capture:
         main_payload = redirect_model_capture_import(main_payload)
     if args.model_render:
@@ -281,6 +287,8 @@ def main():
         common.append("-DCORE_GROUND_LATE_CAMERA=1")
     if args.ground_item_controls:
         common.append("-DCORE_GROUND_ITEM_CONTROLS=1")
+    if args.source_scan_trace:
+        common.append("-DCORE_SOURCE_SCAN_TRACE=1")
     if sys.platform == "darwin":
         sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
         run("xcrun", "--sdk", "iphoneos", "clang", *common, "-isysroot", sdk, "-dynamiclib",
@@ -352,6 +360,9 @@ def main():
     if args.ground_item_controls:
         from ground_item_controls import VERSION as controls_version, PROFILE as controls_profile
         info.update(CoreGroundItemControlsVersion=controls_version, CoreFeatureProfile=controls_profile)
+    if args.source_scan_trace:
+        from source_scan_trace import VERSION as scan_version, PROFILE as scan_profile
+        info.update(CFBundleVersion="47", CoreModelRenderVersion="19", CoreSourceScanTraceVersion=scan_version, CoreFeatureProfile=scan_profile)
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     shutil.rmtree(app / "_CodeSignature", ignore_errors=True)
     (app / "embedded.mobileprovision").unlink(missing_ok=True)
@@ -395,6 +406,9 @@ def main():
     if args.ground_item_controls:
         from ground_item_controls import ARTIFACT as controls_artifact
         artifact = dist / controls_artifact
+    if args.source_scan_trace:
+        from source_scan_trace import ARTIFACT as scan_artifact
+        artifact = dist / scan_artifact
     with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted((work / "Payload").rglob("*")):
             if path.is_file():
@@ -486,7 +500,11 @@ def main():
         from ground_item_controls import manifest as controls_manifest, PROFILE as controls_profile, ITEMS
         report["feature_profile"]=controls_profile
         report["ground_item_controls"]=dict(version=1,ground_whitelist=[name for name,label,offset in ITEMS],independent=True,preference_key="CoreGroundItemsMaskV1",default_mask=63,ground_master_required=False,mirror_offsets={name:hex(offset) for name,label,offset in ITEMS},changes=controls_manifest(),device_range_verified=False)
-    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=18 if args.ground_late_camera else 17 if args.ground_essentials else 16 if args.ground_bow_trace else 15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
+    if args.source_scan_trace:
+        from source_scan_trace import manifest as scan_manifest, PROFILE as scan_profile
+        report["feature_profile"]=scan_profile
+        report["source_scan_trace"]=dict(version=1,changes=scan_manifest(),watch_limit=256,record_limit=50000,extra_game_reads=False,extra_retries=False,source_throttle_unchanged=True,retained_positions=False,device_disappearance_fix_verified=False)
+    report["model_runtime_renderer"]=dict(enabled=args.model_render,render_version=19 if args.source_scan_trace else 18 if args.ground_late_camera else 17 if args.ground_essentials else 16 if args.ground_bow_trace else 15 if args.actor_trace else 14 if args.fill_work else 13 if args.overlay_latency else 12 if args.nearby_vehicles else 11 if args.model_render else 0,
         draw_calls=["0x21BC0","0x22638"],native_original_draw="0xDB144",native_fill="0x13C8AC",
         continuous_sampling=True,pixel_grid_step=1,occlusion="Core local geometry ray query at each covered pixel",
         target_limit=24,mesh_cache_bytes=24*1024*1024,mesh_cache_entries=512,mesh_cache_eviction="least recently used, excluding meshes retained by active targets; stale target metadata released after two seconds",pixel_limit=4*1024*1024,span_limit=4096,

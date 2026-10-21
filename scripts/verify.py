@@ -69,39 +69,43 @@ def main(ipa):
         assert capture_version in (None, "1", "2", "3", "4", "5", "6", "7"), "Unknown capture protocol"
         model_capture = capture_version is not None
         render_version=info.get("CoreModelRenderVersion")
-        assert render_version in (None,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18"), "Unknown renderer protocol"
+        assert render_version in (None,"1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19"), "Unknown renderer protocol"
         model_render=render_version is not None
         assert not model_render or capture_version=="7"
         vehicle_version = info.get("CoreNearbyVehiclesVersion")
         assert vehicle_version in (None, "1"), "Unknown vehicle marker protocol"
-        assert (vehicle_version == "1") == (render_version in ("12", "13", "14", "15", "16", "17", "18")), "Vehicle build identity mismatch"
+        assert (vehicle_version == "1") == (render_version in ("12", "13", "14", "15", "16", "17", "18", "19")), "Vehicle build identity mismatch"
         latency_version = info.get("CoreOverlayLatencyVersion")
         assert latency_version in (None, "1"), "Unknown overlay-latency protocol"
-        assert (latency_version == "1") == (render_version in ("13", "14", "15", "16", "17", "18")), "Latency build identity mismatch"
+        assert (latency_version == "1") == (render_version in ("13", "14", "15", "16", "17", "18", "19")), "Latency build identity mismatch"
         work_version = info.get("CoreFillWorkVersion")
         assert work_version in (None, "1"), "Unknown fill-work protocol"
-        assert (work_version == "1") == (render_version in ("14", "15", "16", "17", "18")), "Fill-work build identity mismatch"
+        assert (work_version == "1") == (render_version in ("14", "15", "16", "17", "18", "19")), "Fill-work build identity mismatch"
         actor_trace_version=info.get("CoreActorVisibilityTraceVersion")
         assert actor_trace_version in (None,"1"), "Unknown actor-trace protocol"
-        assert (actor_trace_version=="1")== (render_version in ("15","16","17","18")), "Actor-trace build identity mismatch"
+        assert (actor_trace_version=="1")== (render_version in ("15","16","17","18","19")), "Actor-trace build identity mismatch"
         weapon_version=info.get("CoreWeaponDisplayVersion")
         assert weapon_version in (None,"1"), "Unknown weapon display protocol"
         assert not weapon_version or actor_trace_version=="1", "Weapon display requires actor-trace build"
         bow_trace_version=info.get("CoreGroundBowTraceVersion")
         assert bow_trace_version in (None,"1"), "Unknown ground bow trace protocol"
-        assert (bow_trace_version=="1")== (render_version in ("16","17","18")), "Ground-bow trace build identity mismatch"
+        assert (bow_trace_version=="1")== (render_version in ("16","17","18","19")), "Ground-bow trace build identity mismatch"
         assert not bow_trace_version or weapon_version=="1", "Ground-bow trace requires selective weapon display"
         essentials_version=info.get("CoreGroundEssentialsVersion")
         assert essentials_version in (None,"1"), "Unknown ground essentials protocol"
-        assert (essentials_version=="1")== (render_version in ("17","18")), "Ground essentials build identity mismatch"
+        assert (essentials_version=="1")== (render_version in ("17","18","19")), "Ground essentials build identity mismatch"
         assert not essentials_version or bow_trace_version=="1", "Ground essentials requires bow source trace"
         late_camera_version=info.get("CoreGroundLateCameraVersion")
         assert late_camera_version in (None,"1"), "Unknown ground late-camera protocol"
-        assert (late_camera_version=="1")== (render_version=="18"), "Ground late-camera build identity mismatch"
+        assert (late_camera_version=="1")== (render_version in ("18","19")), "Ground late-camera build identity mismatch"
         assert not late_camera_version or essentials_version=="1", "Ground late-camera requires selected essentials"
         controls_version=info.get("CoreGroundItemControlsVersion")
         assert controls_version in (None,"1"), "Unknown ground item controls protocol"
         assert not controls_version or late_camera_version=="1", "Ground item controls requires final-camera build"
+        scan_version=info.get("CoreSourceScanTraceVersion")
+        assert scan_version in (None,"1"), "Unknown source scan trace protocol"
+        assert (scan_version=="1")== (render_version=="19"), "Source scan trace identity mismatch"
+        assert not scan_version or controls_version=="1", "Source scan trace requires independent controls"
         libs = [name for name in archive.namelist() if name.endswith(".dylib")]
         paths = []
         uuid = None
@@ -133,6 +137,9 @@ def main(ipa):
         if controls_version:
             from ground_item_controls import ground_item_controls
             expected_main = ground_item_controls(expected_main)
+        if scan_version:
+            from source_scan_trace import source_scan_trace
+            expected_main = source_scan_trace(expected_main)
         if model_capture:
             expected_main = redirect_model_capture_import(expected_main)
         if model_render:
@@ -180,6 +187,8 @@ def main(ipa):
             assert b"_CoreModelCaptureStartup" in exported and b"_CoreModelBzeroCapture" in exported
         if model_render:
             assert b"_CoreModelRenderDispatch" in exported and b"_cmdraw" in exported
+        if scan_version:
+            assert b"_CoreSourceNativeDispatch" in exported
         assert b"_CoreRemoteTraceTestScope" not in exported, "Test scope override leaked into device build"
         entitlements = signature(main)
         expected_entitlements = plistlib.loads((ROOT / "patch/TrollStore.entitlements.plist").read_bytes())
@@ -221,7 +230,7 @@ def main(ipa):
         assert info["CoreBootCacheSupportedBuild"] == "21A327"
         expected_build = {"1":"21", "2":"22", "3":"23", "4":"24", "5":"25", "6":"26", "7":"27"}.get(capture_version, BUNDLE_BUILD)
         if model_render:
-            expected_build={"1":"28","2":"29","3":"30","4":"31","5":"32","6":"33","7":"34","8":"35","9":"37","10":"38","11":"39","12":"40","13":"41","14":"42","15":"43","16":"44","17":"45","18":"46"}[render_version]
+            expected_build={"1":"28","2":"29","3":"30","4":"31","5":"32","6":"33","7":"34","8":"35","9":"37","10":"38","11":"39","12":"40","13":"41","14":"42","15":"43","16":"44","17":"45","18":"46","19":"47"}[render_version]
         assert info["CFBundleVersion"] == expected_build and info["CoreBootCachePatchVersion"] == str(PATCH_VERSION)
         expected_profile = PROFILE
         if vehicle_version:
@@ -236,6 +245,8 @@ def main(ipa):
             from ground_late_camera import PROFILE as expected_profile
         if controls_version:
             from ground_item_controls import PROFILE as expected_profile
+        if scan_version:
+            from source_scan_trace import PROFILE as expected_profile
         assert info["CoreFeatureProfile"] == expected_profile
         assert info["CoreRemoteTraceVersion"] == "1"
         assert info["CoreLocalLicenseGate"] == "disabled-startup"

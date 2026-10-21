@@ -90,19 +90,29 @@ def check(ipa):
         passed=False
         mu.reg_write(r.UC_ARM64_REG_SP,sp)
         mu.reg_write(r.UC_ARM64_REG_X0,0x100C54270)
-        mu.reg_write(r.UC_ARM64_REG_X1,0xBAD)
+        mu.reg_write(r.UC_ARM64_REG_X1,513)
+        mu.reg_write(r.UC_ARM64_REG_X2,4096)
+        mu.reg_write(r.UC_ARM64_REG_X8,stack+0x1800)
         mu.reg_write(r.UC_ARM64_REG_X30,0x100021BC4)
+        source_bridge='_CoreSourceNativeDispatch' in symbols
+        target=symbols['_CoreSourceNativeDispatch' if source_bridge else '_CoreModelRenderDispatch']
         def render_step(uc,address,size,_):
             nonlocal passed
-            if address==slide+symbols['_CoreModelRenderDispatch']:
+            if address==slide+target:
                 assert uc.reg_read(r.UC_ARM64_REG_X0)==0x100C54270
-                assert uc.reg_read(r.UC_ARM64_REG_X1)==0x100021BC4
+                if source_bridge:
+                    assert uc.reg_read(r.UC_ARM64_REG_X1)==513
+                    assert uc.reg_read(r.UC_ARM64_REG_X2)==4096
+                    assert uc.reg_read(r.UC_ARM64_REG_X3)==stack+0x1800
+                    assert uc.reg_read(r.UC_ARM64_REG_X4)==0x100021BC4
+                else:assert uc.reg_read(r.UC_ARM64_REG_X1)==0x100021BC4
                 assert uc.reg_read(r.UC_ARM64_REG_X30)==0x100021BC4
                 assert uc.reg_read(r.UC_ARM64_REG_SP)==sp
                 passed=True;uc.emu_stop()
         mu.hook_add(UC_HOOK_CODE,render_step)
         mu.emu_start(slide+symbols['_cmdraw'],slide+extent,count=24)
         assert passed,'Renderer import lost the native context or LR'
+        if source_bridge:print('PASS: compiled source veneer also retains original x1/x2 and indirect result x8 before any C prologue')
         print('PASS: compiled render veneer passes native context and caller LR before any prologue; live draw body remains separate')
     print("PASS: compiled ARM64 entry retains caller LR, FP, remote address, arguments and SP; forwarding stack <=512 bytes; large sampler remains separate")
 

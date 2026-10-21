@@ -17,6 +17,9 @@ static uint8_t AssetData[1048],RenderData[16],LODArray[8],LODData[1024],IndexDat
 static uint8_t VertexData[96],WeightData[24];static uint16_t TriangleData[3]={0,1,2},BonePalette=0;static uint32_t VertexStride=24;
 static uint8_t ChildData[4096];static uint32_t WideTriangleData[3]={0,1,2};
 static uint64_t TestTime=10000000000ULL;
+#ifdef CORE_SOURCE_SCAN_TRACE
+static double ScanNativeStamp=100;
+#endif
 static uint64_t NativeDelay;
 #ifdef CORE_FILL_WORK
 static bool LargeStatic;
@@ -40,6 +43,9 @@ static kern_return_t SelfRead(vm_map_t task,vm_address_t address,vm_size_t size,
     if(address==TestBase+0xBD4720)value=0xAA55;
     else if(address==TestBase+0xBD4978)value=0xAA55^48;
     else if(address==TestBase+0xC54459)value=GeometryReady;
+#ifdef CORE_SOURCE_SCAN_TRACE
+    else if(address==TestBase+0xC4E158){memcpy((void *)dest,&ScanNativeStamp,8);*copied=8;return KERN_SUCCESS;}
+#endif
     else if(address==TestBase+0xC15EC8&&size==24){uintptr_t scenes[3]={(uintptr_t)SceneData[0],(uintptr_t)SceneData[1],(uintptr_t)SceneData[2]};memcpy((void *)dest,scenes,24);*copied=24;return KERN_SUCCESS;}
     else if(address>=(uintptr_t)SceneData&&address<(uintptr_t)SceneData+sizeof(SceneData)){
         if(UnreadableScene||size!=8||(address-(uintptr_t)SceneData)%160!=8)return KERN_INVALID_ADDRESS;
@@ -116,6 +122,9 @@ static void Original(void *p){assert(p==Context);OriginalCalls++;TestTime+=Nativ
 static void *List(void){return DrawList;}
 static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y>points[1].y);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
+#ifdef CORE_SOURCE_SCAN_TRACE
+    memset(&CSSLatest,0,sizeof(CSSLatest));memset(CSSWatches,0,sizeof(CSSWatches));CSSWatchCount=0;CSSReads=(CSSReadTracking){0};CSSOriginalSnapshot=NULL;atomic_store(&CSSSequence,0);atomic_store(&CSSDropped,0);ScanNativeStamp=100;
+#endif
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
     TestTime=10000000000ULL;NativeDelay=0;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;
     GeometryReady=true;
@@ -241,7 +250,13 @@ static void CheckActorTrace(void) {
 #ifdef CORE_GROUND_ITEM_CONTROLS
 #include "test_ground_item_controls.inc"
 #endif
+#ifdef CORE_SOURCE_SCAN_TRACE
+#include "test_source_scan.inc"
+#endif
 int main(void){@autoreleasepool {
+#ifdef CORE_SOURCE_SCAN_TRACE
+    CheckSourceScan();
+#endif
 #ifdef CORE_GROUND_ITEM_CONTROLS
     CheckGroundItemControls();
 #endif
@@ -306,7 +321,9 @@ int main(void){@autoreleasepool {
     NSArray *groundItems=diagnosticStatus[@"ground_item_whitelist"],*expectedGroundItems=@[@"爆炸猎弓",@"十字弩",@"止痛药",@"三级包",@"可乐"];
     assert([groundItems isEqualToArray:expectedGroundItems]&&[diagnosticStatus[@"ground_item_preference_offset"] isEqualToString:@"0x21"]);
 #endif
-#ifdef CORE_GROUND_LATE_CAMERA
+#ifdef CORE_SOURCE_SCAN_TRACE
+    assert([diagnosticStatus[@"render_version"] intValue]==19&&diagnosticStatus[@"ground_item_filter_stage"]);
+#elif defined(CORE_GROUND_LATE_CAMERA)
     assert([diagnosticStatus[@"render_version"] intValue]==18&&diagnosticStatus[@"ground_item_filter_stage"]);
 #else
     assert([diagnosticStatus[@"render_version"] intValue]==17);

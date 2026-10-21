@@ -698,6 +698,9 @@ __attribute__((noinline)) static void CMLDraw(uintptr_t context) {
 #include "CoreActorVisibilityTrace.inc"
 #endif
 #ifdef CORE_GROUND_BOW_TRACE
+#ifdef CORE_SOURCE_SCAN_TRACE
+#include "CoreSourceScanTrace.inc"
+#endif
 #include "CoreGroundBowTrace.inc"
 #endif
 __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintptr_t entryReturn) {
@@ -733,8 +736,22 @@ __attribute__((noinline)) uintptr_t CoreModelRenderDispatch(void *context,uintpt
     }
     uintptr_t result=(uintptr_t)getpid();errno=saved;return result;
 }
+#ifdef CORE_SOURCE_SCAN_TRACE
+// Separate entry keeps all existing render/UI dispatch signatures unchanged.
+__attribute__((noinline)) uintptr_t CoreSourceNativeDispatch(uint64_t argument0,uint64_t argument1,size_t argument2,uintptr_t indirect,uintptr_t entryReturn) {
+    uintptr_t caller=CMStripReturn((void *)entryReturn);
+    if(caller==CMBase+0xD5408){CSSSnapshot(argument0,(size_t)argument1,(CSSVector *)indirect);return 0;}
+    if(caller==CMBase+0xD63E4)return CSSRead(argument0,(void *)(uintptr_t)argument1,argument2,false);
+    if(caller==CMBase+0xD6414)return CSSRead(argument0,(void *)(uintptr_t)argument1,argument2,true);
+    return CoreModelRenderDispatch((void *)(uintptr_t)argument0,entryReturn);
+}
+#endif
 #if defined(__arm64__) && !defined(CORE_MODEL_CAPTURE_TESTING)
+#ifdef CORE_SOURCE_SCAN_TRACE
+__attribute__((naked)) pid_t cmdraw(void) { __asm__ volatile("mov x3, x8\nmov x4, x30\nb _CoreSourceNativeDispatch\n"); }
+#else
 __attribute__((naked)) pid_t cmdraw(void) { __asm__ volatile("mov x1, x30\nb _CoreModelRenderDispatch\n"); }
+#endif
 #endif
 static void CMLWriteStatus(NSURL *url) {
 #define CML_VALUE(field) @(atomic_load(&CMLStats.field))
@@ -748,7 +765,9 @@ static void CMLWriteStatus(NSURL *url) {
             @"forced_lod_found":@(s.forced_found),@"forced_lod_offset":@(s.forced_lod),@"predicted_lod_found":@(s.predicted_found),@"predicted_lod_offset":@(s.predicted_lod),@"predicted_lod_source":@(s.predicted_source),@"predicted_lod_getter":@(s.predicted_getter),
             @"class_names":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:[NSString stringWithUTF8String:s.class_names[j]]];a;}),
             @"class_fields_walked":({NSMutableArray *a=[NSMutableArray array];for(uint32_t j=0;j<s.classes&&j<12;j++)[a addObject:@(s.class_fields[j])];a;})}];}
-#ifdef CORE_GROUND_LATE_CAMERA
+#ifdef CORE_SOURCE_SCAN_TRACE
+    const int renderVersion=19;
+#elif defined(CORE_GROUND_LATE_CAMERA)
     const int renderVersion=18;
 #elif defined(CORE_GROUND_ESSENTIALS)
     const int renderVersion=17;

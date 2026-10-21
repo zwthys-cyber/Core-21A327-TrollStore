@@ -34,7 +34,9 @@ static void CheckGroundBowTrace(void) {
     assert(BVTBucket(20)==1&&BVTBucket(20.01f)==2&&BVTBucket(50)==2&&BVTBucket(600)==2&&BVTBucket(600.01f)==3&&!BVTBucket(NAN));
     BowSetup();for(unsigned i=0;i<70;i++){float distance=i%2?30:10;memcpy(BowRecords+0x38,&distance,4);BowSample();}assert(BVTEvents.count==BVT_EVENT_LIMIT);
     NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];BVTWriteStatus([NSURL fileURLWithPath:path]);NSDictionary *report=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:path] options:0 error:NULL];NSArray *reportedEvents=report[@"stage_events"];
-#ifdef CORE_GROUND_LATE_CAMERA
+#ifdef CORE_SOURCE_SCAN_TRACE
+    assert([report[@"render_version"] intValue]==19);
+#elif defined(CORE_GROUND_LATE_CAMERA)
     assert([report[@"render_version"] intValue]==18);
 #elif defined(CORE_GROUND_ESSENTIALS)
     assert([report[@"render_version"] intValue]==17);

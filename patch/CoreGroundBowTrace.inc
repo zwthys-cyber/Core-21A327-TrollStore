@@ -46,15 +46,26 @@ static void BVTSample(uintptr_t context) {
         uint8_t explosiveEnabled=enabled,crossbowEnabled=0;copied=copied&&BVTRead(context+0x25,&crossbowEnabled,1);enabled=enabled||crossbowEnabled;
 #endif
         if(!copied||ready!=1){BVTFailures++;return;}
+#ifdef CORE_SOURCE_SCAN_TRACE
+        CSSScan scan={0};double nativeStamp=0;bool scanCopied=CSSCopy(&scan),stampRead=BVTRead(CMBase+0xC4E158,&nativeStamp,sizeof(nativeStamp))&&isfinite(nativeStamp);
+        NSMutableSet *sourceAny=[NSMutableSet set],*cacheAny=[NSMutableSet set];
+#endif
         NSMutableDictionary *memo=[NSMutableDictionary dictionary],*current=[NSMutableDictionary dictionary];NSMutableSet *sourceSeen=[NSMutableSet set],*cacheSeen=[NSMutableSet set];unsigned unknown=0,sourceCounts[2]={0},cacheCounts[2]={0},within20=0,beyond20=0,projected=0;float maximum=0;
         if(!BVTTargets)BVTTargets=[NSMutableDictionary dictionary];if(!BVTEvents)BVTEvents=[NSMutableArray array];
         const uint8_t *s=source.bytes,*c=cache.bytes;
         for(size_t p=0;p<cache.length;p+=0x58){uint64_t actor=0,metadata=0;float distance=0;memcpy(&actor,c+p,8);memcpy(&metadata,c+p+0x10,8);memcpy(&distance,c+p+0x38,4);
+#ifdef CORE_SOURCE_SCAN_TRACE
+            if(CMRemoteRange(actor,8))[cacheAny addObject:@(actor)];
+#endif
             if(!CMRemoteRange(actor,8)||c[p+8]||c[p+0x4D])continue;NSNumber *key=@(actor);[cacheSeen addObject:key];int kind=BVTClassify(metadata,memo,&unknown);
             if(kind<=0&&!BVTTargets[key])continue;unsigned bucket=BVTBucket(distance);bool verified=kind>0;
             if(verified){cacheCounts[kind-1]++;if(bucket==1)within20++;else if(bucket==2)beyond20++;if(c[p+0x50])projected++;if(bucket&&distance>maximum)maximum=distance;}
             current[key]=[@{@"cache":@YES,@"kind":@(kind),@"classified":@(verified),@"projected":@(c[p+0x50]!=0),@"bucket":@(bucket),@"distance":bucket?@(distance):(id)NSNull.null} mutableCopy];}
-        for(size_t p=0;p<source.length;p+=32){uint64_t actor=0,metadata=0;memcpy(&actor,s+p,8);memcpy(&metadata,s+p+8,8);if(!CMRemoteRange(actor,8)||s[p+0x10]||s[p+0x11])continue;
+        for(size_t p=0;p<source.length;p+=32){uint64_t actor=0,metadata=0;memcpy(&actor,s+p,8);memcpy(&metadata,s+p+8,8);
+#ifdef CORE_SOURCE_SCAN_TRACE
+            if(CMRemoteRange(actor,8))[sourceAny addObject:@(actor)];
+#endif
+            if(!CMRemoteRange(actor,8)||s[p+0x10]||s[p+0x11])continue;
             NSNumber *key=@(actor);[sourceSeen addObject:key];int kind=BVTClassify(metadata,memo,&unknown);if(kind>0)sourceCounts[kind-1]++;
             if(kind<=0&&!BVTTargets[key]&&!current[key])continue;NSMutableDictionary *entry=current[key]?:[NSMutableDictionary dictionary];entry[@"source"]=@YES;if(kind>0){entry[@"kind"]=@(kind);entry[@"classified"]=@YES;}current[key]=entry;}
         if(atomic_load(&CAVNativeActive)||generation!=atomic_load(&CAVGeneration)){BVTBusy++;return;}
@@ -65,13 +76,27 @@ static void BVTSample(uintptr_t context) {
             if(kind>0)old[@"name"]=kind==1?@"爆炸猎弓":@"十字弩";
             bool inSource=[sourceSeen containsObject:key],inCache=[cacheSeen containsObject:key],validProjection=[sample[@"projected"] boolValue],classified=[sample[@"classified"] boolValue];unsigned bucket=[sample[@"bucket"] unsignedIntValue];
             bool changed=!old[@"source_present"]||[old[@"source_present"] boolValue]!=inSource||[old[@"cache_present"] boolValue]!=inCache||[old[@"native_projection_valid"] boolValue]!=validProjection||[old[@"classification_currently_verified"] boolValue]!=classified||[old[@"distance_bucket"] unsignedIntValue]!=bucket;
+#ifdef CORE_SOURCE_SCAN_TRACE
+            NSString *rawState=CSSState(&scan,scanCopied,stampRead,nativeStamp,key.unsignedLongLongValue);bool sourcePointer=[sourceAny containsObject:key],cachePointer=[cacheAny containsObject:key];
+            changed=changed||![old[@"raw_actor_copy_state"] isEqual:rawState]||[old[@"source_pointer_present_any_type"] boolValue]!=sourcePointer||[old[@"cache_pointer_present_any_type"] boolValue]!=cachePointer;
+            old[@"raw_actor_copy_state"]=rawState;old[@"source_pointer_present_any_type"]=@(sourcePointer);old[@"cache_pointer_present_any_type"]=@(cachePointer);
+#endif
             if(sample){old[@"last_seen_ns"]=@(start);if(inCache&&bucket){old[@"last_cached_distance_metres"]=sample[@"distance"];old[@"last_cache_ns"]=@(start);}}
             old[@"source_present"]=@(inSource);old[@"cache_present"]=@(inCache);old[@"native_projection_valid"]=@(validProjection);old[@"classification_currently_verified"]=@(classified);old[@"distance_bucket"]=@(bucket);
             if(changed){NSMutableDictionary *event=[NSMutableDictionary dictionaryWithDictionary:@{@"sample":@(BVTSamples),@"target_id":old[@"target_id"],@"name":old[@"name"]?:@"previously classified bow pointer",@"source_present":@(inSource),@"cache_present":@(inCache),@"classification_currently_verified":@(classified),@"native_projection_valid":@(validProjection),@"distance_bucket":@(bucket),@"current_cached_distance_metres":inCache?(sample[@"distance"]?:NSNull.null):(id)NSNull.null}];
+#ifdef CORE_SOURCE_SCAN_TRACE
+                event[@"raw_actor_copy_state"]=rawState;event[@"raw_actor_scan_sequence"]=@(scan.sequence);event[@"source_pointer_present_any_type"]=@(sourcePointer);event[@"cache_pointer_present_any_type"]=@(cachePointer);
+#endif
                 if(old[@"last_cached_distance_metres"]){event[@"last_cached_distance_metres"]=old[@"last_cached_distance_metres"];event[@"last_cached_age_ms"]=@((start-[old[@"last_cache_ns"] unsignedLongLongValue])/1000000ULL);}[BVTEvents addObject:event];if(BVTEvents.count>BVT_EVENT_LIMIT)[BVTEvents removeObjectAtIndex:0];}
             if(!inSource&&!inCache&&old[@"last_seen_ns"]&&start-[old[@"last_seen_ns"] unsignedLongLongValue]>60000000000ULL)[BVTTargets removeObjectForKey:key];}
+#ifdef CORE_SOURCE_SCAN_TRACE
+        CSSPublishWatches(BVTTargets);
+#endif
         uint64_t elapsed=CMNow()-start;if(elapsed>BVTTimeMaximum)BVTTimeMaximum=elapsed;
         BVTReport=@{@"samples":@(BVTSamples),@"sample_monotonic_ns":@(start),@"native_cache_age_ms":@((start-last)/1000000ULL),@"bow_switch_enabled":@(enabled!=0),@"source_records":@(source.length/32),@"cache_records":@(cache.length/0x58),@"metadata_decode_unknown":@(unknown),@"metadata_objects_sampled":@(memo.count),
+#ifdef CORE_SOURCE_SCAN_TRACE
+            @"source_scan":CSSStatus(&scan,scanCopied,stampRead,nativeStamp,start),
+#endif
 #ifdef CORE_GROUND_ITEM_CONTROLS
             @"explosive_bow_switch_enabled":@(explosiveEnabled!=0),@"crossbow_switch_enabled":@(crossbowEnabled!=0),
 #endif
@@ -79,7 +104,9 @@ static void BVTSample(uintptr_t context) {
     }
 }
 static NSDictionary *BVTStatus(bool events) {
-#ifdef CORE_GROUND_LATE_CAMERA
+#ifdef CORE_SOURCE_SCAN_TRACE
+    const int renderVersion=19;
+#elif defined(CORE_GROUND_LATE_CAMERA)
     const int renderVersion=18;
 #elif defined(CORE_GROUND_ESSENTIALS)
     const int renderVersion=17;
