@@ -30,6 +30,9 @@ Successful fallback after a failed chunk remains usable; failed individual reads
 make missing pointers unknown. A found pointer remains positive evidence even if
 another pointer read fails. Source/cache pointer membership before type exclusion
 is reported separately to avoid mistaking a changed type flag for upstream loss.
+The source-scan summary has its own sampling age and readiness, so an invalidated
+source can be reported without inventing per-target disappearance events. Observer
+time is measured separately from the original snapshot's read time.
 
 The report is not an atomic game snapshot. Pointer reuse and replaced item wrapper
 actors remain unverified identities. Completed absence does not prove server or

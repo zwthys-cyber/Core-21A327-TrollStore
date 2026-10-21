@@ -43,6 +43,10 @@ static void CheckSourceScan(void) {
     // A newer attempted scan that never reached the snapshot invalidates the
     // old raw presence evidence, even if vectors/addresses are unchanged.
     ScanNativeStamp++;BowSample();assert([BowLastEvent(@"十字弩")[@"raw_actor_copy_state"] isEqual:@"latest_scan_not_observed"]);
+    // Global source invalidation does not forge target disappearances. Its
+    // readiness and newer scan mismatch are still available in the summary.
+    Context[0x3B8]=0;uint64_t samples=BVTSamples;size_t events=BVTEvents.count;BowSample();NSDictionary *invalidSource=BVTStatus(true)[@"source_scan"];
+    assert(BVTSamples==samples&&BVTEvents.count==events&&![invalidSource[@"native_source_ready"] boolValue]&&![invalidSource[@"matches_latest_native_scan"] boolValue]);Context[0x3B8]=1;
     // Source pointer exists but is excluded by its type flag. Report it as a
     // separate stage rather than claiming the pointer vanished upstream.
     ScanFailure=0;RunSourceSnapshot();BowSources[0x11]=1;begin=(uintptr_t)BowSources+sizeof(BowSources);memcpy(Context+0x3E0,&begin,8);BowSample();

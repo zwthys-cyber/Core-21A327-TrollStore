@@ -20,6 +20,8 @@ static CSSWatch CSSWatches[CSS_WATCH_LIMIT];
 static size_t CSSWatchCount;
 static CSSScan CSSLatest;
 static atomic_uint_fast64_t CSSSequence,CSSDropped;
+static atomic_uint_fast64_t CSSObserverTotal,CSSObserverMaximum;
+static NSDictionary *CSSReport; // CMReportQueue only
 typedef struct {bool active;uint64_t chunkReads,chunkFailures,singleReads,singleFailures;} CSSReadTracking;
 static _Thread_local CSSReadTracking CSSReads;
 static CSSSnapshotFunction CSSOriginalSnapshot;
@@ -47,7 +49,7 @@ __attribute__((noinline)) static void CSSSnapshot(uint64_t address,size_t count,
     if(!pthread_mutex_trylock(&CSSMutex)){scan.watchCount=CSSWatchCount;scan.watchesCopied=true;memcpy(scan.watches,CSSWatches,scan.watchCount*sizeof(*scan.watches));pthread_mutex_unlock(&CSSMutex);}
     CSSReadTracking parent=CSSReads;CSSReads=(CSSReadTracking){.active=true};
     CSSSnapshotFunction original=CSSOriginalSnapshot ?: (CSSSnapshotFunction)CMCallable(CMBase+0xD632C);
-    errno=incoming;CSSVector vector=original(address,count);int forwarded=errno;
+    uint64_t originalStart=CMNow();errno=incoming;CSSVector vector=original(address,count);int forwarded=errno;uint64_t originalEnd=CMNow();
     scan.chunkReads=CSSReads.chunkReads;scan.chunkFailures=CSSReads.chunkFailures;scan.singleReads=CSSReads.singleReads;scan.singleFailures=CSSReads.singleFailures;CSSReads=parent;
     // A plain C 24-byte aggregate uses the same ARM64 indirect-result ABI as
     // this native std::vector. Transfer its three words; do not destroy it.
@@ -60,6 +62,8 @@ __attribute__((noinline)) static void CSSSnapshot(uint64_t address,size_t count,
                 CSSWatch key={.actor=actor};CSSWatch *watch=bsearch(&key,scan.watches,scan.watchCount,sizeof(*scan.watches),CSSCompare);if(watch)watch->found=true;}}
     }
     if(!pthread_mutex_trylock(&CSSMutex)){CSSLatest=scan;pthread_mutex_unlock(&CSSMutex);}else atomic_fetch_add(&CSSDropped,1);
+    uint64_t end=CMNow(),total=end>=scan.time?end-scan.time:0,originalTime=originalEnd>=originalStart?originalEnd-originalStart:0,overhead=total>=originalTime?total-originalTime:0;
+    atomic_fetch_add(&CSSObserverTotal,overhead);CMLMaximum(&CSSObserverMaximum,overhead);
     errno=forwarded;
 }
 // Copy once during an accepted background sample. Native generation checks in
@@ -82,7 +86,7 @@ static NSDictionary *CSSStatus(const CSSScan *scan,bool copied,bool stampRead,do
         @"scan_sequence":@(scan->sequence),@"scan_age_ms":scan->sequence&&now>=scan->time?@((now-scan->time)/1000000ULL):(id)NSNull.null,
         @"requested_records":@(scan->requested),@"returned_records":@(scan->returned),@"complete_vector":@(scan->vectorValid),@"watched_targets":@(scan->watchCount),
         @"chunk_reads":@(scan->chunkReads),@"chunk_read_failures":@(scan->chunkFailures),@"fallback_pointer_reads":@(scan->singleReads),@"fallback_pointer_read_failures":@(scan->singleFailures),@"zero_pointers":@(scan->zeroPointers),
-        @"diagnostic_lock_drops":@(atomic_load(&CSSDropped)),@"record_limit":@CSS_RECORD_LIMIT,@"watch_limit":@CSS_WATCH_LIMIT,
+        @"diagnostic_lock_drops":@(atomic_load(&CSSDropped)),@"observer_time_total_ns":@(atomic_load(&CSSObserverTotal)),@"observer_time_maximum_ns":@(atomic_load(&CSSObserverMaximum)),@"record_limit":@CSS_RECORD_LIMIT,@"watch_limit":@CSS_WATCH_LIMIT,
         @"scope":@"existing native actor snapshot and its original reads only; no additional game reads or retries; original scan throttle and drawing unchanged",
         @"absence_semantics":@"not_found_in_completed_copy only refers to a watched process-local pointer in a non-atomic native copy; does not prove absence from the game/server; pointer reuse is not identity verification"};
 }

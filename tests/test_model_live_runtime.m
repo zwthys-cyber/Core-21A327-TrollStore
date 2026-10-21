@@ -123,7 +123,7 @@ static void *List(void){return DrawList;}
 static void Polygon(void *list,const CMVec2 *points,int count,uint32_t colour){assert(list==DrawList&&count==4&&!(DrawList[0x30]&4));assert(OriginalCalls&&points[1].x>points[0].x&&points[2].y>points[1].y);assert(colour==0xFFFFFFFF||colour==0xFF0000FF);Fills++;if(colour==0xFFFFFFFF)WhiteFills++;else RedFills++;}
 static void Setup(void){
 #ifdef CORE_SOURCE_SCAN_TRACE
-    memset(&CSSLatest,0,sizeof(CSSLatest));memset(CSSWatches,0,sizeof(CSSWatches));CSSWatchCount=0;CSSReads=(CSSReadTracking){0};CSSOriginalSnapshot=NULL;atomic_store(&CSSSequence,0);atomic_store(&CSSDropped,0);ScanNativeStamp=100;
+    memset(&CSSLatest,0,sizeof(CSSLatest));memset(CSSWatches,0,sizeof(CSSWatches));CSSWatchCount=0;CSSReads=(CSSReadTracking){0};CSSOriginalSnapshot=NULL;CSSReport=nil;atomic_store(&CSSSequence,0);atomic_store(&CSSDropped,0);atomic_store(&CSSObserverTotal,0);atomic_store(&CSSObserverMaximum,0);ScanNativeStamp=100;
 #endif
     memset(Context,0,sizeof(Context));memset(ComponentData,0,sizeof(ComponentData));memset(Frame,0,sizeof(Frame));memset(ActorRecord,0,sizeof(ActorRecord));memset(SourceRecord,0,sizeof(SourceRecord));memset(DrawList,0,sizeof(DrawList));
     TestTime=10000000000ULL;NativeDelay=0;OriginalCalls=Fills=WhiteFills=RedFills=LockDepth=Reads=SceneLocks=RawCalls=BlockScene=0;VertexStride=24;BadRay=WrongProjection=FailQueryBudget=WrongRaw=UnreadableScene=ResourceMemory=FailResourceRead=ReallocatedActors=SlowProjection=SchemaMemory=false;

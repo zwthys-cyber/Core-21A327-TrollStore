@@ -45,9 +45,14 @@ static void BVTSample(uintptr_t context) {
 #ifdef CORE_GROUND_ITEM_CONTROLS
         uint8_t explosiveEnabled=enabled,crossbowEnabled=0;copied=copied&&BVTRead(context+0x25,&crossbowEnabled,1);enabled=enabled||crossbowEnabled;
 #endif
-        if(!copied||ready!=1){BVTFailures++;return;}
 #ifdef CORE_SOURCE_SCAN_TRACE
         CSSScan scan={0};double nativeStamp=0;bool scanCopied=CSSCopy(&scan),stampRead=BVTRead(CMBase+0xC4E158,&nativeStamp,sizeof(nativeStamp))&&isfinite(nativeStamp);
+        if(!atomic_load(&CAVNativeActive)&&generation==atomic_load(&CAVGeneration)){
+            NSMutableDictionary *report=[CSSStatus(&scan,scanCopied,stampRead,nativeStamp,start) mutableCopy];
+            report[@"sample_monotonic_ns"]=@(start);report[@"native_source_ready"]=copied?@(ready==1):(id)NSNull.null;CSSReport=report;}
+#endif
+        if(!copied||ready!=1){BVTFailures++;return;}
+#ifdef CORE_SOURCE_SCAN_TRACE
         NSMutableSet *sourceAny=[NSMutableSet set],*cacheAny=[NSMutableSet set];
 #endif
         NSMutableDictionary *memo=[NSMutableDictionary dictionary],*current=[NSMutableDictionary dictionary];NSMutableSet *sourceSeen=[NSMutableSet set],*cacheSeen=[NSMutableSet set];unsigned unknown=0,sourceCounts[2]={0},cacheCounts[2]={0},within20=0,beyond20=0,projected=0;float maximum=0;
@@ -114,6 +119,9 @@ static NSDictionary *BVTStatus(bool events) {
     const int renderVersion=16;
 #endif
     NSMutableDictionary *out=[BVTReport mutableCopy]?:[NSMutableDictionary dictionary];uint64_t sample=[out[@"sample_monotonic_ns"] unsignedLongLongValue],now=CMNow();
+#ifdef CORE_SOURCE_SCAN_TRACE
+    if(CSSReport){NSMutableDictionary *sourceScan=[CSSReport mutableCopy];uint64_t scanSample=[sourceScan[@"sample_monotonic_ns"] unsignedLongLongValue];sourceScan[@"last_sample_age_ms"]=now>=scanSample?@((now-scanSample)/1000000ULL):(id)NSNull.null;out[@"source_scan"]=sourceScan;}
+#endif
     [out addEntriesFromDictionary:@{@"enabled":@YES,@"render_version":@(renderVersion),@"date":NSDate.date.description,@"last_sample_age_ms":sample&&now>=sample?@((now-sample)/1000000ULL):(id)NSNull.null,@"overlap_or_stale_samples_skipped":@(BVTBusy),@"unavailable_samples":@(BVTFailures),@"local_bytes_total":@(BVTTotalBytes),@"sample_time_maximum_ns":@(BVTTimeMaximum),@"tracking_capacity_rejections":@(BVTCapacity),@"record_limit":@BVT_RECORD_LIMIT,@"metadata_limit":@BVT_METADATA_LIMIT,@"local_sample_byte_limit":@BVT_BYTE_LIMIT,
         @"scope":@"background safe copies of Core local ground source/cache vectors; no game reads, no render mutations, no retained screen positions; header/generation checks do not create an atomic game snapshot",
         @"source_age_semantics":@"source acquisition retains its original throttle; sample time is not the source game frame age",
