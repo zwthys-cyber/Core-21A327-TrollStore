@@ -19,8 +19,13 @@ static void RunSourceSnapshot(void) {
     CoreSourceNativeDispatch(0x700000000ULL,4,0xDEADBEEF,(uintptr_t)&output,TestBase+0xD5408);
     assert(ScanOriginalCalls==calls+1&&errno==E2BIG&&output.begin==(uintptr_t)ScanDestination&&output.end==(uintptr_t)(ScanDestination+4)&&output.capacity==output.end);
 }
+static void ScanSample(void) {unsigned reads=ScanReadCalls;BowSample();assert(ScanReadCalls==reads);}
 static void CheckSourceScan(void) {
     BowSetup();BowSample();CMReadRemote=ScanReader;CSSOriginalSnapshot=ScanOriginal;
+    unsigned originalCalls=OriginalCalls;errno=EAGAIN;
+    CoreSourceNativeDispatch((uintptr_t)Context,0xBAD,0xBAD,0xBAD,TestBase+0x21BC4);
+    assert(OriginalCalls==originalCalls+1&&errno==EAGAIN);
+    assert(CoreSourceNativeDispatch((uintptr_t)Context,0xBAD,0xBAD,0xBAD,TestBase+0xCDB08)==(uintptr_t)CGIEditFlags&&errno==EAGAIN);
     ScanActors[0]=GameActor;ScanActors[1]=GameActor+0x1000;ScanActors[2]=GameActor+0x2000;ScanActors[3]=0;
     ScanOriginalCalls=ScanReadCalls=ScanFailure=0;ScanFailChunk=false;
     RunSourceSnapshot();assert(ScanReadCalls==1&&!memcmp(ScanActors,ScanDestination,sizeof(ScanActors)));
@@ -29,27 +34,27 @@ static void CheckSourceScan(void) {
     // Native snapshot still contains both watched pointers; classified Core
     // source/cache lists lose them. This cannot be called a raw-list absence.
     uintptr_t begin=(uintptr_t)BowSources;memcpy(Context+0x3E0,&begin,8);begin=(uintptr_t)BowRecords;memcpy(Context+0x410,&begin,8);
-    BowSample();assert([BowLastEvent(@"爆炸猎弓")[@"raw_actor_copy_state"] isEqual:@"present"]&&![BowLastEvent(@"爆炸猎弓")[@"source_present"] boolValue]);
+    ScanSample();assert([BowLastEvent(@"爆炸猎弓")[@"raw_actor_copy_state"] isEqual:@"present"]&&![BowLastEvent(@"爆炸猎弓")[@"source_present"] boolValue]);
     // Fully successful copy does not contain the watched bow pointer.
-    ScanActors[0]=GameActor+0x9000;ScanNativeStamp++;RunSourceSnapshot();BowSample();
+    ScanActors[0]=GameActor+0x9000;ScanNativeStamp++;RunSourceSnapshot();ScanSample();
     assert([BowLastEvent(@"爆炸猎弓")[@"raw_actor_copy_state"] isEqual:@"not_found_in_completed_copy"]);
     // Failed chunk followed by successful individual reads is still complete.
-    ScanFailChunk=true;ScanNativeStamp++;unsigned reads=ScanReadCalls;RunSourceSnapshot();assert(ScanReadCalls==reads+5);BowSample();
+    ScanFailChunk=true;ScanNativeStamp++;unsigned reads=ScanReadCalls;RunSourceSnapshot();assert(ScanReadCalls==reads+5);ScanSample();
     assert([BowLastEvent(@"爆炸猎弓")[@"raw_actor_copy_state"] isEqual:@"not_found_in_completed_copy"]);
     assert([BVTReport[@"source_scan"][@"chunk_read_failures"] intValue]==1&&[BVTReport[@"source_scan"][@"fallback_pointer_read_failures"] intValue]==0);
     // A failed individual read leaves an unknown pointer, not proof of absence.
-    ScanActors[0]=GameActor;ScanFailure=1;ScanNativeStamp++;RunSourceSnapshot();BowSample();
+    ScanActors[0]=GameActor;ScanFailure=1;ScanNativeStamp++;RunSourceSnapshot();ScanSample();
     assert([BowLastEvent(@"爆炸猎弓")[@"raw_actor_copy_state"] isEqual:@"unknown_after_read_failure"]&&[BowLastEvent(@"十字弩")[@"raw_actor_copy_state"] isEqual:@"present"]);
     // A newer attempted scan that never reached the snapshot invalidates the
     // old raw presence evidence, even if vectors/addresses are unchanged.
-    ScanNativeStamp++;BowSample();assert([BowLastEvent(@"十字弩")[@"raw_actor_copy_state"] isEqual:@"latest_scan_not_observed"]);
+    ScanNativeStamp++;ScanSample();assert([BowLastEvent(@"十字弩")[@"raw_actor_copy_state"] isEqual:@"latest_scan_not_observed"]);
     // Global source invalidation does not forge target disappearances. Its
     // readiness and newer scan mismatch are still available in the summary.
-    Context[0x3B8]=0;uint64_t samples=BVTSamples;size_t events=BVTEvents.count;BowSample();NSDictionary *invalidSource=BVTStatus(true)[@"source_scan"];
+    Context[0x3B8]=0;uint64_t samples=BVTSamples;size_t events=BVTEvents.count;ScanSample();NSDictionary *invalidSource=BVTStatus(true)[@"source_scan"];
     assert(BVTSamples==samples&&BVTEvents.count==events&&![invalidSource[@"native_source_ready"] boolValue]&&![invalidSource[@"matches_latest_native_scan"] boolValue]);Context[0x3B8]=1;
     // Source pointer exists but is excluded by its type flag. Report it as a
     // separate stage rather than claiming the pointer vanished upstream.
-    ScanFailure=0;RunSourceSnapshot();BowSources[0x11]=1;begin=(uintptr_t)BowSources+sizeof(BowSources);memcpy(Context+0x3E0,&begin,8);BowSample();
+    ScanFailure=0;RunSourceSnapshot();BowSources[0x11]=1;begin=(uintptr_t)BowSources+sizeof(BowSources);memcpy(Context+0x3E0,&begin,8);ScanSample();
     NSDictionary *event=BowLastEvent(@"爆炸猎弓");assert([event[@"source_pointer_present_any_type"] boolValue]&&![event[@"source_present"] boolValue]&&[event[@"raw_actor_copy_state"] isEqual:@"present"]);
     // No waits on the render thread: contended diagnostics may be dropped,
     // while the original call and its three-word output still complete.

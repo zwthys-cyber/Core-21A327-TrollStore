@@ -39,9 +39,10 @@ static void CSSPublishWatches(NSDictionary<NSNumber *,NSMutableDictionary *> *ta
 }
 static bool CSSRead(uint64_t address,void *out,size_t size,bool single) {
     bool result=CMReadRemote(address,out,size); // original reader, exactly once
+    int forwarded=errno;
     if(CSSReads.active){if(single){CSSReads.singleReads++;if(!result)CSSReads.singleFailures++;}
         else{CSSReads.chunkReads++;if(!result)CSSReads.chunkFailures++;}}
-    return result;
+    errno=forwarded;return result;
 }
 __attribute__((noinline)) static void CSSSnapshot(uint64_t address,size_t count,CSSVector *out) {
     int incoming=errno;CSSScan scan={0};scan.time=CMNow();scan.requested=count;scan.sequence=atomic_fetch_add(&CSSSequence,1)+1;
